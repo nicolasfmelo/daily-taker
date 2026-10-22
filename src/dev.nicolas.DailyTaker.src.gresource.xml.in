@@ -3,6 +3,8 @@
   <gresource prefix="/dev/nicolas/DailyTaker@profile@/js">
     <file>application.js</file>
     <file>main.js</file>
+    <file>preferences.js</file>
+    <file>preferencesLogic.js</file>
     <file>recorder.js</file>
     <file>recorderPipeline.js</file>
     <file>recorderWidget.js</file>
@@ -10,6 +12,8 @@
     <file>recordingList.js</file>
     <file>recordingListWidget.js</file>
     <file>row.js</file>
+    <file>secrets.js</file>
+    <file>transcriber.js</file>
     <file>transcript.js</file>
     <file>transcriptFormat.js</file>
     <file>transcriptStore.js</file>

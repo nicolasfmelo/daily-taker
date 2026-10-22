@@ -25,6 +25,7 @@ var CacheDir = Gio.file_new_for_path(GLib.build_filenamev([GLib.get_user_cache_d
 var Settings = new Gio.Settings({ schema: pkg.name });
 
 const { Window } = imports.window;
+const { PreferencesWindow } = imports.preferences;
 
 var Application = GObject.registerClass(class Application extends Adw.Application {
     _init() {
@@ -53,6 +54,10 @@ var Application = GObject.registerClass(class Application extends Adw.Applicatio
         aboutAction.connect('activate', this._showAbout.bind(this));
         this.add_action(aboutAction);
 
+        let preferencesAction = new Gio.SimpleAction({ name: 'preferences' });
+        preferencesAction.connect('activate', this._showPreferences.bind(this));
+        this.add_action(preferencesAction);
+
         let quitAction = new Gio.SimpleAction({ name: 'quit' });
         quitAction.connect('activate', () => {
             this.get_active_window().close();
@@ -60,6 +65,7 @@ var Application = GObject.registerClass(class Application extends Adw.Applicatio
         this.add_action(quitAction);
 
         this.set_accels_for_action('app.quit', ['<Primary>q']);
+        this.set_accels_for_action('app.preferences', ['<Primary>comma']);
         this.set_accels_for_action('win.open-primary-menu', ['F10']);
         this.set_accels_for_action('win.show-help-overlay', ['<Primary>question']);
         this.set_accels_for_action('recorder.start', ['<Primary>r']);
@@ -100,6 +106,23 @@ var Application = GObject.registerClass(class Application extends Adw.Applicatio
         if (pkg.name.endsWith('Devel'))
             this.window.add_css_class('devel');
         this.window.show();
+    }
+
+    _showPreferences() {
+        if (this._preferences) {
+            this._preferences.present();
+            return;
+        }
+        this._preferences = new PreferencesWindow({
+            application: this,
+            transient_for: this.get_active_window(),
+            modal: true,
+        });
+        this._preferences.connect('close-request', () => {
+            this._preferences = null;
+            return false;
+        });
+        this._preferences.present();
     }
 
     _showAbout() {

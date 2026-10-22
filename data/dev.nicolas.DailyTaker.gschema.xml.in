@@ -10,6 +10,15 @@
       <summary>Window position</summary>
       <description>Window position (x and y).</description>
     </key>
+    <key name="language" type="s">
+      <choices>
+        <choice value="pt"/>
+        <choice value="auto"/>
+      </choices>
+      <default>'pt'</default>
+      <summary>Transcription language</summary>
+      <description>Language sent to the transcription service: "pt" for Portuguese or "auto" for automatic detection.</description>
+    </key>
   </schema>
 </schemalist>
 

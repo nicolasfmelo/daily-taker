@@ -39,6 +39,8 @@ pkg.require({
     'GstPlayer': '1.0',
     'GstPbutils': '1.0',
     'Adw': '1',
+    'Soup': '3.0',
+    'Secret': '1',
 });
 
 const { Application } = imports.application;

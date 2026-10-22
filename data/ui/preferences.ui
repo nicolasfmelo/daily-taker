@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <template class="Gjs_PreferencesWindow" parent="AdwPreferencesWindow">
+    <property name="title">Preferências</property>
+    <property name="default_width">560</property>
+    <property name="default_height">520</property>
+    <property name="search_enabled">False</property>
+    <child>
+      <object class="AdwPreferencesPage">
+        <child>
+          <object class="AdwPreferencesGroup" id="keyGroup">
+            <property name="title">Chave da API do OpenRouter</property>
+            <property name="description">A chave é usada para transcrever as gravações. Ela nunca é exibida aqui.</property>
+            <child>
+              <object class="AdwActionRow" id="envRow">
+                <property name="visible">False</property>
+                <property name="title">Usando a variável DAILY_TAKER_OP_KEY</property>
+                <property name="subtitle">Guarde a chave nas Preferências para não depender do ambiente.</property>
+                <child type="suffix">
+                  <object class="GtkButton" id="saveEnvButton">
+                    <property name="valign">center</property>
+                    <property name="label">Salvar nas Preferências</property>
+                  </object>
+                </child>
+              </object>
+            </child>
+            <child>
+              <object class="AdwPasswordEntryRow" id="keyRow">
+                <property name="title">Nova chave da API</property>
+              </object>
+            </child>
+            <child>
+              <object class="AdwActionRow" id="statusRow">
+                <property name="title">Chave atual</property>
+                <child type="suffix">
+                  <object class="GtkSpinner" id="spinner">
+                    <property name="valign">center</property>
+                    <property name="visible">False</property>
+                  </object>
+                </child>
+              </object>
+            </child>
+            <child>
+              <object class="GtkBox">
+                <property name="margin_top">6</property>
+                <property name="spacing">6</property>
+                <property name="halign">end</property>
+                <child>
+                  <object class="GtkButton" id="removeButton">
+                    <property name="label">Remover chave</property>
+                    <style>
+                      <class name="destructive-action"/>
+                    </style>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkButton" id="testButton">
+                    <property name="label">Testar chave</property>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkButton" id="saveButton">
+                    <property name="label">Salvar</property>
+                    <style>
+                      <class name="suggested-action"/>
+                    </style>
+                  </object>
+                </child>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
+          <object class="AdwPreferencesGroup">
+            <property name="title">Transcrição</property>
+            <child>
+              <object class="AdwComboRow" id="languageRow">
+                <property name="title">Idioma</property>
+                <property name="subtitle">Idioma da fala nas gravações</property>
+                <property name="model">
+                  <object class="GtkStringList">
+                    <items>
+                      <item>Português (padrão)</item>
+                      <item>Automático</item>
+                    </items>
+                  </object>
+                </property>
+              </object>
+            </child>
+          </object>
+        </child>
+      </object>
+    </child>
+  </template>
+</interface>
