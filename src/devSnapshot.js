@@ -1,4 +1,5 @@
-/* exported COMPONENTS PANE_STATES WINDOW_STATES maybeSnapshot silencePlayback snapshotParams stateError */
+/* exported COMPONENTS MUTATING_COMPONENTS PANE_STATES SIDEBAR_STATES WINDOW_STATES isSandboxed maybeSnapshot
+   silencePlayback snapshotParams stateError */
 // Captura de tela para conferência visual (tools/snapshot.sh). Inerte sem a variável
 // DAILY_TAKER_SNAPSHOT: com ela, mostra a janela (ou um componente numa janela simples),
 // espera assentar, grava um PNG no caminho indicado e encerra o app.
@@ -17,6 +18,39 @@ const nextSignal = (obj, signal, pred = () => true) => new Promise(resolve => {
         resolve(args);
     });
 });
+
+// Componentes que alteram arquivos (renomeiam, reescrevem transcrições): só rodam no
+// ambiente isolado do tools/snapshot.sh, conferido ANTES de qualquer alteração.
+var MUTATING_COMPONENTS = ['detailpanecheck', 'sidebarcheck'];
+
+const hasDotSegment = path => path.split('/').some(part => part === '.' || part === '..');
+const trimSlashes = path => path.replace(/\/+$/, '');
+
+// O snapshot.sh exporta DAILY_TAKER_SNAPSHOT_SANDBOX=1 e a raiz temporária em
+// DAILY_TAKER_SNAPSHOT_ROOT; a pasta de dados em uso tem de estar dentro dessa raiz.
+var isSandboxed = (env, dataDir) => {
+    if (env?.DAILY_TAKER_SNAPSHOT_SANDBOX !== '1')
+        return false;
+    const root = trimSlashes(env.DAILY_TAKER_SNAPSHOT_ROOT ?? '');
+    const dir = trimSlashes(dataDir ?? '');
+    if (!root.startsWith('/') || !dir.startsWith('/') || hasDotSegment(root) || hasDotSegment(dir))
+        return false;
+    return dir.startsWith(`${root}/`);
+};
+
+const sandboxEnv = () => ({
+    DAILY_TAKER_SNAPSHOT_SANDBOX: GLib.getenv('DAILY_TAKER_SNAPSHOT_SANDBOX'),
+    DAILY_TAKER_SNAPSHOT_ROOT: GLib.getenv('DAILY_TAKER_SNAPSHOT_ROOT'),
+});
+
+// Lança (sem alterar nada) fora do ambiente isolado.
+const assertSandboxed = () => {
+    const dataDir = GLib.canonicalize_filename(GLib.get_user_data_dir(), null);
+    if (!isSandboxed(sandboxEnv(), dataDir)) {
+        throw new Error('este componente altera arquivos e só roda pelo tools/snapshot.sh ' +
+            `(ambiente isolado); pasta de dados atual: ${dataDir}`);
+    }
+};
 
 // Gravações da pasta de dados, da mais recente para a mais antiga (a ordem da lista do app).
 const recordingFiles = () => {
@@ -183,8 +217,10 @@ const detailPaneComponent = params => {
 // Verificação do DetailPane (só no ambiente isolado do snapshot.sh, com a cópia das
 // fixtures): troca de gravação, ordem invertida, renomear e banner. Falha = sem PNG e
 // saída ≠ 0; sucesso = imprime as verificações e captura o painel no fim (gravação 2
-// renomeada, transcrição com o banner de erro).
+// renomeada, transcrição com o banner de erro). Altera arquivos: só roda isolado
+// (MUTATING_COMPONENTS, isSandboxed).
 const detailPaneCheckComponent = () => {
+    assertSandboxed();
     const { DetailPane } = imports.detailPane;
     const { Recording } = imports.recording;
     const { loadTranscript, transcriptFileFor } = imports.transcriptStore;
@@ -300,23 +336,273 @@ const detailPaneCheckComponent = () => {
     const built = nextSignal(view, 'blocks-built');
     pane.setTranscript(loadTranscript(renamed));
     pane.setState('error');
-    // Os testes não devem gravar nada fora da cópia temporária: confere de novo o caminho.
-    check(renamed.get_path().startsWith(imports.application.RecordingsDir.get_path()), 'arquivos só na cópia das fixtures');
     print(`devSnapshot: detailpanecheck: ${checks} verificações OK`);
     return { widget: pane, ready: built };
+};
+
+// Serviço de transcrição falso: nunca chama a API. `statuses` = uri → status.
+const fakeService = (statuses = new Map()) => {
+    const listeners = [];
+    return {
+        status: file => statuses.get(file.get_uri()) ?? 'none',
+        connectChange: fn => listeners.push(fn),
+        set(uri, status) {
+            if (status === 'none')
+                statuses.delete(uri);
+            else
+                statuses.set(uri, status);
+            for (const fn of listeners)
+                fn(uri, status);
+        },
+    };
+};
+
+// Resolve quando a lista tem `count` itens e todos têm a duração conhecida.
+const listReady = (list, count) => new Promise(resolve => {
+    const waitDurations = () => {
+        const items = [];
+        for (let i = 0; i < list.get_n_items(); i++)
+            items.push(list.get_item(i));
+        Promise.all(items.map(r => r.duration > 0
+            ? Promise.resolve()
+            : nextSignal(r, 'notify::duration'))).then(() => resolve(items));
+    };
+    if (list.get_n_items() >= count) {
+        waitDurations();
+        return;
+    }
+    const id = list.connect('items-changed', () => {
+        if (list.get_n_items() < count)
+            return;
+        list.disconnect(id);
+        waitDurations();
+    });
+});
+
+// Sidebar com a biblioteca das fixtures (RecordingList real, só leitura), um serviço de
+// transcrição falso e: --select N (item N da lista), --query TEXTO (busca),
+// --state running|error (a gravação 2 nesse status), --empty 1 (biblioteca vazia).
+// Tamanho padrão 360x900.
+const sidebarComponent = params => {
+    const { Recording } = imports.recording;
+    const { RecordingList } = imports.recordingList;
+    const { Sidebar } = imports.sidebar;
+
+    const files = params.empty ? [] : recordingFiles();
+    const statuses = new Map();
+    if (params.state && files[1])
+        statuses.set(files[1].get_uri(), params.state);
+    const list = params.empty ? new Gio.ListStore({ item_type: Recording }) : new RecordingList();
+    const sidebar = new Sidebar({ recordingList: list, transcriptionService: fakeService(statuses) });
+    const ready = listReady(list, files.length).then(items => {
+        const n = params.select ?? 0;
+        if (n > 0) {
+            if (!items[n - 1])
+                throw new Error(`não há gravação ${n} nas fixtures (há ${items.length})`);
+            sidebar.select(items[n - 1]);
+        }
+        if (params.query !== null)
+            sidebar.setQuery(params.query);
+        // Numa janela só com a sidebar o foco cairia na busca (anel laranja); a captura
+        // mostra o estado em repouso, como na mockup.
+        sidebar.get_root()?.set_focus(null);
+        const visible = sidebar._visible.map(r => r.name);
+        print(`devSnapshot: sidebar: ${visible.length} visível(is): ${visible.join(' | ')}; ` +
+            `selecionada: ${sidebar.selected?.name ?? 'nenhuma'}`);
+    });
+    return { widget: sidebar, ready };
+};
+
+// Verificação da Sidebar na cópia temporária das fixtures (renomeia e grava uma
+// transcrição: só no ambiente isolado). Imprime PASS/FAIL por verificação; uma falha =
+// sem PNG e saída ≠ 0. Captura a sidebar no fim.
+const sidebarCheckComponent = () => {
+    assertSandboxed();
+    const { RecordingList } = imports.recordingList;
+    const { Sidebar } = imports.sidebar;
+    const { loadTranscript, saveTranscript } = imports.transcriptStore;
+
+    const files = recordingFiles();
+    if (files.length < 4)
+        throw new Error('fixtures incompletas');
+    const list = new RecordingList();
+    const service = fakeService();
+    const sidebar = new Sidebar({ recordingList: list, transcriptionService: service });
+    let failures = 0;
+    const check = (ok, what) => {
+        print(`${ok ? 'PASS' : 'FAIL'} sidebarcheck: ${what}`);
+        if (!ok)
+            failures++;
+    };
+    const names = () => sidebar._visible.map(r => r.name);
+    const rowOf = r => sidebar._rowFor(r);
+    const emitted = [];
+    sidebar.connect('recording-selected', (_s, r) => emitted.push(r));
+    const emits = fn => {
+        emitted.length = 0;
+        fn();
+        return [...emitted];
+    };
+
+    const ready = listReady(list, files.length).then(items => {
+        const [daily, ideias, notas, sem] = items;
+        check(names().join('|') === 'Daily · Projeto Atlas|Ideias para o app|Notas da reunião|Sem transcrição',
+            'ordem da lista (mais recente primeiro)');
+        check(rowOf(daily).badgeKind === 'ok' && rowOf(sem).badgeKind === 'none', 'selos: Transcrita / nada');
+        check(sidebar.selected === null && !sidebar._exportButton.sensitive, 'sem seleção: Exportar desligado');
+
+        // 1. Seleção emite uma vez por mudança.
+        let e = emits(() => sidebar.select(ideias));
+        check(e.length === 1 && e[0] === ideias && sidebar.selected === ideias, 'select emite uma vez');
+        check(sidebar._list.get_selected_row() === rowOf(ideias), 'linha destacada = seleção');
+        check(sidebar._exportButton.sensitive, 'com seleção: Exportar ligado');
+        e = emits(() => sidebar.select(ideias));
+        check(e.length === 0, 'selecionar a mesma não emite');
+        e = emits(() => sidebar._list.select_row(rowOf(notas)));
+        check(e.length === 1 && sidebar.selected === notas, 'clique na linha seleciona (uma emissão)');
+        e = emits(() => sidebar.select(null));
+        check(e.length === 1 && e[0] === null && sidebar._list.get_selected_row() === null, 'select(null) limpa');
+
+        // 2. Busca: nome, conteúdo da transcrição, sem resultado; coerência da seleção.
+        sidebar.select(daily);
+        e = emits(() => sidebar.setQuery('notas'));
+        check(names().join('|') === 'Notas da reunião', 'busca "notas" filtra pelo nome');
+        check(e.length === 1 && e[0] === null && sidebar.selected === null, 'selecionada escondida pela busca → nenhuma');
+        sidebar.select(notas);
+        e = emits(() => sidebar.setQuery(''));
+        check(names().length === 4 && e.length === 0 && sidebar.selected === notas &&
+            sidebar._list.get_selected_row() === rowOf(notas), 'limpar a busca mantém a seleção visível');
+        sidebar.setQuery('reuniao');
+        check(names().join('|') === 'Daily · Projeto Atlas|Ideias para o app|Notas da reunião',
+            'busca "reuniao": nome e conteúdo da transcrição (a sem transcrição fica de fora)');
+        sidebar.setQuery('acompanhar');
+        check(names().join('|') === 'Daily · Projeto Atlas|Ideias para o app|Notas da reunião',
+            'busca só no conteúdo da transcrição');
+        sidebar.setQuery('zzzz');
+        check(names().length === 0 && sidebar._listStack.visible_child_name === 'empty' &&
+            sidebar._emptyLabel.label === 'Nada encontrado para essa busca', 'sem resultado: aviso');
+        e = emits(() => sidebar.select(sem));
+        check(sidebar._searchEntry.text === '' && names().length === 4 && sidebar.selected === sem &&
+            e.length === 1, 'select de item escondido limpa a busca e seleciona');
+        check(sidebar._listStack.visible_child_name === 'list', 'lista visível de novo');
+
+        // 3. invalidateTranscript: transcrição nova no disco → selo e busca.
+        saveTranscript(sem.file, loadTranscript(daily.file));
+        check(rowOf(sem).badgeKind === 'none', 'antes de invalidar: cache antigo (sem selo)');
+        sidebar.invalidateTranscript(sem.uri);
+        check(rowOf(sem).badgeKind === 'ok', 'invalidateTranscript atualiza o selo');
+        sidebar.setQuery('acompanhar');
+        check(names().includes('Sem transcrição'), 'invalidateTranscript atualiza a busca');
+        sidebar.setQuery('');
+
+        // 4. Status do serviço: running → spinner; sai de running → relê a transcrição.
+        service.set(ideias.uri, 'running');
+        check(rowOf(ideias).badgeKind === 'running', 'serviço running → Transcrevendo…');
+        service.set(ideias.uri, 'error');
+        check(rowOf(ideias).badgeKind === 'error', 'serviço error → Erro');
+        service.set(ideias.uri, 'none');
+        check(rowOf(ideias).badgeKind === 'ok', 'serviço none → Transcrita');
+
+        // 4b. Menu ⋮: montado só ao abrir; ações por URI; bloqueios durante a transcrição.
+        const asked = [];
+        for (const signal of ['rename-requested', 'delete-requested', 'export-audio-requested'])
+            sidebar.connect(signal, (_s, r) => asked.push([signal, r]));
+        sidebar.connect('transcribe-requested', (_s, r, again) => asked.push(['transcribe-requested', r, again]));
+        const button = rowOf(sem).menuButton;
+        check(button.menu_model === null, 'menu ainda não montado');
+        button.popup();
+        const labels = [];
+        const menu = button.menu_model;
+        for (let i = 0; i < menu.get_n_items(); i++) {
+            const section = menu.get_item_link(i, 'section');
+            for (let j = 0; j < section.get_n_items(); j++)
+                labels.push(section.get_item_attribute_value(j, 'label', null).get_string()[0]);
+        }
+        check(labels.join('|') === 'Renomear|Gerar novamente|Exportar áudio|Excluir', `itens do menu: ${labels.join('|')}`);
+        let destructive = false;
+        const walk = w => {
+            for (let c = w?.get_first_child(); c; c = c.get_next_sibling()) {
+                destructive ||= c.has_css_class('destructive') && c.text === 'Excluir';
+                walk(c);
+            }
+        };
+        walk(button.popover);
+        check(destructive, 'Excluir com estilo destrutivo');
+        button.popdown();
+        const target = new GLib.Variant('s', sem.uri);
+        for (const action of ['rename', 'transcribe', 'export', 'delete'])
+            sidebar.activate_action(`sidebar.${action}`, target);
+        check(asked.map(a => a[0]).join('|') ===
+            'rename-requested|transcribe-requested|export-audio-requested|delete-requested' &&
+            asked.every(a => a[1] === sem) && asked[1][2] === true, 'ações do menu emitem os sinais (regenerar = true)');
+        asked.length = 0;
+        sidebar.select(daily);
+        sidebar._exportButton.emit('clicked');
+        check(asked.length === 1 && asked[0][0] === 'export-audio-requested' && asked[0][1] === daily,
+            'botão Exportar áudio do cabeçalho: gravação selecionada');
+        asked.length = 0;
+        service.set(sem.uri, 'running');
+        sidebar.activate_action('sidebar.transcribe', target);
+        check(asked.length === 0, 'Gerar bloqueado durante a transcrição');
+        service.set(sem.uri, 'none');
+
+        // 5. Renomear: rótulo, chave do cache (URI nova) e busca pelo nome novo.
+        const oldUri = notas.uri;
+        sidebar.select(notas);
+        notas.name = 'Retro renomeada';
+        check(rowOf(notas)._title.label === 'Retro renomeada', 'renomear atualiza o rótulo');
+        check(!sidebar._transcripts.has(oldUri) && sidebar._transcripts.get(notas.uri) !== null &&
+            sidebar._transcripts.has(notas.uri), 'renomear troca a chave do cache');
+        check(rowOf(notas).badgeKind === 'ok', 'renomeada continua Transcrita');
+        sidebar.setQuery('retro');
+        check(names().join('|') === 'Retro renomeada' && sidebar.selected === notas, 'busca pelo nome novo');
+        sidebar.setQuery('');
+
+        // 6. Remover a selecionada seleciona a vizinha; a última → a nova última; tudo → nenhuma.
+        e = emits(() => list.remove(list.getIndex(notas.file)));
+        check(e.length === 1 && sidebar.selected === sem && sidebar._list.get_selected_row() === rowOf(sem),
+            'remover a selecionada seleciona a vizinha');
+        e = emits(() => list.remove(list.getIndex(sem.file)));
+        check(e.length === 1 && sidebar.selected === ideias, 'remover a última seleciona a nova última');
+        sidebar.select(daily);
+        e = emits(() => list.remove(list.getIndex(ideias.file)));
+        check(e.length === 0 && sidebar.selected === daily, 'remover outra não mexe na seleção');
+        e = emits(() => list.remove(0));
+        check(e.length === 1 && e[0] === null && sidebar.selected === null, 'lista vazia → nenhuma');
+        check(sidebar._emptyLabel.label === 'Nenhuma gravação ainda' &&
+            sidebar._listStack.visible_child_name === 'empty', 'lista vazia: aviso');
+        // Itens removidos não reagem mais (ouvintes desligados).
+        let threw = false;
+        try {
+            notas.name = 'Depois de removida';
+        } catch (err) {
+            threw = true;
+        }
+        check(!threw && sidebar._tracked.size === 0, 'item removido sem ouvintes');
+
+        // Volta ao estado para a captura.
+        list.append(daily);
+        list.append(ideias);
+        sidebar.select(daily);
+        print(`devSnapshot: sidebarcheck: ${failures === 0 ? 'todas as verificações OK' : `${failures} falha(s)`}`);
+        if (failures > 0)
+            throw new Error(`${failures} verificação(ões) falharam`);
+    });
+    return { widget: sidebar, ready };
 };
 
 // nome → (params, { app, window }) → Gtk.Widget ou { widget, ready?, cleanup? }. Se o
 // widget for um Gtk.Window, ele é capturado como está; qualquer outro vai para uma janela
 // simples do tamanho pedido. `ready` (Promise) adia a captura até o componente terminar
-// de carregar (ex.: picos da onda); `cleanup` roda antes de sair. A próxima tarefa
-// acrescenta sidebar.
+// de carregar (ex.: picos da onda); `cleanup` roda antes de sair.
 var COMPONENTS = {
     window: (_params, ctx) => ctx.window,
     playerbar: playerBarComponent,
     transcriptview: transcriptViewComponent,
     detailpane: detailPaneComponent,
     detailpanecheck: detailPaneCheckComponent,
+    sidebar: sidebarComponent,
+    sidebarcheck: sidebarCheckComponent,
 };
 
 // --state (só com --component window): página mostrada no lugar da lista. Só troca a
@@ -330,13 +616,20 @@ var WINDOW_STATES = {
 // --state com --component detailpane: estado forçado do painel (DetailPane.setState).
 var PANE_STATES = ['none', 'running', 'error', 'ready'];
 
+// --state com --component sidebar: status do serviço de transcrição da gravação 2.
+var SIDEBAR_STATES = ['running', 'error'];
+
 // Mensagem de erro para um --state inválido, ou null.
 var stateError = params => {
     if (!params.state)
         return null;
-    const available = { window: Object.keys(WINDOW_STATES), detailpane: PANE_STATES }[params.component];
+    const available = {
+        window: Object.keys(WINDOW_STATES),
+        detailpane: PANE_STATES,
+        sidebar: SIDEBAR_STATES,
+    }[params.component];
     if (!available)
-        return `--state só vale com --component window ou detailpane (recebido "${params.component}")`;
+        return `--state só vale com --component window, detailpane ou sidebar (recebido "${params.component}")`;
     if (!available.includes(params.state))
         return `estado desconhecido: "${params.state}" (disponíveis: ${available.join(', ')})`;
     return null;
@@ -366,6 +659,7 @@ var snapshotParams = () => {
         state: env('DAILY_TAKER_SNAPSHOT_STATE'),
         embedded: intOrNull(env('DAILY_TAKER_SNAPSHOT_EMBEDDED')),
         find: env('DAILY_TAKER_SNAPSHOT_FIND'),
+        query: env('DAILY_TAKER_SNAPSHOT_QUERY'),
         empty: env('DAILY_TAKER_SNAPSHOT_EMPTY') === '1',
         width,
         height,
@@ -423,6 +717,14 @@ var maybeSnapshot = (window, params = snapshotParams()) => {
         fail(badState);
         return true;
     }
+    if (MUTATING_COMPONENTS.includes(params.component)) {
+        try {
+            assertSandboxed();
+        } catch (e) {
+            fail(`componente "${params.component}": ${e.message}`);
+            return true;
+        }
+    }
     silencePlayback(window.player);
     if (params.state && params.component === 'window')
         WINDOW_STATES[params.state](window);
@@ -473,7 +775,9 @@ var maybeSnapshot = (window, params = snapshotParams()) => {
     }).catch(e => {
         printerr(`devSnapshot: falhou: ${e.message}`);
         cleanup();
-        imports.system.exit(3);
+        // Sair de dentro de um job de Promise trava até o timeout do snapshot.sh: sai
+        // do laço principal.
+        GLib.idle_add(GLib.PRIORITY_DEFAULT, () => imports.system.exit(3));
     });
     target.present();
     return true;

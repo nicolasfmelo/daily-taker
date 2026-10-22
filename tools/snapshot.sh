@@ -2,8 +2,8 @@
 # Renderiza a janela real do Daily Taker (ou um componente) num PNG, sem usar a tela,
 # os dados, a configuração, o chaveiro nem o áudio do usuário. Ver tools/README.md.
 #
-#   bash tools/snapshot.sh OUT.png [--component window|playerbar|transcriptview|detailpane|sidebar]
-#                          [--select N] [--tab transcricao|resumo] [--at SEG] [--size LxA]
+#   bash tools/snapshot.sh OUT.png [--component window|playerbar|transcriptview|detailpane|sidebar|…]
+#                          [--select N] [--tab transcricao|resumo] [--at SEG] [--size LxA] [--query TEXTO]
 #                          [--state recorder|none|running|error|ready] [--embedded 0|1] [--find TEXTO] [--empty 0|1]
 #   bash tools/snapshot.sh --probe-audio   # prova, no mesmo ambiente, que o áudio vai para o nada
 set -euo pipefail
@@ -33,7 +33,7 @@ case "$1" in -*) usage ;; esac
 out="$(realpath -m -- "$1")"
 shift
 
-component='window' select='' tab='' at='' size='' state='' embedded='' find='' empty=''
+component='window' select='' tab='' at='' size='' state='' embedded='' find='' empty='' query=''
 while [ $# -gt 0 ]; do
     [ $# -ge 2 ] || die "falta o valor de $1"
     case "$1" in
@@ -46,6 +46,7 @@ while [ $# -gt 0 ]; do
         --embedded) embedded="$2" ;;
         --find) find="$2" ;;
         --empty) empty="$2" ;;
+        --query) query="$2" ;;
         *) die "opção desconhecida: $1" ;;
     esac
     shift 2
@@ -57,22 +58,23 @@ if [ -z "$size" ]; then
     case "$component" in
         transcriptview) size='1000x700' ;;
         detailpane) size='1100x760' ;;
+        sidebar|sidebarcheck) size='360x900' ;;
         *) size='1536x1024' ;;
     esac
 fi
-# --select 0 = nenhuma gravação selecionada (só o detailpane usa).
+# --select 0 = nenhuma gravação selecionada (detailpane; na sidebar, 0 = padrão).
 [ -z "$select" ] || [[ "$select" =~ ^(0|[1-9][0-9]*)$ ]] || die "--select espera um número (0 = nenhuma)"
 [ -z "$tab" ] || [[ "$tab" =~ ^(transcricao|resumo)$ ]] || die "--tab espera transcricao ou resumo"
 [ -z "$at" ] || [[ "$at" =~ ^[0-9]+(\.[0-9]+)?$ ]] || die "--at espera segundos"
 [ -z "$state" ] || [[ "$state" =~ ^(recorder|none|running|error|ready)$ ]] ||
-    die "--state espera recorder (window) ou none|running|error|ready (detailpane)"
+    die "--state espera recorder (window), none|running|error|ready (detailpane) ou running|error (sidebar)"
 [ -z "$embedded" ] || [[ "$embedded" =~ ^[01]$ ]] || die "--embedded espera 0 ou 1"
 [ -z "$empty" ] || [[ "$empty" =~ ^[01]$ ]] || die "--empty espera 0 ou 1"
 [[ "$size" =~ ^([1-9][0-9]*)x([1-9][0-9]*)$ ]] || die "--size espera LxA, por exemplo 1536x1024"
 [ -d "$(dirname -- "$out")" ] || die "diretório de saída não existe: $(dirname -- "$out")"
 [ -f "$build/build.ninja" ] || die "configure antes: meson setup build --prefix \$HOME/.local"
 
-work="$(mktemp -d "${TMPDIR:-/tmp}/daily-taker-snapshot-XXXXXX")"
+work="$(realpath -- "$(mktemp -d "${TMPDIR:-/tmp}/daily-taker-snapshot-XXXXXX")")"
 pgid=''
 cleanup() {
     # Só o grupo de processos iniciado aqui (dbus-run-session, mutter, app).
@@ -161,6 +163,8 @@ env -i \
     GST_PLUGIN_FEATURE_RANK="$gst_ranks" \
     GST_REGISTRY="$build/snapshot-cache/gstreamer-registry.bin" \
     DAILY_TAKER_SNAPSHOT="$out" \
+    DAILY_TAKER_SNAPSHOT_SANDBOX=1 \
+    DAILY_TAKER_SNAPSHOT_ROOT="$work" \
     DAILY_TAKER_SNAPSHOT_COMPONENT="$component" \
     DAILY_TAKER_SNAPSHOT_SELECT="$select" \
     DAILY_TAKER_SNAPSHOT_TAB="$tab" \
@@ -170,6 +174,7 @@ env -i \
     DAILY_TAKER_SNAPSHOT_EMBEDDED="$embedded" \
     DAILY_TAKER_SNAPSHOT_FIND="$find" \
     DAILY_TAKER_SNAPSHOT_EMPTY="$empty" \
+    DAILY_TAKER_SNAPSHOT_QUERY="$query" \
     setsid --wait timeout --kill-after=5 "$timeout_s" \
         dbus-run-session -- "${command[@]}" \
         >"$work/run.log" 2>&1 &
@@ -183,7 +188,7 @@ if [ -n "$probe_audio" ]; then
     exit "$status"
 fi
 
-app_lines='^(devSnapshot|Gjs-|\(gjs|\(launcher|JS )'
+app_lines='^(devSnapshot|Gjs-|\(gjs|\(launcher|JS |PASS |FAIL )'
 if [ ! -s "$out" ]; then
     if [ -n "${SNAPSHOT_VERBOSE:-}" ] || ! grep -E "$app_lines" "$work/run.log" >&2; then
         grep -v '^$' "$work/run.log" >&2 || true

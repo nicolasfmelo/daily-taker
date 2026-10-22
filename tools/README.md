@@ -38,16 +38,16 @@ Cria `DIR/daily-taker/` (o `XDG_DATA_HOME` do app aponta para `DIR`):
 ## `snapshot.sh` — captura da janela
 
 ```sh
-bash tools/snapshot.sh OUT.png [--component window|playerbar|transcriptview|detailpane|sidebar]
+bash tools/snapshot.sh OUT.png [--component window|playerbar|transcriptview|detailpane|detailpanecheck|sidebar|sidebarcheck]
                        [--select N] [--tab transcricao|resumo] [--at SEG] [--size LxA]
                        [--state recorder|none|running|error|ready] [--embedded 0|1]
-                       [--find TEXTO] [--empty 0|1]
+                       [--find TEXTO] [--empty 0|1] [--query TEXTO]
 ```
 
 - `--component` (padrão `window`): `window` é a janela principal real. Os
   demais são renderizados sozinhos numa janela simples, com dados de fixture;
-  são registrados em `COMPONENTS` em `src/devSnapshot.js` pelas próximas
-  tarefas. Um nome não registrado falha com mensagem clara e sem PNG.
+  são registrados em `COMPONENTS` em `src/devSnapshot.js`. Um nome não
+  registrado falha com mensagem clara e sem PNG.
   - `playerbar`: a barra do player (`src/playerBar.js`) com a gravação mais
     recente das fixtures (19:08), pausada em `--at SEG` (padrão 0), volume de
     exemplo 60 % e `Gio.Settings` em memória. O `Playback` usa um `fakesink` e
@@ -79,7 +79,27 @@ bash tools/snapshot.sh OUT.png [--component window|playerbar|transcriptview|deta
     gravação e salvar nome de locutor no arquivo novo, banner de erro/geração).
     Falha numa verificação = sem PNG e saída ≠ 0; sucesso imprime
     `detailpanecheck: N verificações OK` e captura o painel com o banner de erro.
-- `--select N` (item N da lista, a partir de 1; 0 só no `detailpane`), `--tab`, `--at SEG` (posição
+    Altera arquivos: só roda no ambiente isolado (ver "Componentes que alteram
+    dados" abaixo).
+  - `sidebar`: a sidebar "Gravações" (`src/sidebar.js`) sobre um `RecordingList`
+    real da cópia das fixtures (só leitura) e um serviço de transcrição falso
+    (nunca chama a API). `--select N` seleciona o item N (padrão: nenhum);
+    `--query TEXTO` aplica a busca (nome e conteúdo da transcrição; `reuniao`
+    casa com as três transcritas, `zzzz` mostra "Nada encontrado para essa
+    busca"); `--state running|error` põe a gravação 2 nesse status (spinner
+    "Transcrevendo…" / "● Erro"); `--empty 1` = biblioteca vazia ("Nenhuma
+    gravação ainda"). Espera a varredura assíncrona da pasta e a duração de
+    cada gravação. Tamanho padrão 360x900 (a janela simples tem largura mínima
+    de 360 px). Ex.: `bash tools/snapshot.sh /tmp/s.png --component sidebar --select 1`
+  - `sidebarcheck`: verificação da `Sidebar` na cópia das fixtures. Imprime uma
+    linha `PASS`/`FAIL` por verificação (seleção emite uma vez, clique na linha,
+    `select(null)`, busca por nome e por conteúdo, seleção escondida pela busca
+    → nenhuma, `select` de item escondido limpa a busca, `invalidateTranscript`
+    no selo e na busca, status do serviço, menu ⋮ montado só ao abrir e as
+    ações, Exportar do cabeçalho, renomear troca a chave do cache, remover a
+    selecionada seleciona a vizinha, lista vazia). Uma falha = sem PNG e saída
+    ≠ 0. Grava uma transcrição e renomeia: só no ambiente isolado.
+- `--select N` (item N da lista, a partir de 1; 0 = nenhum no `detailpane`), `--tab`, `--at SEG` (posição
   do player): já são lidos e repassados a `maybeSnapshot` (`params.select`,
   `params.tab`, `params.at`), mas a janela atual ainda os ignora (imprime uma
   nota); passam a valer quando a janela nova existir.
@@ -87,10 +107,19 @@ bash tools/snapshot.sh OUT.png [--component window|playerbar|transcriptview|deta
   lugar da lista, para conferir o tema nela. Só troca a página da janela; nenhuma
   gravação começa e nenhum dispositivo de áudio é aberto (`WINDOW_STATES` em
   `src/devSnapshot.js`). Com `--component detailpane`, `--state` é o estado do
-  painel (`PANE_STATES`).
+  painel (`PANE_STATES`); com `--component sidebar`, o status da gravação 2
+  (`SIDEBAR_STATES`: `running`, `error`).
 - `--size LxA` (padrão `1536x1024`, o tamanho da mockup; `1000x700` para `transcriptview`;
-  `1100x760` para `detailpane`): tamanho do monitor
+  `1100x760` para `detailpane`; `360x900` para `sidebar`/`sidebarcheck`): tamanho do monitor
   virtual e da janela.
+- Componentes que alteram dados (`MUTATING_COMPONENTS` em `src/devSnapshot.js`:
+  `detailpanecheck`, `sidebarcheck`): o `snapshot.sh` exporta
+  `DAILY_TAKER_SNAPSHOT_SANDBOX=1` e `DAILY_TAKER_SNAPSHOT_ROOT=<raiz temporária>`;
+  antes de construir o componente (e de novo no início dele), `devSnapshot.js`
+  exige a marca e que `GLib.get_user_data_dir()` esteja dentro dessa raiz
+  (`isSandboxed`, testado em `tests/devSnapshot_test.js`). Fora disso recusa
+  com mensagem clara e saída ≠ 0, sem alterar nada — inclusive com
+  `DAILY_TAKER_SNAPSHOT` definido à mão na sessão real.
 - Leva ~4 s. Saída ≠ 0 se nenhum PNG for gerado; `SNAPSHOT_VERBOSE=1` mostra o
   log completo do mutter/app; `SNAPSHOT_TIMEOUT` (padrão 60 s) limita a execução.
 
@@ -114,6 +143,7 @@ bash tools/snapshot.sh OUT.png [--component window|playerbar|transcriptview|deta
        NO_AT_BRIDGE=1 GTK_A11Y=none \
        PULSE_SERVER=unix:$tmp/runtime/no-pulse PIPEWIRE_REMOTE=$tmp/runtime/no-pipewire \
        DAILY_TAKER_SNAPSHOT=OUT.png DAILY_TAKER_SNAPSHOT_SIZE=1536x1024 … \
+       DAILY_TAKER_SNAPSHOT_SANDBOX=1 DAILY_TAKER_SNAPSHOT_ROOT=$tmp \
      setsid --wait timeout 60 dbus-run-session -- \
        mutter --headless --wayland --no-x11 --wayland-display snapshot-wayland \
               --virtual-monitor 1536x1024 -- gjs-console $tmp/launcher

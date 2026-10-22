@@ -1,4 +1,5 @@
-/* exported generateCard paneActions paneBanner paneState recordingMatches statusBadge */
+/* exported emptyListMessage generateCard itemTimestamp nextSelection paneActions paneBanner paneState
+   recordingMatches statusBadge */
 
 const { normalize, searchableText } = imports.transcriptSearch;
 
@@ -56,3 +57,30 @@ var paneActions = ({ state, status, tab } = {}) => {
 var generateCard = status => status === 'ready'
     ? { title: 'Não foi possível carregar a transcrição', regenerate: true }
     : { title: 'Esta gravação ainda não foi transcrita', regenerate: false };
+
+// Item a selecionar depois que o selecionado saiu da lista: o que ocupou a mesma posição,
+// ou o último se ele era o último; -1 sem itens (ou sem posição válida antes).
+var nextSelection = (items, removedIndex) => {
+    const length = Array.isArray(items) ? items.length : 0;
+    if (length === 0 || !Number.isInteger(removedIndex) || removedIndex < 0)
+        return -1;
+    return Math.min(removedIndex, length - 1);
+};
+
+// O que mostrar no lugar da lista: nada (há itens visíveis), biblioteca vazia ou busca
+// sem resultado. Sem consulta tudo casa, então "sem resultado" só existe com busca.
+var emptyListMessage = (total, visible, query) => {
+    if (visible > 0)
+        return 'none';
+    if (!(total > 0))
+        return 'no-recordings';
+    return (query ?? '').trim() ? 'no-results' : 'none';
+};
+
+// Horário do item (segundos Unix): o menor válido entre criação e modificação. Numa
+// gravação a criação é o início; numa cópia (restauração, fixtures) a "criação" é a hora
+// da cópia, depois da modificação, que então vale. null sem nenhum dos dois.
+var itemTimestamp = (createdUnix, modifiedUnix) => {
+    const valid = [createdUnix, modifiedUnix].filter(t => Number.isFinite(t) && t > 0);
+    return valid.length ? Math.min(...valid) : null;
+};

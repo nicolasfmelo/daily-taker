@@ -2,7 +2,7 @@ imports.gi.versions.Gtk = '4.0';
 imports.gi.versions.Adw = '1';
 const { GLib } = imports.gi;
 const { test, assert, finish } = imports.harness;
-const { COMPONENTS, silencePlayback, snapshotParams, stateError } = imports.devSnapshot;
+const { COMPONENTS, MUTATING_COMPONENTS, isSandboxed, silencePlayback, snapshotParams, stateError } = imports.devSnapshot;
 
 const player = () => ({ volume: 1, mute: false });
 
@@ -93,6 +93,61 @@ test('--empty e --select 0 lidos do ambiente', () => {
     } finally {
         GLib.unsetenv('DAILY_TAKER_SNAPSHOT_EMPTY');
         GLib.unsetenv('DAILY_TAKER_SNAPSHOT_SELECT');
+        GLib.unsetenv('DAILY_TAKER_SNAPSHOT');
+    }
+});
+
+test('isSandboxed: só com a marca do snapshot.sh e a pasta de dados dentro da raiz', () => {
+    const env = { DAILY_TAKER_SNAPSHOT_SANDBOX: '1', DAILY_TAKER_SNAPSHOT_ROOT: '/tmp/daily-taker-snapshot-abc' };
+    const table = [
+        [env, '/tmp/daily-taker-snapshot-abc/data', true],
+        [env, '/tmp/daily-taker-snapshot-abc/data/', true],
+        [{ ...env, DAILY_TAKER_SNAPSHOT_ROOT: '/tmp/daily-taker-snapshot-abc/' }, '/tmp/daily-taker-snapshot-abc/data', true],
+        // Fora da raiz, prefixo enganoso, subida com "..", caminhos relativos.
+        [env, '/home/nicolas/.local/share', false],
+        [env, '/tmp/daily-taker-snapshot-abcdef/data', false],
+        [env, '/tmp/daily-taker-snapshot-abc/../../home/nicolas/.local/share', false],
+        [env, '/tmp/daily-taker-snapshot-abc/./data', false],
+        [env, 'data', false],
+        [env, '', false],
+        [env, null, false],
+        // A própria raiz não é a pasta de dados isolada.
+        [env, '/tmp/daily-taker-snapshot-abc', false],
+        // Sem a marca, marca errada ou raiz inválida.
+        [{ DAILY_TAKER_SNAPSHOT_ROOT: env.DAILY_TAKER_SNAPSHOT_ROOT }, '/tmp/daily-taker-snapshot-abc/data', false],
+        [{ ...env, DAILY_TAKER_SNAPSHOT_SANDBOX: '0' }, '/tmp/daily-taker-snapshot-abc/data', false],
+        [{ ...env, DAILY_TAKER_SNAPSHOT_SANDBOX: 'true' }, '/tmp/daily-taker-snapshot-abc/data', false],
+        [{ DAILY_TAKER_SNAPSHOT_SANDBOX: '1' }, '/tmp/daily-taker-snapshot-abc/data', false],
+        [{ ...env, DAILY_TAKER_SNAPSHOT_ROOT: '/' }, '/tmp/x/data', false],
+        [{ ...env, DAILY_TAKER_SNAPSHOT_ROOT: 'tmp/x' }, 'tmp/x/data', false],
+        [{ ...env, DAILY_TAKER_SNAPSHOT_ROOT: '/tmp/x/../y' }, '/tmp/y/data', false],
+        [{}, '/tmp/daily-taker-snapshot-abc/data', false],
+        [null, '/tmp/daily-taker-snapshot-abc/data', false],
+    ];
+    for (const [e, dataDir, expected] of table)
+        assert.equal(isSandboxed(e, dataDir), expected);
+});
+
+test('componentes que alteram dados são marcados e registrados', () => {
+    assert.equal(MUTATING_COMPONENTS.includes('detailpanecheck'), true);
+    assert.equal(MUTATING_COMPONENTS.includes('sidebarcheck'), true);
+    assert.equal(MUTATING_COMPONENTS.includes('sidebar'), false);
+    for (const name of MUTATING_COMPONENTS)
+        assert.equal(typeof COMPONENTS[name], 'function');
+});
+
+test('componente sidebar registrado; --query lido do ambiente', () => {
+    assert.equal(typeof COMPONENTS.sidebar, 'function');
+    GLib.setenv('DAILY_TAKER_SNAPSHOT', '/nonexistent/out.png', true);
+    try {
+        GLib.unsetenv('DAILY_TAKER_SNAPSHOT_QUERY');
+        assert.equal(snapshotParams().query, null);
+        GLib.setenv('DAILY_TAKER_SNAPSHOT_QUERY', 'reunião', true);
+        assert.equal(snapshotParams().query, 'reunião');
+        assert.equal(stateError({ component: 'sidebar', state: 'running' }), null);
+        assert.equal(typeof stateError({ component: 'sidebar', state: 'ready' }), 'string');
+    } finally {
+        GLib.unsetenv('DAILY_TAKER_SNAPSHOT_QUERY');
         GLib.unsetenv('DAILY_TAKER_SNAPSHOT');
     }
 });

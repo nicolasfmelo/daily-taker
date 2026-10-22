@@ -23,6 +23,7 @@
     <file>row.js</file>
     <file>secrets.js</file>
     <file>seekWaveform.js</file>
+    <file>sidebar.js</file>
     <file>sidebarModel.js</file>
     <file>speakerColors.js</file>
     <file>transcriber.js</file>

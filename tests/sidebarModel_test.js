@@ -160,4 +160,63 @@ test('generateCard: "pronta" sem transcrição pede para gerar de novo (com conf
             { title: 'Esta gravação ainda não foi transcrita', regenerate: false });
 });
 
+test('nextSelection: mesma posição se existe, senão a última; -1 sem itens', () => {
+    const table = [
+        // [itens depois da remoção, índice removido, esperado]
+        [['b', 'c'], 0, 0],
+        [['a', 'c'], 1, 1],
+        [['a', 'b'], 2, 1],
+        [['a'], 0, 0],
+        [['a'], 1, 0],
+        [['a'], 5, 0],
+        [[], 0, -1],
+        [[], 3, -1],
+        [['a', 'b'], -1, -1],
+        [['a', 'b'], 1.5, -1],
+        [['a', 'b'], NaN, -1],
+        [['a', 'b'], undefined, -1],
+        [null, 0, -1],
+        [undefined, 0, -1],
+    ];
+    for (const [items, removed, expected] of table)
+        assert.equal(M.nextSelection(items, removed), expected);
+});
+
+test('emptyListMessage: biblioteca vazia, busca sem resultado ou nada', () => {
+    const table = [
+        // [total, visíveis, consulta, esperado]
+        [0, 0, '', 'no-recordings'],
+        [0, 0, 'reuniao', 'no-recordings'],
+        [0, 0, null, 'no-recordings'],
+        [4, 0, 'zzzz', 'no-results'],
+        [4, 0, '  zz ', 'no-results'],
+        [4, 4, '', 'none'],
+        [4, 1, 'reuniao', 'none'],
+        [1, 1, 'x', 'none'],
+        // Sem consulta todas casam: nunca "nada encontrado" sem busca.
+        [4, 0, '', 'none'],
+        [4, 0, '   ', 'none'],
+        [4, 0, undefined, 'none'],
+    ];
+    for (const [total, visible, query, expected] of table)
+        assert.equal(M.emptyListMessage(total, visible, query), expected);
+});
+
+test('itemTimestamp: o menor horário válido entre criação e modificação', () => {
+    const table = [
+        // [criação, modificação, esperado] (segundos Unix)
+        [100, 200, 100],     // gravação: criada no início, modificada no fim
+        [300, 200, 200],     // cópia: criação = hora da cópia, depois da modificação
+        [0, 200, 200],       // sistema de arquivos sem data de criação
+        [200, 0, 200],
+        [-5, 200, 200],
+        [NaN, 200, 200],
+        [undefined, 200, 200],
+        [0, 0, null],
+        [null, undefined, null],
+    ];
+    for (const [created, modified, expected] of table)
+        assert.equal(M.itemTimestamp(created, modified), expected);
+});
+
 finish();

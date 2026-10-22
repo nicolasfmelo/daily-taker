@@ -116,6 +116,117 @@ button.accent-pill:active {
   font-size: smaller;
 }
 
+.sidebar-header {
+  padding: 20px 14px 14px 20px;
+}
+
+.sidebar-title {
+  font-size: 28px;
+  font-weight: 800;
+}
+
+entry.sidebar-search {
+  min-height: 36px;
+  margin: 0 14px 12px 20px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid @track;
+  background-color: @bg_window;
+  font-size: 15px;
+}
+
+entry.sidebar-search > image {
+  color: @text_dim;
+}
+
+.sidebar-list {
+  background-color: transparent;
+}
+
+.sidebar-group {
+  margin: 6px 20px 8px 20px;
+}
+
+/* Itens: separador fino entre eles; o selecionado com fundo e barra laranja. */
+.sidebar-list > row.sidebar-item {
+  margin: 0 8px;
+  padding: 14px 6px 14px 14px;
+  box-shadow: inset 0 -1px @track;
+  border-radius: 0;
+}
+
+.sidebar-list > row.sidebar-item:hover {
+  background-color: alpha(@bg_item_selected, .6);
+}
+
+.sidebar-list > row.sidebar-item:selected,
+.sidebar-list > row.sidebar-item:selected:hover {
+  border-radius: 8px;
+  background-color: @bg_item_selected;
+  box-shadow: inset 3px 0 @accent;
+}
+
+.sidebar-item .item-icon {
+  color: @text_dim;
+}
+
+.sidebar-item:selected .item-icon {
+  color: @accent;
+}
+
+.sidebar-item .item-title {
+  font-size: 15px;
+  font-weight: bold;
+}
+
+.sidebar-item .item-subtitle {
+  color: @text_dim;
+  font-size: 13px;
+}
+
+.sidebar-item .status-badge {
+  font-size: 12px;
+  margin-right: 6px;
+}
+
+.sidebar-item .status-badge.badge-running {
+  color: @text_dim;
+}
+
+.status-dot {
+  min-width: 6px;
+  min-height: 6px;
+  border-radius: 999px;
+  background-color: currentColor;
+}
+
+.sidebar-item .status-spinner {
+  min-width: 12px;
+  min-height: 12px;
+}
+
+.sidebar-item menubutton.item-menu > button {
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0;
+  color: @text_dim;
+}
+
+.sidebar-empty {
+  color: @text_dim;
+  font-size: 15px;
+}
+
+.sidebar-footer {
+  padding: 16px 20px 18px 20px;
+  color: @text_dim;
+  font-size: 14px;
+}
+
+popover modelbutton.destructive {
+  color: @error_color;
+}
+
 /* Transcrição */
 
 .transcript-block {
