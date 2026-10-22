@@ -76,8 +76,10 @@ var hasKey = entry => Boolean(entry && entry.key);
 // Envolve o save do serviço: o serviço transforma qualquer erro não-TranscribeError em
 // 'unknown'; aqui damos uma mensagem clara (sem detalhes do erro original) e não
 // recriamos o .transcript.json de uma gravação que já foi para a lixeira.
-var guardedSave = save => (recordingFile, transcript) => {
-    if (!recordingFile.query_exists(null)) {
+// isRemoved(file): a gravação saiu da biblioteca mas o arquivo ainda existe (exclusão
+// esperando o "Desfazer"): conta como excluída.
+var guardedSave = (save, { isRemoved = () => false } = {}) => (recordingFile, transcript) => {
+    if (!recordingFile.query_exists(null) || isRemoved(recordingFile)) {
         throw new TranscribeError('recordingGone', 0,
             'A gravação foi excluída antes de a transcrição terminar.');
     }

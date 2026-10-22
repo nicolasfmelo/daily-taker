@@ -3,6 +3,7 @@
   <gresource prefix="/dev/nicolas/DailyTaker@profile@/js">
     <file>appTheme.js</file>
     <file>application.js</file>
+    <file>deleteQueue.js</file>
     <file>detailPane.js</file>
     <file>devSnapshot.js</file>
     <file>main.js</file>
@@ -21,6 +22,7 @@
     <file>recordingName.js</file>
     <file>secrets.js</file>
     <file>seekWaveform.js</file>
+    <file>shortcuts.js</file>
     <file>sidebar.js</file>
     <file>sidebarModel.js</file>
     <file>speakerColors.js</file>

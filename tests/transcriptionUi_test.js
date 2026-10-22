@@ -110,6 +110,23 @@ test('guardedSave: gravação excluída durante a transcrição não salva', () 
     assert.equal(err.message, 'A gravação foi excluída antes de a transcrição terminar.');
 });
 
+test('guardedSave: gravação na fila de exclusão (arquivo ainda existe) conta como excluída', () => {
+    const saved = [];
+    const file = fakeFile(true);
+    const save = U.guardedSave(() => saved.push(1), { isRemoved: f => f === file });
+    let err = null;
+    try {
+        save(file, {});
+    } catch (e) {
+        err = e;
+    }
+    assert.equal(saved.length, 0);
+    assert.equal(err instanceof TranscribeError && err.kind === 'recordingGone', true);
+    // Outra gravação, fora da fila, salva normalmente.
+    save(fakeFile(true), {});
+    assert.equal(saved.length, 1);
+});
+
 test('canRetry: não oferece de novo se a gravação sumiu', () => {
     assert.equal(U.canRetry(new TranscribeError('network'), true), true);
     assert.equal(U.canRetry(new TranscribeError('saveFailed', 0, 'x'), true), true);
