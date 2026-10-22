@@ -78,7 +78,8 @@ comparação visual (seção 9) ficar equivalente; o que o GTK não reproduzir i
 
 ## 4. Sidebar "Gravações"
 
-- Cabeçalho: título "Gravações" + botão de ícone (⇪, ver pergunta aberta 1).
+- Cabeçalho: título "Gravações" + botão de ícone **Exportar áudio** (⇪): salva uma cópia do áudio da
+  gravação selecionada (ação `Exportar` que o Vocalis já tem, com `Gtk.FileDialog`); desabilitado sem seleção.
 - Campo de busca "Buscar gravação": filtra a lista por **nome e conteúdo da transcrição** (reusa
   `filterTranscripts`/`normalize`, sem acento e sem caixa; com debounce). Gravações sem transcrição
   só casam pelo nome.
@@ -163,10 +164,12 @@ a reprodução e carrega a nova na posição 0). Substitui o player das linhas.
 Novos módulos GTK-free (testáveis em `gjs` puro): `summarizer.js` (monta requisição, estima custo,
 chama o chat, mapeia erros reaproveitando `TranscribeError`), `summaryMarkdown.js` (Markdown simples →
 Pango seguro), `speakerColors.js`, `recordingGroups.js` (agrupar por data e rótulos "HOJE/ONTEM/…"),
-`playerModel.js` (formatos `mm:ss`, taxas, decisões de seguir/rolar). Novos módulos de UI:
+`playerModel.js` (formatos `mm:ss`, taxas, decisões de seguir/rolar), `recordingName.js` (nome padrão por data e hora). Novos módulos de UI:
 `sidebar.js`, `detailPane.js`, `playerBar.js`, `summaryView.js`, `appTheme.js` (tema fixo). Reaproveitados
 sem mudar a lógica: gravador/pipeline, `transcriber`, `transcriptionService`, `secrets`, `transcriptStore`,
 `transcriptSearch`, `transcriptFormat`, `Recording`/`RecordingList`, `waveform.js`.
+Alterado: `Recorder.start()` passa a nomear por data e hora (decisão 2 da seção 11), com teste de
+formato e de unicidade em `gjs` puro (`recordingName.js`).
 Removidos: a aba "Transcrições" (`transcriptsPage*`), o `AdwViewSwitcher`, a página `transcript` com
 "Voltar", o player embutido em `row.js`/`row.ui` (a linha da lista vira o item da sidebar).
 `Window` passa a coordenar: seleção da sidebar → `detailPane` + `playerBar`; serviços e diálogos de
@@ -195,12 +198,10 @@ custo/erro continuam centralizados nele.
    custo por chamada pequeno, mas mostrado antes. 5. **Largura**: sidebar + painel exigem janela
    larga; abaixo de 720 sp recolhe.
 
-## 11. Perguntas abertas (padrão adotado se você não disser nada)
+## 11. Decisões finais do usuário (antes eram perguntas abertas)
 
-1. **Botão ⇪ no cabeçalho da sidebar**: na imagem é uma seta para cima saindo de uma bandeja. Padrão:
-   **Importar áudio…** (escolher um arquivo `.opus/.ogg/.mp3/.flac/.wav/.m4a`, converter para Opus mono
-   32 kbps com GStreamer e adicionar à lista, para transcrever áudios que não foram gravados no app).
-   Alternativa: "Exportar áudio da gravação selecionada".
-2. **Nome padrão de novas gravações**: padrão atual `Gravação N`. Alternativa: data e hora
-   (`Gravação 22 out 14:30`).
-3. **Recolher a sidebar** em janela estreita: padrão sim (< 720 sp).
+1. **Botão ⇪ da sidebar** = **Exportar áudio** da gravação selecionada (sem importar áudio).
+2. **Nome padrão de novas gravações** = data e hora: `Gravação 22 out 14:30` (dia sem zero à
+   esquerda, mês abreviado em pt-BR minúsculo, 24 h). Se o nome já existir, acrescenta ` (2)`, ` (3)`…
+   Gravações antigas (`Recording N`, `Gravação N`) não são renomeadas.
+3. **Janela estreita**: a sidebar recolhe sobre o conteúdo abaixo de 720 sp.
