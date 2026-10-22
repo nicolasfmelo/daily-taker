@@ -42,6 +42,8 @@ dependency('libadwaita-1', version: '>= 1.0.0')
 dependency('gobject-introspection-1.0', version: '>= 1.31.6')
 dependency('gstreamer-1.0')
 dependency('gstreamer-pbutils-1.0')
+dependency('libsoup-3.0')
+dependency('libsecret-1')
 
 gnome = import('gnome')
 
