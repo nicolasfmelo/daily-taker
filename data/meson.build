@@ -1,8 +1,11 @@
-icon_dir = 'icons' / 'hicolor' / 'scalable' / 'apps'
-install_data(
-  'icons' / '@0@.svg'.format(application_id),
-  install_dir:  daily_taker_datadir / icon_dir
-)
+foreach size : ['48', '64', '128', '256', '512']
+  icon_dir = 'icons' / 'hicolor' / '@0@x@0@'.format(size) / 'apps'
+  install_data(
+    'icons' / 'hicolor' / '@0@x@0@'.format(size) / 'apps' / 'dev.nicolas.DailyTaker.png',
+    rename: '@0@.png'.format(application_id),
+    install_dir: daily_taker_datadir / icon_dir
+  )
+endforeach
 
 icon_dir = 'icons' / 'hicolor' / 'symbolic' / 'apps'
 install_data(
