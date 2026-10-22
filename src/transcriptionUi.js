@@ -60,11 +60,12 @@ var confirmMessage = (seconds, { regenerate = false, namedSpeakers = false } = {
 
 // Ações da linha que dependem da transcrição. Renomear durante a execução é bloqueado:
 // o serviço grava ao lado do arquivo antigo e a transcrição paga se perderia.
-// Abrir só faz sentido com a transcrição pronta.
-var rowActions = ({ status, seconds, editMode }) => ({
+// Abrir vale sempre que há transcrição no disco e nada em andamento: uma nova
+// execução que falhou ('error') não apaga a transcrição anterior.
+var rowActions = ({ status, seconds, editMode, hasTranscript = false }) => ({
     transcribe: !editMode && status !== 'running' && Number.isFinite(seconds) && seconds > 0,
     rename: !editMode && status !== 'running',
-    open: !editMode && status === 'ready',
+    open: !editMode && status !== 'running' && (status === 'ready' || hasTranscript),
 });
 
 var hasNamedSpeakers = t => Object.values(t?.speakers ?? {}).some(Boolean);

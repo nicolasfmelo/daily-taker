@@ -209,11 +209,13 @@ var Row = GObject.registerClass({
     refreshTranscriptionStatus() {
         const file = this._recording.file;
         const serviceStatus = this._transcriptionService.status(file);
-        const hasTranscript = serviceStatus === 'none' && loadTranscript(file) !== null;
+        // Durante a execução o arquivo pode estar sendo regravado: não abre.
+        const hasTranscript = serviceStatus !== 'running' && loadTranscript(file) !== null;
         const status = rowStatus({ hasTranscript, serviceStatus });
         const info = statusInfo(status);
 
         this._transcriptionStatus = status;
+        this._hasTranscript = hasTranscript;
         this._transcriptionSpinner.spinning = status === 'running';
         if (status === 'running')
             this._transcriptionStatusStack.visible_child_name = 'running';
@@ -224,7 +226,7 @@ var Row = GObject.registerClass({
         if (info.icon)
             this._transcriptionStatusIcon.icon_name = info.icon;
         this._transcriptionStatusStack.tooltip_text = info.tooltip;
-        this._openTranscriptBtn.visible = status === 'ready';
+        this._openTranscriptBtn.visible = rowActions({ status, hasTranscript, editMode: false }).open;
         this._syncTranscriptionActions();
     }
 
@@ -235,6 +237,7 @@ var Row = GObject.registerClass({
             status: this._transcriptionStatus,
             seconds: this._recording.duration / 1e9,
             editMode: this._editMode,
+            hasTranscript: this._hasTranscript,
         });
         this.transcribeAction.enabled = actions.transcribe;
         this.renameAction.enabled = actions.rename;

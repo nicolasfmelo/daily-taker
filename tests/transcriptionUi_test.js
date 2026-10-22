@@ -197,4 +197,14 @@ test('rowActions: abrir só com transcrição pronta, mesmo sem duração', () =
     assert.equal(U.rowActions({ status: 'ready', seconds: 0, editMode: false }).open, true);
 });
 
+test('rowActions: abrir com transcrição no disco mesmo se a nova execução falhou', () => {
+    assert.equal(U.rowActions({ status: 'error', seconds: 60, editMode: false, hasTranscript: true }).open, true);
+    assert.equal(U.rowActions({ status: 'error', seconds: 60, editMode: false, hasTranscript: false }).open, false);
+});
+
+test('rowActions: transcrição no disco não abre durante execução nem em edição', () => {
+    assert.equal(U.rowActions({ status: 'running', seconds: 60, editMode: false, hasTranscript: true }).open, false);
+    assert.equal(U.rowActions({ status: 'error', seconds: 60, editMode: true, hasTranscript: true }).open, false);
+});
+
 finish();
