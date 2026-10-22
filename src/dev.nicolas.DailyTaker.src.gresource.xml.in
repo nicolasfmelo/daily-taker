@@ -16,11 +16,14 @@
     <file>transcriber.js</file>
     <file>transcript.js</file>
     <file>transcriptFormat.js</file>
+    <file>transcriptSearch.js</file>
     <file>transcriptStore.js</file>
     <file>transcriptView.js</file>
     <file>transcriptViewModel.js</file>
     <file>transcriptionService.js</file>
     <file>transcriptionUi.js</file>
+    <file>transcriptsPage.js</file>
+    <file>transcriptsPageModel.js</file>
     <file>utils.js</file>
     <file>waveform.js</file>
     <file>window.js</file>

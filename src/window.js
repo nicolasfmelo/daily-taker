@@ -24,12 +24,13 @@ const { Recorder } = imports.recorder;
 const { RecordingList } = imports.recordingList;
 const { RecordingsListWidget } = imports.recordingListWidget;
 const { RecorderWidget } = imports.recorderWidget;
-const { Settings } = imports.application;
+const { RecordingsDir, Settings } = imports.application;
 const { defaultKeyStore } = imports.secrets;
 const { TranscribeError, transcribeFile } = imports.transcriber;
 const { saveTranscript } = imports.transcriptStore;
 const { TranscriptionService } = imports.transcriptionService;
 const { TranscriptView } = imports.transcriptView;
+const { TranscriptsPage } = imports.transcriptsPage;
 const { viewHeader } = imports.transcriptViewModel;
 const { canRetry, confirmMessage, guardedSave, hasKey, hasNamedSpeakers } = imports.transcriptionUi;
 
@@ -45,6 +46,7 @@ var Window = GObject.registerClass({
     InternalChildren: [
         'mainStack', 'emptyPage', 'column', 'headerRevealer', 'toastOverlay',
         'windowTitle', 'backButton', 'recordButton',
+        'viewStack', 'recordingsStack', 'titleStack', 'switcherBar', 'narrowBreakpoint',
     ],
 }, class Window extends Adw.ApplicationWindow {
 
@@ -77,6 +79,8 @@ var Window = GObject.registerClass({
                 else
                     this.state = WindowState.LIST;
             }
+            // Gravação nova, excluída (ou desfeita) ou lista recarregada.
+            this._transcriptsPage?.invalidate();
         });
 
         this._closed = false;
@@ -92,11 +96,30 @@ var Window = GObject.registerClass({
         this._recordingListWidget.connect('transcribe-requested', (_widget, recording) => {
             this._requestTranscription(recording);
         });
-        this.transcriptionService.connectChange(uri => {
+        this.transcriptionService.connectChange((uri, status) => {
             const file = this._transcriptView?.recordingFile;
             if (file && file.get_uri() === uri)
                 this._transcriptView.running = this.transcriptionService.status(file) === 'running';
+            // Terminou (salva ou falhou): a aba Transcrições reflete o disco.
+            if (status !== 'running')
+                this._transcriptsPage.invalidate();
         });
+
+        // Só aparece na aba gravações que ainda estão na lista: exclui órfãs e as
+        // excluídas aguardando o "Desfazer".
+        this._transcriptsPage = new TranscriptsPage({
+            dir: RecordingsDir,
+            existsFn: file => this._findRecording(file) !== null && file.query_exists(null),
+        });
+        this._transcriptsPage.connect('transcript-activated', (_page, file, transcript) => {
+            this.showTranscript(file, transcript);
+        });
+        this._viewStack.add_titled_with_icon(this._transcriptsPage, 'transcripts',
+            'Transcrições', 'text-x-generic-symbolic');
+
+        this._narrow = false;
+        this._narrowBreakpoint.connect('apply', () => this._setNarrow(true));
+        this._narrowBreakpoint.connect('unapply', () => this._setNarrow(false));
 
         this._recordingListWidget.connect('row-deleted', (_listBox, recording, index) => {
             this._recordingList.remove(index);
@@ -218,6 +241,8 @@ var Window = GObject.registerClass({
     }
 
     onRecorderStopped(widget, recording) {
+        // A gravação nova entra em modo de renomear na aba Gravações.
+        this._viewStack.visible_child_name = 'recordings';
         this._recordingList.insert(0, recording);
         this._recordingListWidget.list.get_row_at_index(0).editMode = true;
         this.state = WindowState.LIST;
@@ -351,11 +376,13 @@ var Window = GObject.registerClass({
             isHeaderVisible = false;
             break;
         case WindowState.LIST:
-            visibleChild = 'recordings';
+            visibleChild = 'views';
+            this._recordingsStack.visible_child_name = 'recordings';
             isHeaderVisible = true;
             break;
         case WindowState.EMPTY:
-            visibleChild = 'empty';
+            visibleChild = 'views';
+            this._recordingsStack.visible_child_name = 'empty';
             isHeaderVisible = true;
             break;
         case WindowState.TRANSCRIPT:
@@ -373,6 +400,21 @@ var Window = GObject.registerClass({
         this._mainStack.visible_child_name = visibleChild;
         this._headerRevealer.reveal_child = isHeaderVisible;
         this._state = state;
+        this._syncViewSwitcher();
+    }
+
+    _setNarrow(narrow) {
+        this._narrow = narrow;
+        this._syncViewSwitcher();
+    }
+
+    // Abas Gravações/Transcrições: no topo em telas largas, embaixo em estreitas; somem
+    // gravando (cabeçalho oculto) e na visão de transcrição (título + Voltar).
+    _syncViewSwitcher() {
+        // Antes do primeiro estado (lista ainda carregando) a janela já mostra as abas.
+        const inViews = this._state !== WindowState.RECORDER && this._state !== WindowState.TRANSCRIPT;
+        this._titleStack.visible_child_name = inViews && !this._narrow ? 'switcher' : 'title';
+        this._switcherBar.reveal = inViews && this._narrow;
     }
 
     get state() {
