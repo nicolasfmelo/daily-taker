@@ -1,4 +1,5 @@
 const System = imports.system;
+const { GLib } = imports.gi;
 
 var _results = { passed: 0, failed: 0 };
 
@@ -52,6 +53,33 @@ function test(name, fn) {
         _results.failed++;
         print(`FAIL ${name}\n     ${e.message}`);
     }
+}
+
+// Roda fn (que devolve uma Promise) num MainLoop aninhado; falha se rejeitar ou estourar o tempo.
+function testAsync(name, fn, timeoutMs = 10000) {
+    test(name, () => {
+        const loop = GLib.MainLoop.new(null, false);
+        let done = false;
+        let failure = null;
+        const timer = GLib.timeout_add(GLib.PRIORITY_DEFAULT, timeoutMs, () => {
+            failure = new Error(`tempo esgotado (${timeoutMs} ms)`);
+            done = true;
+            loop.quit();
+            return GLib.SOURCE_REMOVE;
+        });
+        Promise.resolve().then(fn).catch(e => {
+            failure = e;
+        }).then(() => {
+            if (done)
+                return;
+            done = true;
+            GLib.source_remove(timer);
+            loop.quit();
+        });
+        loop.run();
+        if (failure)
+            throw failure;
+    });
 }
 
 function finish() {

@@ -1,4 +1,4 @@
-const { test, assert, finish } = imports.harness;
+const { test, testAsync, assert, finish } = imports.harness;
 
 test('assert.equal aceita valores iguais', () => {
     assert.equal(1, 1);
@@ -15,6 +15,13 @@ test('assert.deepEqual compara estruturas', () => {
 
 test('assert.throws detecta exceções', () => {
     assert.throws(() => { throw new Error('x'); });
+});
+
+testAsync('testAsync espera a Promise resolver', async () => {
+    await new Promise(resolve => imports.gi.GLib.timeout_add(0, 5, () => {
+        resolve();
+        return imports.gi.GLib.SOURCE_REMOVE;
+    }));
 });
 
 finish();
