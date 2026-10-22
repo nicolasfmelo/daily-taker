@@ -1,9 +1,10 @@
 /* exported Recording */
-const { Gio, GLib, GObject, Gst, GstPbutils } = imports.gi;
+const { Gio, GLib, GObject, GstPbutils } = imports.gi;
 const { CacheDir } = imports.application;
 const ByteArray = imports.byteArray;
 const Recorder = imports.recorder;
 const { moveTranscript, trashTranscript } = imports.transcriptStore;
+const { generatePeaks } = imports.peaksPipeline;
 
 var Recording = new GObject.registerClass({
     Signals: {
@@ -26,7 +27,6 @@ var Recording = new GObject.registerClass({
     _init(file) {
         this._file = file;
         this._peaks = [];
-        this._loadedPeaks = [];
         super._init({});
 
         let info = file.query_info('time::created,time::modified,standard::content-type', 0, null);
@@ -156,40 +156,16 @@ var Recording = new GObject.registerClass({
     }
 
     generatePeaks() {
-        this.pipeline = Gst.parse_launch('uridecodebin name=uridecodebin ! audioconvert ! audio/x-raw,channels=1 ! level name=level ! fakesink name=faked');
-
-
-        let uridecodebin = this.pipeline.get_by_name('uridecodebin');
-        uridecodebin.set_property('uri', this.uri);
-
-        let fakesink = this.pipeline.get_by_name('faked');
-        fakesink.set_property('qos', false);
-        fakesink.set_property('sync', true);
-
-        const bus = this.pipeline.get_bus();
-        this.pipeline.set_state(Gst.State.PLAYING);
-        bus.add_signal_watch();
-
-        bus.connect('message', (_bus, message) => {
-            let s;
-            switch (message.type) {
-            case Gst.MessageType.ELEMENT:
-                s = message.get_structure();
-                if (s && s.has_name('level')) {
-                    const peakVal = s.get_value('peak');
-
-                    if (peakVal) {
-                        const peak = peakVal.get_nth(0);
-                        this._loadedPeaks.push(Math.pow(10, peak / 20));
-                    }
-                }
-                break;
-            case Gst.MessageType.EOS:
-                this.peaks = this._loadedPeaks;
-                this.pipeline.set_state(Gst.State.NULL);
-                this.pipeline = null;
-                break;
-            }
+        this._peaksJob?.cancel();
+        this._peaksJob = generatePeaks(this.uri, {
+            onDone: peaks => {
+                this._peaksJob = null;
+                this.peaks = peaks;
+            },
+            onError: error => {
+                this._peaksJob = null;
+                log(`Failed to generate the waveform of ${this.name}: ${error.message}`);
+            },
         });
     }
 });

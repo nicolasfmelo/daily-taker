@@ -5,6 +5,7 @@
     <file>application.js</file>
     <file>devSnapshot.js</file>
     <file>main.js</file>
+    <file>peaksPipeline.js</file>
     <file>playback.js</file>
     <file>playerModel.js</file>
     <file>preferences.js</file>
