@@ -28,6 +28,17 @@ Use gravações curtas para gastar pouco.
   de áudio (por exemplo, de alto-falantes para fones). Esperado: o indicador
   *Sistema* avisa que o sinal do sistema parou; a gravação do microfone continua
   e pode ser parada e salva normalmente.
+- [ ] **Microfone some no meio da gravação.** Gravar com o microfone USB e,
+  no meio, desconectá-lo. Esperado: aparece um aviso (toast) de falha na
+  gravação, a janela volta para a lista (não fica presa na tela de gravação) e o
+  trecho já gravado fica salvo e toca.
+- [ ] **Falha ao iniciar a gravação.** Iniciar a gravação com uma entrada ou
+  saída de áudio indisponível (por exemplo, sem nenhum dispositivo de saída
+  padrão no PipeWire). Esperado: aviso de que não foi possível gravar; sem
+  janela travada; é possível iniciar uma nova gravação depois.
+- [ ] **Parar logo ao começar.** Clicar em gravar e parar em menos de meio
+  segundo. Esperado: aviso "Nada foi gravado.", nenhuma gravação nova na lista e
+  nenhum erro no stderr.
 - [ ] **Matar o app durante a gravação.** Gravar alguns segundos e rodar
   `pkill -9 -f dev.nicolas.DailyTaker`. Reabrir o app. Esperado: o arquivo
   parcial aparece na lista e toca até onde foi gravado.
@@ -101,6 +112,16 @@ Use gravações curtas para gastar pouco.
 - [ ] **Excluir e desfazer.** Excluir uma gravação com transcrição. Esperado:
   toast `"Gravação N" excluída` com *Desfazer*; ao desfazer, áudio e transcrição
   voltam; sem desfazer, ambos vão para a lixeira.
+- [ ] **Renomear atualiza o título da transcrição.** Renomear uma gravação
+  transcrita de "Gravação 3" para "Daily 22/10". Esperado: o cabeçalho da
+  transcrição, a linha na aba *Transcrições* e o nome sugerido na exportação
+  passam a usar "Daily 22/10"; a busca por "daily" encontra a transcrição.
+- [ ] **Nome inválido.** Tentar renomear uma gravação para um nome que termine em
+  `.transcript.json`. Esperado: o nome é recusado com um aviso curto e a
+  gravação não é renomeada.
+- [ ] **Nome com caracteres especiais.** Renomear uma gravação para
+  `Reunião P&D <revisão>` e excluí-la. Esperado: o aviso de exclusão mostra o
+  nome inteiro e legível (sem ficar vazio).
 - [ ] **JSON corrompido.** Estragar um `.transcript.json` (por exemplo, apagar
   metade do arquivo) e reabrir o app. Esperado: o arquivo é ignorado (a gravação
   aparece sem transcrição), o app não trava e o stderr não mostra exceções.
@@ -121,5 +142,13 @@ Use gravações curtas para gastar pouco.
 - `Adw.MessageDialog` e `Adw.PreferencesWindow` estão marcados como obsoletos na
   libadwaita 1.9 (ainda funcionam; devem ser trocados por `Adw.AlertDialog` e
   `Adw.PreferencesDialog`).
+- Se a gravação for renomeada logo depois de uma falha ao salvar a transcrição
+  (dentro da janela do aviso "Tentar de novo"), a transcrição paga não pode mais
+  ser salva e se perde. Raro; a guarda fica para o redesenho.
+- O envio do áudio que não recebe resposta (rede travada) é interrompido após
+  10 minutos sem atividade e tentado de novo até 3 vezes; em reunião longa com
+  conexão ruim isso pode levar muito tempo e gerar mais de uma cobrança.
+- A transcrição retida na memória depois de uma falha ao salvar só existe
+  enquanto o app está aberto.
 - A largura mínima da janela (350 px) ainda não foi revisada para todas as
   telas; em larguras muito pequenas alguns controles podem ficar apertados.
