@@ -1,5 +1,5 @@
 /* exported RATES formatShortClock positionLabel rateLabel clampVolume fractionFromX bucketPeaks shouldScroll toggleMute volumeIcon
-   SeekCoalescer positionHeld */
+   SeekCoalescer positionHeld BAR_FLOOR normalizeBars waveformBars BarsCache */
 
 var RATES = [0.75, 1, 1.25, 1.5, 2];
 
@@ -29,6 +29,9 @@ var fractionFromX = (x, width) => {
     return Math.min(1, Math.max(0, x / width));
 };
 
+// Energia de cada balde (RMS dos picos de 100 ms que caem nele; não finito conta como 0).
+// O máximo por balde deixava uma gravação longa de fala com todas as barras no topo: em
+// ~16 s de fala sempre há uma sílaba alta.
 var bucketPeaks = (peaks, bars) => {
     if (!finite(bars) || bars < 1)
         return [];
@@ -40,14 +43,66 @@ var bucketPeaks = (peaks, bars) => {
     for (let i = 0; i < count; i++) {
         const start = Math.floor(i * values.length / count);
         const end = Math.max(Math.floor((i + 1) * values.length / count), start + 1);
-        let max = 0;
+        let sum = 0;
         for (let j = start; j < end; j++) {
-            if (finite(values[j]) && values[j] > max)
-                max = values[j];
+            const v = finite(values[j]) ? values[j] : 0;
+            sum += v * v;
         }
-        out.push(max);
+        out.push(Math.sqrt(sum / (end - start)));
     }
     return out;
+};
+
+// Altura mínima (fração) de uma barra que não é silêncio.
+var BAR_FLOOR = 0.18;
+
+const percentile = (sorted, q) => sorted[Math.min(sorted.length - 1, Math.max(0, Math.floor(q * (sorted.length - 1))))];
+
+// Alturas 0–1 das barras: estica os valores entre os percentis 5 e 95 (acima satura em 1;
+// o que não é silêncio fica pelo menos em BAR_FLOOR), para as diferenças de volume da fala
+// aparecerem como na mockup. Silêncio (0) fica 0. Um sinal quase constante (variação menor
+// que 10 % do p95) não é esticado: só dividido pelo p95, para não inventar variação.
+var normalizeBars = values => {
+    const list = Array.isArray(values) ? values.map(v => finite(v) && v > 0 ? v : 0) : [];
+    if (list.length === 0)
+        return [];
+    const sorted = [...list].sort((a, b) => a - b);
+    const high = percentile(sorted, 0.95);
+    if (!(high > 0))
+        return list.map(() => 0);
+    const low = percentile(sorted, 0.05);
+    const spread = high - low;
+    if (spread < 0.1 * high)
+        return list.map(v => Math.min(1, v / high));
+    return list.map(v => v <= 0 ? 0
+        : BAR_FLOOR + (1 - BAR_FLOOR) * Math.min(1, Math.max(0, (v - low) / spread)));
+};
+
+// Alturas das `bars` barras da onda a partir dos picos da gravação.
+var waveformBars = (peaks, bars) => normalizeBars(bucketPeaks(peaks, bars));
+
+// Guarda as últimas barras calculadas: o desenho (a cada quadro do marcador) só recalcula
+// quando os picos (outro array) ou o número de barras (outra largura) mudam.
+var BarsCache = class BarsCache {
+    constructor(compute = waveformBars) {
+        this._compute = compute;
+        this.clear();
+    }
+
+    get(peaks, count) {
+        if (peaks !== this._peaks || count !== this._count) {
+            this._peaks = peaks;
+            this._count = count;
+            this._bars = this._compute(peaks, count);
+        }
+        return this._bars;
+    }
+
+    clear() {
+        this._peaks = undefined;
+        this._count = undefined;
+        this._bars = [];
+    }
 };
 
 var shouldScroll = ({ follow, index, previousIndex } = {}) =>

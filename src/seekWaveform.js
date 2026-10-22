@@ -5,7 +5,7 @@
 const { GObject, Gtk } = imports.gi;
 const Cairo = imports.cairo;
 
-const { bucketPeaks, fractionFromX } = imports.playerModel;
+const { BarsCache, fractionFromX } = imports.playerModel;
 
 const BAR_WIDTH = 3;
 const BAR_GAP = 2;
@@ -27,6 +27,8 @@ var SeekWaveform = GObject.registerClass({
 }, class SeekWaveform extends Gtk.DrawingArea {
     _init(params = {}) {
         this._peaks = [];
+        // Alturas por (picos, número de barras): o marcador redesenha a cada posição.
+        this._bars = new BarsCache();
         this._position = 0;
         this._dragging = false;
         this._dragStartX = 0;
@@ -99,10 +101,9 @@ var SeekWaveform = GObject.registerClass({
         const usable = height - 2 * MARKER_RADIUS;
         const markerX = Math.min(width - MARKER_RADIUS, Math.max(MARKER_RADIUS, this._position * width));
 
-        const bars = bucketPeaks(this._peaks, count);
-        // Normaliza pelo maior pico para gravações baixas não virarem uma linha.
-        const loudest = Math.max(...bars, 0);
-        const scale = loudest > 0 ? 1 / loudest : 0;
+        // Já normalizadas (0–1, percentis; ver waveformBars): gravações baixas não viram uma
+        // linha e uma gravação longa de fala não vira barras todas iguais.
+        const bars = this._bars.get(this._peaks, count);
 
         cr.setLineCap(Cairo.LineCap.ROUND);
         cr.setLineWidth(BAR_WIDTH);
@@ -114,7 +115,7 @@ var SeekWaveform = GObject.registerClass({
                 const x = offset + i * step + BAR_WIDTH / 2;
                 if ((x <= markerX) !== played)
                     return;
-                const h = Math.max(MIN_BAR_HEIGHT, value * scale * usable);
+                const h = Math.max(MIN_BAR_HEIGHT, value * usable);
                 const half = Math.max(0, h / 2 - cap);
                 cr.moveTo(x, middle - half);
                 cr.lineTo(x, middle + half);

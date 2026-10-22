@@ -36,10 +36,26 @@ test('fractionFromX', () => {
     assert.equal(P.fractionFromX(10, -5), 0);
 });
 
-test('bucketPeaks pega o máximo por balde', () => {
-    assert.deepEqual(P.bucketPeaks([0.1, 0.9, 0.2, 0.3], 2), [0.9, 0.3]);
-    assert.deepEqual(P.bucketPeaks([0.1, 0.9, 0.2, 0.3], 4), [0.1, 0.9, 0.2, 0.3]);
-    assert.deepEqual(P.bucketPeaks([0.5, 0.2, 0.8], 1), [0.8]);
+const near = (actual, expected, what = '') => {
+    if (Math.abs(actual - expected) > 1e-6)
+        throw new Error(`${what} esperado ${expected}, recebido ${actual}`);
+};
+const nearAll = (actual, expected) => {
+    assert.equal(actual.length, expected.length);
+    actual.forEach((v, i) => near(v, expected[i], `[${i}]`));
+};
+
+test('bucketPeaks: RMS (energia média) por balde, não o máximo', () => {
+    nearAll(P.bucketPeaks([0.1, 0.9, 0.2, 0.3], 2), [Math.sqrt((0.01 + 0.81) / 2), Math.sqrt((0.04 + 0.09) / 2)]);
+    nearAll(P.bucketPeaks([0.1, 0.9, 0.2, 0.3], 4), [0.1, 0.9, 0.2, 0.3]);
+    nearAll(P.bucketPeaks([0.5, 0.2, 0.8], 1), [Math.sqrt((0.25 + 0.04 + 0.64) / 3)]);
+});
+
+test('bucketPeaks: um pico isolado não enche o balde (a fala longa não vira barras iguais)', () => {
+    const quiet = new Array(99).fill(0.1);
+    const [withSpike] = P.bucketPeaks([...quiet, 1], 1);
+    assert.equal(withSpike < 0.2, true);
+    assert.equal(withSpike > 0.1, true);
 });
 
 test('bucketPeaks: menos picos que barras repete em vez de deixar buracos', () => {
@@ -53,6 +69,105 @@ test('bucketPeaks: vazio e barras inválidas', () => {
     assert.deepEqual(P.bucketPeaks([0.5], 0), []);
     assert.deepEqual(P.bucketPeaks([0.5], -2), []);
     assert.deepEqual(P.bucketPeaks([0.5], NaN), []);
+});
+
+// Fala de ~19 min com trechos mais altos e mais baixos e pausas: um pico por 100 ms.
+const syntheticSpeech = () => {
+    // Numa reunião o volume muda pouco de um trecho para outro.
+    const levels = [0.7, 0.85, 0.6, 0.9, 0.75, 0.65, 0.8, 0.95, 0.7, 0.85];
+    const peaks = [];
+    for (let i = 0; i < 11480; i++) {
+        const level = levels[Math.floor(i / 400) % levels.length];
+        // Sílabas (variação rápida) e uma pausa curta a cada ~3 s.
+        const syllable = 0.6 + 0.4 * Math.abs(Math.sin(i * 1.7));
+        peaks.push(i % 30 < 4 ? 0.02 : level * syllable);
+    }
+    return peaks;
+};
+
+test('normalizeBars: estica entre os percentis 5 e 95, com piso para o que não é silêncio', () => {
+    const values = [];
+    for (let i = 0; i < 70; i++)
+        values.push(0.6 + 0.35 * ((i * 37) % 70) / 69);
+    const out = P.normalizeBars(values);
+    assert.equal(out.length, 70);
+    assert.equal(out.every(v => v >= P.BAR_FLOOR - 1e-9 && v <= 1), true);
+    assert.equal(Math.max(...out), 1);
+    near(Math.min(...out), P.BAR_FLOOR, 'mínimo');
+    // Monotônico: um valor maior nunca fica com barra menor.
+    for (let i = 0; i < values.length; i++) {
+        for (let j = 0; j < values.length; j++) {
+            if (values[i] < values[j])
+                assert.equal(out[i] <= out[j], true);
+        }
+    }
+    assert.equal(new Set(out.map(v => v.toFixed(3))).size > 50, true);
+});
+
+test('normalizeBars: silêncio fica em zero; acima do p95 satura em 1', () => {
+    const values = [0, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 5.0];
+    const out = P.normalizeBars(values);
+    assert.equal(out[0], 0);
+    assert.equal(out[9], 1);
+    assert.equal(out.slice(1).every(v => v >= P.BAR_FLOOR), true);
+});
+
+test('normalizeBars: sinal quase constante não é esticado (não inventa variação)', () => {
+    const values = [0.98, 0.99, 1.0, 0.985, 0.995, 0.99, 0.98, 1.0];
+    const out = P.normalizeBars(values);
+    assert.equal(out.every(v => v > 0.95), true);
+    assert.deepEqual(P.normalizeBars([0, 0, 0]), [0, 0, 0]);
+    assert.deepEqual(P.normalizeBars([]), []);
+});
+
+test('waveformBars: gravação longa de fala sai com alturas variadas (não chapada)', () => {
+    const peaks = syntheticSpeech();
+    const bars = P.waveformBars(peaks, 70);
+    assert.equal(bars.length, 70);
+    const tall = bars.filter(v => v >= 0.95).length;
+    const distinct = new Set(bars.map(v => Math.round(v * 20))).size;
+    print(`     mínimo ${Math.min(...bars).toFixed(2)}, ${tall}/70 barras ≥ 0,95, ${distinct} alturas distintas`);
+    assert.equal(Math.min(...bars) < 0.4, true);
+    assert.equal(tall < 70 * 0.3, true);
+    assert.equal(distinct >= 8, true);
+    // O máximo por balde (o antigo) deixava quase tudo no topo.
+    const oldMax = (() => {
+        const out = [];
+        for (let i = 0; i < 70; i++) {
+            const a = Math.floor(i * peaks.length / 70);
+            const b = Math.floor((i + 1) * peaks.length / 70);
+            out.push(Math.max(...peaks.slice(a, b)));
+        }
+        const top = Math.max(...out);
+        return out.map(v => v / top);
+    })();
+    assert.equal(Math.min(...oldMax) > 0.6, true);
+});
+
+test('waveformBars: barras inválidas e sem picos', () => {
+    assert.deepEqual(P.waveformBars([0.5], 0), []);
+    assert.deepEqual(P.waveformBars([], 3), [0, 0, 0]);
+});
+
+test('BarsCache: recalcula só quando os picos (mesmo array) ou o número de barras mudam', () => {
+    let computed = 0;
+    const cache = new P.BarsCache((peaks, count) => {
+        computed++;
+        return P.waveformBars(peaks, count);
+    });
+    const peaks = syntheticSpeech();
+    const first = cache.get(peaks, 70);
+    assert.equal(cache.get(peaks, 70), first);
+    assert.equal(computed, 1);
+    cache.get(peaks, 71);
+    assert.equal(computed, 2);
+    cache.get([...peaks], 71);
+    assert.equal(computed, 3);
+    cache.clear();
+    cache.get(peaks, 71);
+    assert.equal(computed, 4);
+    // Sem função: usa waveformBars.
+    assert.deepEqual(new P.BarsCache().get([], 2), [0, 0]);
 });
 
 test('shouldScroll', () => {
@@ -74,7 +189,9 @@ test('playerModel: entradas ausentes ficam bem formadas', () => {
     assert.equal(P.fractionFromX(NaN, 100), 0);
     assert.equal(P.fractionFromX(10, NaN), 0);
     assert.deepEqual(P.bucketPeaks(null, 2), [0, 0]);
-    assert.deepEqual(P.bucketPeaks([NaN, undefined, 0.5], 3), [0, 0, 0.5]);
+    nearAll(P.bucketPeaks([NaN, undefined, 0.5], 3), [0, 0, 0.5]);
+    assert.deepEqual(P.normalizeBars(null), []);
+    assert.deepEqual(P.normalizeBars([NaN, -1, undefined]), [0, 0, 0]);
     assert.equal(P.shouldScroll({}), false);
     assert.equal(P.shouldScroll({ follow: true, index: NaN, previousIndex: 1 }), false);
 });

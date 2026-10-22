@@ -43,6 +43,8 @@ data="$dir/daily-taker"
 marker="$dir/$marker_name"
 mode="${FIXTURE_FAST:+fast}"
 mode="${mode:-full}"
+# Versão do áudio gerado: mudar a fórmula do tom refaz o áudio guardado de antes.
+audio_version=2
 
 is_fixture_name() {
     local entry="$1" n
@@ -69,21 +71,23 @@ fi
 mkdir -p -- "$data"
 
 # Reaproveita o áudio de uma execução anterior no mesmo modo (o resto é refeito).
-if [ "$(cat -- "$marker" 2>/dev/null || true)" != "$mode" ]; then
+if [ "$(cat -- "$marker" 2>/dev/null || true)" != "$mode:$audio_version" ]; then
     for n in "${names[@]}"; do
         rm -f -- "$data/$n"
     done
 fi
-printf '%s\n' "$mode" > "$marker"
+printf '%s\n' "$mode:$audio_version" > "$marker"
 
 for i in "${!names[@]}"; do
     out="$data/${names[$i]}"
     [ -s "$out" ] && continue
     secs="${durations[$i]}"
     [ "$mode" = full ] || secs=30
-    # Tom com volume variando, para a forma de onda não sair chapada.
+    # Tom com volume variando como uma fala: sílabas (1,3 e 0,37 Hz) e trechos mais altos e
+    # mais baixos de dezenas de segundos (0,013 e 0,041 Hz), para a forma de onda de uma
+    # gravação longa não sair chapada.
     ffmpeg -nostdin -loglevel error -y -f lavfi \
-        -i "aevalsrc='0.4*sin(2*PI*220*t)*(0.55+0.45*sin(2*PI*0.37*t)*sin(2*PI*1.3*t))':s=16000:d=$secs" \
+        -i "aevalsrc='0.4*sin(2*PI*220*t)*(0.55+0.45*sin(2*PI*0.37*t)*sin(2*PI*1.3*t))*(0.3+0.7*abs(sin(2*PI*0.013*t)*sin(2*PI*0.041*t+1.3)))':s=16000:d=$secs" \
         -ac 1 -c:a libopus -b:a 32k -f ogg "$out.tmp"
     mv -f -- "$out.tmp" "$out"
 done
