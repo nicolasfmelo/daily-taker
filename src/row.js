@@ -3,7 +3,7 @@ const { Gdk, Gio, GObject, Gtk } = imports.gi;
 const { displayDateTime, formatTime } = imports.utils;
 const { WaveForm, WaveType } = imports.waveform;
 const { loadTranscript } = imports.transcriptStore;
-const { rowStatus, statusInfo } = imports.transcriptionUi;
+const { rowActions, rowStatus, statusInfo } = imports.transcriptionUi;
 
 var RowState = {
     PLAYING: 0,
@@ -170,6 +170,7 @@ var Row = GObject.registerClass({
         this._duration.markup = formatTime(recording.duration);
         recording.connect('notify::duration', () => {
             this._duration.label = formatTime(recording.duration);
+            this._syncTranscriptionActions();
         });
     }
 
@@ -179,7 +180,7 @@ var Row = GObject.registerClass({
                 this._recording.name = this._entry.text;
 
             this.editMode = false;
-            this.renameAction.enabled = true;
+            this._syncTranscriptionActions();
             this._entry.remove_css_class('error');
         } catch (e) {
             this._entry.add_css_class('error');
@@ -206,7 +207,19 @@ var Row = GObject.registerClass({
         if (info.icon)
             this._transcriptionStatusIcon.icon_name = info.icon;
         this._transcriptionStatusStack.tooltip_text = info.tooltip;
-        this.transcribeAction.enabled = status !== 'running' && !this._editMode;
+        this._syncTranscriptionActions();
+    }
+
+    // Transcrever exige duração conhecida (estimativa de custo honesta); renomear fica
+    // bloqueado durante a execução (F2, botão e menu passam todos por recording.rename).
+    _syncTranscriptionActions() {
+        const actions = rowActions({
+            status: this._transcriptionStatus,
+            seconds: this._recording.duration / 1e9,
+            editMode: this._editMode,
+        });
+        this.transcribeAction.enabled = actions.transcribe;
+        this.renameAction.enabled = actions.rename;
     }
 
     set editMode(state) {
@@ -228,7 +241,7 @@ var Row = GObject.registerClass({
             if (action !== 'save')
                 this.actionGroup.lookup(action).enabled = !state;
         }
-        this.transcribeAction.enabled = !state && this._transcriptionStatus !== 'running';
+        this._syncTranscriptionActions();
     }
 
     get editMode() {

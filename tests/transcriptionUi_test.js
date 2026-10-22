@@ -126,4 +126,30 @@ test('canRetry: não oferece de novo se a gravação sumiu', () => {
     assert.equal(U.canRetry(new TranscribeError('network'), false), false);
 });
 
+test('confirmMessage: duração desconhecida não promete custo', () => {
+    const expected = {
+        heading: 'Transcrever esta gravação?',
+        body: 'A duração ainda não é conhecida, então não é possível estimar o custo.',
+    };
+    assert.deepEqual(U.confirmMessage(0), expected);
+    assert.deepEqual(U.confirmMessage(-1), expected);
+    assert.deepEqual(U.confirmMessage(NaN), expected);
+    assert.deepEqual(U.confirmMessage(Infinity), expected);
+});
+
+test('rowActions: transcrever exige duração conhecida e nada em andamento', () => {
+    assert.deepEqual(U.rowActions({ status: 'none', seconds: 60, editMode: false }), { transcribe: true, rename: true });
+    assert.deepEqual(U.rowActions({ status: 'none', seconds: 0, editMode: false }), { transcribe: false, rename: true });
+    assert.deepEqual(U.rowActions({ status: 'ready', seconds: 60, editMode: false }), { transcribe: true, rename: true });
+    assert.deepEqual(U.rowActions({ status: 'error', seconds: 60, editMode: false }), { transcribe: true, rename: true });
+});
+
+test('rowActions: em andamento bloqueia transcrever e renomear', () => {
+    assert.deepEqual(U.rowActions({ status: 'running', seconds: 60, editMode: false }), { transcribe: false, rename: false });
+});
+
+test('rowActions: em edição nada fica ativo', () => {
+    assert.deepEqual(U.rowActions({ status: 'none', seconds: 60, editMode: true }), { transcribe: false, rename: false });
+});
+
 finish();

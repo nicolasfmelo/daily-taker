@@ -1,5 +1,5 @@
 /* exported rowStatus, formatUsd, formatDuration, confirmMessage, hasKey, statusInfo,
-   guardedSave, canRetry */
+   guardedSave, canRetry, rowActions */
 // Decisões da interface de "Gerar transcrição", sem GTK: testáveis isoladamente.
 const { TranscribeError, estimateCostUsd } = imports.transcriber;
 
@@ -34,9 +34,25 @@ var formatDuration = seconds => {
     return min ? `${h} h ${min} min` : `${h} h`;
 };
 
-var confirmMessage = seconds => ({
-    heading: `Transcrever ${formatDuration(seconds)}?`,
-    body: `Custo estimado: ${formatUsd(estimateCostUsd(seconds))}`,
+var confirmMessage = seconds => {
+    // Sem duração conhecida não há estimativa honesta: não mostra "0 s / US$ 0,00".
+    if (!Number.isFinite(seconds) || seconds <= 0) {
+        return {
+            heading: 'Transcrever esta gravação?',
+            body: 'A duração ainda não é conhecida, então não é possível estimar o custo.',
+        };
+    }
+    return {
+        heading: `Transcrever ${formatDuration(seconds)}?`,
+        body: `Custo estimado: ${formatUsd(estimateCostUsd(seconds))}`,
+    };
+};
+
+// Ações da linha que dependem da transcrição. Renomear durante a execução é bloqueado:
+// o serviço grava ao lado do arquivo antigo e a transcrição paga se perderia.
+var rowActions = ({ status, seconds, editMode }) => ({
+    transcribe: !editMode && status !== 'running' && Number.isFinite(seconds) && seconds > 0,
+    rename: !editMode && status !== 'running',
 });
 
 var hasKey = entry => Boolean(entry && entry.key);
