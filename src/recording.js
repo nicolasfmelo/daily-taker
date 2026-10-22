@@ -3,6 +3,7 @@ const { Gio, GLib, GObject, Gst, GstPbutils } = imports.gi;
 const { CacheDir } = imports.application;
 const ByteArray = imports.byteArray;
 const Recorder = imports.recorder;
+const { moveTranscript, trashTranscript } = imports.transcriptStore;
 
 var Recording = new GObject.registerClass({
     Signals: {
@@ -60,7 +61,13 @@ var Recording = new GObject.registerClass({
 
     set name(filename) {
         if (filename && filename !== this.name) {
+            const oldFile = this._file;
             this._file = this._file.set_display_name(filename, null);
+            try {
+                moveTranscript(oldFile, this._file);
+            } catch (e) {
+                log(`Failed to move the transcript of ${oldFile.get_basename()}: ${e.message}`);
+            }
             this.notify('name');
         }
     }
@@ -110,6 +117,11 @@ var Recording = new GObject.registerClass({
     }
 
     delete() {
+        try {
+            trashTranscript(this._file);
+        } catch (e) {
+            log(`Failed to trash the transcript of ${this.name}: ${e.message}`);
+        }
         this._file.trash_async(GLib.PRIORITY_HIGH, null, null);
         this.waveformCache.trash_async(GLib.PRIORITY_DEFAULT, null, null);
     }

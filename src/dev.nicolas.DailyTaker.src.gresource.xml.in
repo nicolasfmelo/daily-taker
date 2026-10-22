@@ -9,6 +9,9 @@
     <file>recordingList.js</file>
     <file>recordingListWidget.js</file>
     <file>row.js</file>
+    <file>transcript.js</file>
+    <file>transcriptFormat.js</file>
+    <file>transcriptStore.js</file>
     <file>utils.js</file>
     <file>waveform.js</file>
     <file>window.js</file>

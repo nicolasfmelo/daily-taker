@@ -3,6 +3,7 @@ const { Gio, GLib, GObject } = imports.gi;
 
 const { RecordingsDir } = imports.application;
 const { Recording } = imports.recording;
+const { isTranscriptFileName } = imports.transcriptStore;
 
 var RecordingList = new GObject.registerClass(class RecordingList extends Gio.ListStore {
     _init() {
@@ -12,6 +13,9 @@ var RecordingList = new GObject.registerClass(class RecordingList extends Gio.Li
         // Monitor Direcotry actions
         this.dirMonitor = RecordingsDir.monitor_directory(Gio.FileMonitorFlags.WATCH_MOVES, this.cancellable);
         this.dirMonitor.connect('changed', (_dirMonitor, file1, file2, eventType) => {
+            if (isTranscriptFileName(file1.get_basename()))
+                return;
+
             const index = this.getIndex(file1);
 
             switch (eventType) {
@@ -110,6 +114,9 @@ var RecordingList = new GObject.registerClass(class RecordingList extends Gio.Li
             let fileInfos = obj.next_files_finish(res);
             if (fileInfos.length) {
                 fileInfos.forEach(info => {
+                    if (isTranscriptFileName(info.get_name()))
+                        return;
+
                     const file = RecordingsDir.get_child(info.get_name());
                     const recording = new Recording(file);
                     this.sortedInsert(recording);
