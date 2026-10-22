@@ -1,5 +1,5 @@
 /* exported languageName blockTitle viewHeader exportContent exportExtension speakerEntry
-   currentBlockIndex findMatches nextIndex */
+   currentBlockIndex findMatches nextIndex shouldSeekOnClick */
 // Textos da visão de transcrição, sem GTK: testáveis isoladamente.
 const { blockIndexAt, buildBlocks } = imports.transcript;
 const { copyText, formatClock, formatDateTime, toMarkdown } = imports.transcriptFormat;
@@ -91,3 +91,9 @@ var nextIndex = (matches, current, dir) => {
         return dir < 0 ? count - 1 : 0;
     return (current + (dir < 0 ? -1 : 1) + count) % count;
 };
+
+// Clique num bloco pula o áudio só se o botão primário foi pressionado no próprio bloco
+// (mesma superfície: nada de cliques no popover do menu), fora dos botões (nome, menu)
+// e sem texto selecionado.
+var shouldSeekOnClick = ({ pressed, sameSurface, insideButton, hasSelection } = {}) =>
+    pressed === true && sameSurface === true && insideButton !== true && hasSelection !== true;

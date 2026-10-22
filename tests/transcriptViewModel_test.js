@@ -180,4 +180,19 @@ test('nextIndex: sem resultados devolve -1', () => {
     assert.equal(VM.nextIndex([], 0, -1), -1);
 });
 
+const CLICK = { pressed: true, sameSurface: true, insideButton: false, hasSelection: false };
+
+test('shouldSeekOnClick: clique simples no bloco pula o áudio', () => {
+    assert.equal(VM.shouldSeekOnClick(CLICK), true);
+});
+
+test('shouldSeekOnClick: botões, popover, seleção ou sem press não pulam', () => {
+    assert.equal(VM.shouldSeekOnClick({ ...CLICK, pressed: false }), false);
+    assert.equal(VM.shouldSeekOnClick({ ...CLICK, sameSurface: false }), false);
+    assert.equal(VM.shouldSeekOnClick({ ...CLICK, insideButton: true }), false);
+    assert.equal(VM.shouldSeekOnClick({ ...CLICK, hasSelection: true }), false);
+    assert.equal(VM.shouldSeekOnClick({}), false);
+    assert.equal(VM.shouldSeekOnClick(), false);
+});
+
 finish();

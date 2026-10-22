@@ -91,10 +91,11 @@ var Playback = GObject.registerClass({
         this._desired = false;
         this._detachPlayer();
         this._setPlaying(false);
-        this._uri = next;
-        this.notify('uri');
+        // Zera antes de anunciar a uri nova: quem ouve notify::uri não vê a posição antiga.
         this._setPosition(0);
         this._setDuration(0, true);
+        this._uri = next;
+        this.notify('uri');
         if (next !== null)
             this._attachPlayer();
     }

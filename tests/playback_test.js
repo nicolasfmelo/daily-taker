@@ -269,6 +269,21 @@ testAsync('load de outro uri para o anterior e zera posição/duração (uma vez
     p.load(null);
 });
 
+testAsync('trocar de uri: posição e duração já zeradas quando notify::uri chega', async () => {
+    const p = newPlayback();
+    p.load(uri);
+    await waitFor(p, 'duration-changed', d => d > 0);
+    p.seek(2); // a posição muda na hora
+    assert.equal(p.position, 2);
+
+    const seen = [];
+    const id = p.connect('notify::uri', () => seen.push([p.uri, p.position, p.duration]));
+    p.load(otherUri);
+    p.disconnect(id);
+    assert.deepEqual(seen, [[otherUri, 0, 0]]);
+    p.load(null);
+});
+
 testAsync('fim da mídia → ended, position 0, playing false (state-changed(false) uma vez); toca de novo', async () => {
     const p = newPlayback();
     p.load(otherUri); // 2 s

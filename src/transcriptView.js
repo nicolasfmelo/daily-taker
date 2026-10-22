@@ -7,7 +7,7 @@ const { copyBlock, copyText, exportFileName, formatClock } = imports.transcriptF
 const { saveTranscript } = imports.transcriptStore;
 const {
     blockTitle, currentBlockIndex, exportContent, exportExtension, findMatches, nextIndex,
-    speakerEntry, viewHeader,
+    shouldSeekOnClick, speakerEntry, viewHeader,
 } = imports.transcriptViewModel;
 
 // Blocos criados por iteração ociosa: milhares de blocos não travam a interface.
@@ -220,7 +220,11 @@ var TranscriptView = GObject.registerClass({
         this._playbackIds = [
             this._playback.connect('position-updated', sync),
             this._playback.connect('state-changed', sync),
-            this._playback.connect('notify::uri', sync),
+            // Outra mídia: a posição ainda não vale para ela; o próximo position-updated decide.
+            this._playback.connect('notify::uri', () => {
+                this._cancelScroll();
+                this._setCurrent(-1);
+            }),
         ];
     }
 
@@ -246,9 +250,16 @@ var TranscriptView = GObject.registerClass({
             this._fillSourceId = 0;
         }
         this._stopHighlightTimer();
+        this._cancelScroll();
+    }
+
+    // Cancela rolagem pendente (bloco ainda não criado) e a animação em curso, parando
+    // onde está (pause, não skip: skip pularia para o destino).
+    _cancelScroll() {
         this._pendingScroll = -1;
-        this._scrollAnimation?.skip();
+        const animation = this._scrollAnimation;
         this._scrollAnimation = null;
+        animation?.pause();
     }
 
     // Durante uma nova transcrição renomear fica bloqueado: o resultado sobrescreveria o nome.
@@ -542,15 +553,21 @@ var TranscriptView = GObject.registerClass({
             propagation_phase: Gtk.PropagationPhase.CAPTURE,
         });
         let pressed = false;
+        // Eventos do popover do menu do bloco também sobem até aqui (o popover é filho
+        // do MenuButton), mas vêm de outra superfície: nunca pulam o áudio.
+        const where = event => {
+            const sameSurface = event.get_surface() === box.get_native()?.get_surface();
+            return { sameSurface, insideButton: sameSurface && this._eventOnButton(box, event) };
+        };
         controller.connect('event', (_controller, event) => {
             const type = event.get_event_type();
             if (type === Gdk.EventType.BUTTON_PRESS) {
-                pressed = event.get_button() === Gdk.BUTTON_PRIMARY &&
-                    !this._eventOnButton(box, event);
+                const { sameSurface, insideButton: onButton } = where(event);
+                pressed = event.get_button() === Gdk.BUTTON_PRIMARY && sameSurface && !onButton;
             } else if (type === Gdk.EventType.BUTTON_RELEASE && pressed) {
                 pressed = false;
                 const [hasSelection] = text.get_selection_bounds();
-                if (!hasSelection)
+                if (shouldSeekOnClick({ pressed: true, ...where(event), hasSelection }))
                     this.emit('seek-requested', start);
             }
             return Gdk.EVENT_PROPAGATE;
@@ -721,6 +738,9 @@ var TranscriptView = GObject.registerClass({
         const previousIndex = this._currentIndex;
         if (index === previousIndex)
             return;
+        // Nada tocando: uma rolagem até o bloco anterior não faz mais sentido.
+        if (index < 0)
+            this._cancelScroll();
         this._blockRows[previousIndex]?.box.remove_css_class('current');
         this._currentIndex = index;
         this._blockRows[index]?.box.add_css_class('current');
