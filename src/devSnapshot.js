@@ -410,7 +410,8 @@ const sidebarComponent = params => {
         print(`devSnapshot: sidebar: ${visible.length} visível(is): ${visible.join(' | ')}; ` +
             `selecionada: ${sidebar.selected?.name ?? 'nenhuma'}`);
     });
-    return { widget: sidebar, ready };
+    // Solta a lista com o JS vivo (a função de cabeçalho não pode rodar na saída).
+    return { widget: sidebar, ready, cleanup: () => sidebar._dispose() };
 };
 
 // Verificação da Sidebar na cópia temporária das fixtures (renomeia e grava uma
@@ -427,7 +428,9 @@ const sidebarCheckComponent = () => {
         throw new Error('fixtures incompletas');
     const list = new RecordingList();
     const service = fakeService();
-    const sidebar = new Sidebar({ recordingList: list, transcriptionService: service });
+    // Sem o aquecimento automático: as verificações da leitura preguiçosa contam as leituras
+    // a partir de zero. O aquecimento é conferido à parte (seção 2b), numa segunda sidebar.
+    const sidebar = new Sidebar({ recordingList: list, transcriptionService: service, warmSearch: false });
     let failures = 0;
     const check = (ok, what) => {
         print(`${ok ? 'PASS' : 'FAIL'} sidebarcheck: ${what}`);
@@ -506,6 +509,33 @@ const sidebarCheckComponent = () => {
         check(sidebar._searchEntry.text === '' && names().length === 4 && sidebar.selected === sem &&
             e.length === 1, 'select de item escondido limpa a busca e seleciona');
         check(sidebar._listStack.visible_child_name === 'list', 'lista visível de novo');
+
+        // 2b. Aquecimento do cache da busca (o que a janela faz depois do primeiro map): lê
+        // em ociosos as transcrições existentes; depois dele uma busca não lê mais nada.
+        // Destruir no meio para o aquecimento.
+        {
+            const warm = new Sidebar({ recordingList: list, transcriptionService: service, warmSearch: false });
+            const warmed = nextSignal(warm, 'search-warmed');
+            check(warm._parses === 0, 'aquecimento: nada lido antes de começar');
+            warm.warmSearchCache();
+            check(warm._parses === 0 && warm._warmSourceId !== 0, 'aquecimento: começa num ocioso, não na hora');
+            const done = await within(warmed, 10000);
+            check(done && warm._parses === 3 && warm._warmSourceId === 0,
+                `aquecimento: as 3 transcrições lidas em segundo plano (${warm._parses})`);
+            warm.setQuery('reuniao');
+            const found = warm._visible.map(r => r.name).join('|');
+            warm.setQuery('acompanhar');
+            check(warm._parses === 3 && found === 'Daily · Projeto Atlas|Ideias para o app|Notas da reunião',
+                `depois do aquecimento a busca não lê nenhuma transcrição (${warm._parses}) e acha as 3`);
+            warm.invalidateTranscript(daily.uri);
+            const rewarmed = await within(nextSignal(warm, 'search-warmed'), 10000);
+            check(rewarmed && warm._parses === 4, `invalidar reaquece só aquela transcrição (${warm._parses})`);
+            warm.run_dispose();
+            const stopped = new Sidebar({ recordingList: list, transcriptionService: service, warmSearch: false });
+            stopped.warmSearchCache();
+            stopped.run_dispose();
+            check(stopped._warmSourceId === 0 && stopped._parses === 0, 'destruir no meio para o aquecimento');
+        }
 
         // 3. invalidateTranscript: transcrição nova no disco → selo e busca.
         saveTranscript(sem.file, loadTranscript(daily.file));
@@ -656,7 +686,7 @@ const sidebarCheckComponent = () => {
         if (failures > 0)
             throw new Error(`${failures} verificação(ões) falharam`);
     });
-    return { widget: sidebar, ready };
+    return { widget: sidebar, ready, cleanup: () => sidebar._dispose() };
 };
 
 // Biblioteca da janela pronta: a varredura da pasta terminou (RecordingList.loaded) e
@@ -729,6 +759,10 @@ const windowComponent = (params, { window }) => {
             window._sidebar.setQuery(params.query);
         if (n > 0) {
             await durationKnown(window.playback);
+            // Volume de exemplo, como na mockup (60 %), pelo slider da barra. Só com as
+            // configurações em memória (o snapshot.sh): nada vai para o dconf do usuário.
+            if (GLib.getenv('GSETTINGS_BACKEND') === 'memory')
+                window._playerBar._volumeScale.set_value(60);
             if (params.at > 0) {
                 const positioned = nextSignal(window.playback, 'position-updated',
                     pos => Math.abs(pos - params.at) < 0.5);
@@ -808,6 +842,18 @@ const windowCheckComponent = (params, { window }) => {
         await whenMapped(window);
         check(items.length === 4, `biblioteca com as 4 fixtures (${items.length})`);
         const [daily, ideias, notas, sem] = items;
+
+        // 0a. Depois do primeiro map a sidebar aquece o cache da busca em segundo plano: a
+        // primeira busca não lê nenhuma transcrição.
+        const warmed = sidebar._warmStarted && sidebar._warmSourceId === 0 ||
+            await within(nextSignal(sidebar, 'search-warmed'), 10000);
+        const parsesBefore = sidebar._parses;
+        sidebar.setQuery('reuniao');
+        const found = sidebar._visible.length;
+        sidebar.setQuery('');
+        check(warmed && parsesBefore === 3 && sidebar._parses === parsesBefore && found === 3,
+            `aquecimento da busca depois do map: ${parsesBefore} transcrições lidas, a primeira busca ` +
+            `não lê mais nenhuma (${sidebar._parses - parsesBefore}) e acha ${found}`);
 
         // 0. Partida: nada selecionado.
         check(sidebar.selected === null && pane._state === 'no-selection' && playback.uri === null &&
@@ -1359,6 +1405,14 @@ const windowCheckComponent = (params, { window }) => {
         window._backButton.emit('clicked');
         check(!split.show_content && sidebar.selected === daily && pane._titleLabel.label === daily.name &&
             playback.uri === daily.uri, 'Voltar: lista de novo, seleção e player mantidos');
+        // Parar uma gravação com a janela recolhida abre o painel da gravação nova.
+        window.onRecorderStarted();
+        window.onRecorderStopped(fresh);
+        check(window.state === WindowState.BROWSE && sidebar.selected === fresh && split.show_content &&
+            window._backButton.visible && pane._titleLabel.label === fresh.name && !playback.playing,
+        'recolhida: parar a gravação abre o painel da gravação nova (com Voltar), parada');
+        window._backButton.emit('clicked');
+        await select(daily);
         split.collapsed = wasCollapsed;
         check(sidebar.selected === daily && window._backButton.visible === false,
             'voltar ao tamanho original mantém a seleção');
@@ -1372,6 +1426,45 @@ const windowCheckComponent = (params, { window }) => {
             playback.uri === null && !bar._playButton.sensitive, 'lista vazia: painel da biblioteca vazia, player desligado');
         list.splice(0, 0, all);
         check(pane._mainStack.visible_child_name === 'no-selection', 'lista de volta: "Selecione uma gravação"');
+
+        // 9b. Persistência do player: velocidade, volume e "Acompanhar áudio" mudados pela
+        // barra são gravados no Gio.Settings do app (em memória no ambiente isolado) e uma
+        // PlayerBar nova os lê de volta. O mudo não é gravado.
+        {
+            const { Settings } = imports.application;
+            check(GLib.getenv('GSETTINGS_BACKEND') === 'memory', 'configurações em memória (nada no dconf do usuário)');
+            await select(daily);
+            await durationKnown(playback);
+            bar._rateAction.activate(new GLib.Variant('d', 1.5));
+            bar._volumeScale.set_value(40);
+            bar._followSwitch.active = false;
+            check(Settings.get_double('playback-rate') === 1.5 && playback.rate === 1.5 &&
+                Math.abs(Settings.get_double('playback-volume') - 0.4) < 1e-9 &&
+                Math.abs(playback.volume - 0.4) < 1e-9 &&
+                Settings.get_boolean('follow-audio') === false && pane.view.followAudio === false,
+            'mudar velocidade (1,5x), volume (40 %) e Acompanhar áudio pela barra grava as três chaves');
+            bar._volumeButton.emit('clicked');
+            check(playback.volume === 0 && Math.abs(Settings.get_double('playback-volume') - 0.4) < 1e-9,
+                'mudo não é gravado (a chave continua 0,4)');
+            bar._volumeButton.emit('clicked');
+            const { PlayerBar } = imports.playerBar;
+            const reopened = new PlayerBar({ settings: Settings });
+            const other = silentPlayback();
+            reopened.bind(other);
+            check(other.rate === 1.5 && Math.abs(other.volume - 0.4) < 1e-9 &&
+                reopened._rateButton.label === '1,5x' && Math.round(reopened._volumeScale.get_value()) === 40 &&
+                reopened.followAudio === false && reopened._followSwitch.active === false,
+            'PlayerBar nova lê de volta 1,5x, 40 % e Acompanhar áudio desligado');
+            reopened.bind(null);
+            other.destroy();
+            reopened.run_dispose();
+            bar._rateAction.activate(new GLib.Variant('d', 1));
+            bar._volumeScale.set_value(100);
+            bar._followSwitch.active = true;
+            check(Settings.get_double('playback-rate') === 1 && Settings.get_double('playback-volume') === 1 &&
+                Settings.get_boolean('follow-audio') === true && pane.view.followAudio === true,
+            'de volta a 1x, 100 % e Acompanhar áudio ligado');
+        }
 
         // 10. Fechar a janela com DUAS exclusões pendentes: cada uma vai para a lixeira uma
         // vez, na ordem em que foram feitas, antes de sair (conferido no shutdown real,

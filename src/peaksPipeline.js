@@ -1,4 +1,4 @@
-/* exported generatePeaks */
+/* exported generatePeaks cancelAllPeaks activePeakJobs */
 // Picos da forma de onda de um arquivo: decodifica com uridecodebin → level e devolve um
 // pico linear (0–1) por mensagem do level (intervalo padrão de 100 ms de áudio). O
 // fakesink não sincroniza com o relógio, então o arquivo é lido o mais rápido que o
@@ -8,6 +8,24 @@ const { Gst } = imports.gi;
 
 const DESCRIPTION = 'uridecodebin name=uridecodebin ! audioconvert ! audio/x-raw,channels=1 ' +
     '! level name=level ! fakesink name=faked';
+
+// Trabalhos em andamento (a função stop de cada um): fechar o app para todos de uma vez.
+const active = new Set();
+
+// Quantos trabalhos estão em andamento (verificação).
+var activePeakJobs = () => active.size;
+
+// Para todos os trabalhos em andamento (fechar o app): sem isso os pipelines ainda em
+// PLAYING seriam finalizados na saída, com avisos GStreamer-CRITICAL. Nenhum callback é
+// chamado depois. Devolve quantos foram parados.
+var cancelAllPeaks = () => {
+    let stopped = 0;
+    for (const stop of [...active]) {
+        if (stop())
+            stopped++;
+    }
+    return stopped;
+};
 
 // onDone(peaks: number[]) no fim do arquivo; onError(Error) em falha. Devolve { cancel() }:
 // depois de cancelar nenhum callback é chamado.
@@ -25,6 +43,7 @@ var generatePeaks = (uri, { onDone = () => {}, onError = () => {} } = {}) => {
     const stop = () => {
         if (pipeline === null)
             return false;
+        active.delete(stop);
         bus.disconnect(busId);
         bus.remove_signal_watch();
         pipeline.set_state(Gst.State.NULL);
@@ -56,6 +75,7 @@ var generatePeaks = (uri, { onDone = () => {}, onError = () => {} } = {}) => {
         }
     });
 
+    active.add(stop);
     pipeline.set_state(Gst.State.PLAYING);
     return { cancel: stop };
 };

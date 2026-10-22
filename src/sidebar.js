@@ -12,6 +12,9 @@ const { rowActions, rowStatus } = imports.transcriptionUi;
 const { searchableText } = imports.transcriptSearch;
 const { loadTranscript, transcriptFileFor } = imports.transcriptStore;
 
+// Aquecimento do cache da busca: transcrições lidas por iteração ociosa (baixa prioridade).
+const WARM_CHUNK = 10;
+
 const EMPTY_TEXT = {
     'no-recordings': 'Nenhuma gravação ainda',
     'no-results': 'Nada encontrado para essa busca',
@@ -124,9 +127,13 @@ var Sidebar = GObject.registerClass({
         'delete-refused': { param_types: [GObject.TYPE_OBJECT] },
         'transcribe-requested': { param_types: [GObject.TYPE_OBJECT, GObject.TYPE_BOOLEAN] },
         'export-audio-requested': { param_types: [GObject.TYPE_OBJECT] },
+        // O aquecimento do cache da busca chegou ao fim da lista (verificação).
+        'search-warmed': {},
     },
 }, class Sidebar extends Gtk.Box {
-    _init({ recordingList, transcriptionService, settings = null, ...params } = {}) {
+    // `warmSearch` (padrão true): depois do primeiro `map`, lê em segundo plano as
+    // transcrições da lista para a primeira busca não travar (ver warmSearchCache).
+    _init({ recordingList, transcriptionService, settings = null, warmSearch = true, ...params } = {}) {
         super._init(params);
         this._store = recordingList;
         this._service = transcriptionService;
@@ -140,6 +147,9 @@ var Sidebar = GObject.registerClass({
         this._visible = [];              // itens visíveis, na ordem da lista
         this._modelChanging = false;
         this._syncingRow = false;
+        this._warmSourceId = 0;
+        this._warmStarted = false;
+        this._warmAgain = false;
 
         this._filter = Gtk.CustomFilter.new(item => this._matches(item));
         this._model = new Gtk.FilterListModel({ model: recordingList, filter: this._filter, incremental: false });
@@ -160,6 +170,8 @@ var Sidebar = GObject.registerClass({
 
         this._storeChangedId = recordingList.connect('items-changed', () => {
             this._syncTracked();
+            // Gravações novas (pasta lida, gravação nova, Desfazer) entram no aquecimento.
+            this._rewarm();
             // Uma gravação escondida pela busca que sai da biblioteca não muda o modelo
             // filtrado (nenhum items-changed lá): a seleção é conferida aqui também.
             if (this._selected && this._storeItem(this._selected) !== this._selected)
@@ -171,8 +183,10 @@ var Sidebar = GObject.registerClass({
         transcriptionService.connectChange((uri, status) => {
             if (this._disposed)
                 return;
-            if (status !== 'running')
+            if (status !== 'running') {
                 this._transcripts.delete(uri);
+                this._rewarm();
+            }
             this.refreshStatus(uri);
             if (this._query.trim())
                 this._filter.changed(Gtk.FilterChange.DIFFERENT);
@@ -187,7 +201,11 @@ var Sidebar = GObject.registerClass({
         // Esc limpa a busca. Nenhum atalho de letra é instalado: digitar na busca só busca.
         this._searchEntry.connect('stop-search', () => this.setQuery(''));
         // "Hoje"/"Ontem" mudam com o tempo: recalcula ao reaparecer.
-        this.connect('map', () => this._refreshTimes());
+        this.connect('map', () => {
+            this._refreshTimes();
+            if (warmSearch && !this._warmStarted)
+                this.warmSearchCache();
+        });
         this.connect('destroy', () => this._dispose());
 
         this._visible = this._visibleRecordings();
@@ -230,9 +248,57 @@ var Sidebar = GObject.registerClass({
     // A transcrição de `uri` mudou no disco: relê quando precisar (selo e busca).
     invalidateTranscript(uri) {
         this._transcripts.delete(uri);
+        this._rewarm();
         this.refreshStatus(uri);
         if (this._query.trim())
             this._filter.changed(Gtk.FilterChange.DIFFERENT);
+    }
+
+    // Lê em segundo plano (lotes de WARM_CHUNK transcrições por iteração ociosa de baixa
+    // prioridade) o texto de busca de cada gravação da lista, para a primeira busca não
+    // analisar centenas de transcrições de uma vez. Usa o mesmo cache preguiçoso
+    // (_haystackFor): o que já foi lido não é lido de novo, e uma invalidação relê só aquela.
+    // Emite `search-warmed` ao chegar ao fim. Chamado no primeiro `map`; parado no destroy.
+    warmSearchCache() {
+        this._warmStarted = true;
+        if (this._warmSourceId || this._disposed)
+            return;
+        let index = 0;
+        this._warmSourceId = GLib.idle_add(GLib.PRIORITY_LOW, () => {
+            let parsed = 0;
+            // A lista pode mudar entre as iterações: o índice só avança, e o que entrar depois
+            // é pego por um novo aquecimento (_rewarm).
+            while (index < this._store.get_n_items() && parsed < WARM_CHUNK) {
+                const recording = this._store.get_item(index++);
+                const entry = this._entry(recording);
+                if (entry.parsed)
+                    continue;
+                this._haystackFor(recording);
+                if (entry.exists)
+                    parsed++;
+            }
+            if (index < this._store.get_n_items())
+                return GLib.SOURCE_CONTINUE;
+            // Mudou algo já percorrido durante a volta: mais uma (o lido é pulado).
+            if (this._warmAgain) {
+                this._warmAgain = false;
+                index = 0;
+                return GLib.SOURCE_CONTINUE;
+            }
+            this._warmSourceId = 0;
+            this.emit('search-warmed');
+            return GLib.SOURCE_REMOVE;
+        });
+    }
+
+    // Algo saiu do cache ou entrou na lista: aquece de novo (o que já está lido é pulado).
+    _rewarm() {
+        if (!this._warmStarted || this._disposed)
+            return;
+        if (this._warmSourceId)
+            this._warmAgain = true;
+        else
+            this.warmSearchCache();
     }
 
     // Aplica a busca já (sem esperar o atraso do campo).
@@ -600,6 +666,10 @@ var Sidebar = GObject.registerClass({
         if (this._disposed)
             return;
         this._disposed = true;
+        if (this._warmSourceId) {
+            GLib.source_remove(this._warmSourceId);
+            this._warmSourceId = 0;
+        }
         this._store.disconnect(this._storeChangedId);
         // Solta a lista agora (com o JS vivo): desfeita só na coleta de lixo do encerramento,
         // ela chamaria a função de cabeçalho quando o GJS já não aceita chamadas.

@@ -45,6 +45,7 @@ const { confirmMessage, guardedSave, hasNamedSpeakers, recordingNameProblem, row
     imports.transcriptionUi;
 const { DeleteQueue } = imports.deleteQueue;
 const { stripIconFromLayout } = imports.headerLayout;
+const { cancelAllPeaks } = imports.peaksPipeline;
 const { deletedToastTitle, shortcutFor, shouldHandleShortcut } = imports.shortcuts;
 
 var WindowState = {
@@ -207,6 +208,9 @@ var Window = GObject.registerClass({
             this._recordingList.get_item(i).cancelDiscovery();
         for (const recording of this._deleteQueue.pending())
             recording.cancelDiscovery();
+        // Formas de onda ainda sendo geradas (de qualquer gravação, inclusive as que já saíram
+        // da lista): os pipelines vão para NULL agora, não na finalização da saída.
+        cancelAllPeaks();
         this._commitPendingDeletes();
         // Uma transcrição em andamento não segura o fechamento: é simplesmente abandonada.
         this._closed = true;
@@ -481,7 +485,7 @@ var Window = GObject.registerClass({
     }
 
     // A gravação nova entra na lista primeiro e então vira a selecionada (o player troca
-    // para ela, parado).
+    // para ela, parado). Na janela estreita o painel dela abre (com Voltar para a lista).
     onRecorderStopped(recording) {
         if (!recording) {
             this.addToast(NOTHING_RECORDED_MESSAGE);
@@ -491,7 +495,8 @@ var Window = GObject.registerClass({
         if (this._recordingList.getIndex(recording.file) < 0)
             this._recordingList.sortedInsert(recording);
         this.playback.stop();
-        this.selectRecording(recording);
+        if (this.selectRecording(recording) && this._splitView.collapsed)
+            this._splitView.show_content = true;
         this.state = WindowState.BROWSE;
     }
 

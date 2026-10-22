@@ -2,7 +2,7 @@
 // com o relógio) e entrega um pico por mensagem do `level` (a cada 100 ms de áudio).
 const { Gio, GLib, Gst } = imports.gi;
 const { testAsync, assert, finish } = imports.harness;
-const { generatePeaks } = imports.peaksPipeline;
+const { activePeakJobs, cancelAllPeaks, generatePeaks } = imports.peaksPipeline;
 
 Gst.init(null);
 
@@ -56,6 +56,32 @@ testAsync('cancel() interrompe sem chamar os callbacks', async () => {
     }));
     assert.equal(called, false);
 });
+
+// Fechar o app com picos ainda sendo gerados: tudo para (pipelines em NULL, sem avisos do
+// GStreamer ao finalizar) e nenhum callback chega depois.
+testAsync('cancelAllPeaks() interrompe todos os trabalhos em andamento', async () => {
+    let called = 0;
+    const handles = [1, 2, 3].map(() => generatePeaks(uri, {
+        onDone: () => called++,
+        onError: () => called++,
+    }));
+    assert.equal(activePeakJobs(), 3);
+    assert.equal(cancelAllPeaks(), 3);
+    assert.equal(activePeakJobs(), 0);
+    // cancel() individual depois do cancelAll: nada a fazer, sem lançar.
+    assert.equal(handles[0].cancel(), false);
+    assert.equal(cancelAllPeaks(), 0);
+    await new Promise(resolve => GLib.timeout_add(GLib.PRIORITY_DEFAULT, 1500, () => {
+        resolve();
+        return GLib.SOURCE_REMOVE;
+    }));
+    assert.equal(called, 0);
+});
+
+testAsync('um trabalho que terminou sai da lista de ativos', async () => {
+    await run(uri);
+    assert.equal(activePeakJobs(), 0);
+}, 20000);
 
 GLib.spawn_sync(null, ['rm', '-rf', tmp], null, GLib.SpawnFlags.SEARCH_PATH, null);
 finish();
