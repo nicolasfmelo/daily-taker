@@ -1,4 +1,4 @@
-/* exported normalize filterTranscripts excerpt */
+/* exported normalize searchableText filterTranscripts excerpt */
 
 const { buildBlocks } = imports.transcript;
 
@@ -10,7 +10,7 @@ const transcriptText = t => {
     return t.text ?? '';
 };
 
-const searchableText = t => {
+var searchableText = t => {
     const names = new Set(Object.values(t.speakers ?? {}));
     for (const block of buildBlocks(t)) {
         if (block.label)
