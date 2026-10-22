@@ -207,4 +207,23 @@ test('rowActions: transcrição no disco não abre durante execução nem em edi
     assert.equal(U.rowActions({ status: 'error', seconds: 60, editMode: true, hasTranscript: true }).open, false);
 });
 
+test('retryPlan: save que falhou com transcrição guardada tenta só salvar', () => {
+    const saveFailed = new TranscribeError('saveFailed', 0, 'x');
+    assert.equal(U.retryPlan(saveFailed, { recordingExists: true, hasUnsaved: true }), 'save');
+    // sem a transcrição guardada (ex.: gravação renomeada) volta ao fluxo normal com custo
+    assert.equal(U.retryPlan(saveFailed, { recordingExists: true, hasUnsaved: false }), 'transcribe');
+    assert.equal(U.retryPlan(new TranscribeError('network'), { recordingExists: true, hasUnsaved: false }), 'transcribe');
+    assert.equal(U.retryPlan(new TranscribeError('network'), { recordingExists: false, hasUnsaved: false }), null);
+    assert.equal(U.retryPlan(new TranscribeError('recordingGone', 0, 'x'), { recordingExists: true, hasUnsaved: true }), null);
+});
+
+test('failureMessage: no retry só de salvar, avisa que nada será cobrado de novo', () => {
+    const saveFailed = new TranscribeError('saveFailed', 0, 'A transcrição foi feita, mas não foi possível salvá-la no disco.');
+    assert.equal(U.failureMessage(saveFailed, 'save'),
+        'A transcrição foi feita, mas não foi possível salvá-la no disco. Tentar de novo só salva, sem nova cobrança.');
+    assert.equal(U.failureMessage(new TranscribeError('auth'), 'transcribe'), new TranscribeError('auth').message);
+    // erro que não é TranscribeError: mensagem fixa, nunca a original
+    assert.equal(U.failureMessage(new Error('caminho /home/x'), 'transcribe'), new TranscribeError('unknown').message);
+});
+
 finish();

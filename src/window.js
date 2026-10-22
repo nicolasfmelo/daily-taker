@@ -27,13 +27,13 @@ const { RecorderWidget } = imports.recorderWidget;
 const { NOTHING_RECORDED_MESSAGE } = imports.recorderPipeline;
 const { RecordingsDir, Settings } = imports.application;
 const { defaultKeyStore } = imports.secrets;
-const { TranscribeError, transcribeFile } = imports.transcriber;
+const { transcribeFile } = imports.transcriber;
 const { saveTranscript } = imports.transcriptStore;
 const { TranscriptionService } = imports.transcriptionService;
 const { TranscriptView } = imports.transcriptView;
 const { TranscriptsPage } = imports.transcriptsPage;
 const { viewHeader } = imports.transcriptViewModel;
-const { canRetry, confirmMessage, guardedSave, hasKey, hasNamedSpeakers } = imports.transcriptionUi;
+const { confirmMessage, failureMessage, guardedSave, hasKey, hasNamedSpeakers, retryPlan } = imports.transcriptionUi;
 
 var WindowState = {
     EMPTY: 0,
@@ -329,18 +329,34 @@ var Window = GObject.registerClass({
         if (this._closed)
             return;
 
-        // Só a mensagem fixa do TranscribeError chega à tela (nunca chave nem resposta bruta).
-        const message = error instanceof TranscribeError
-            ? error.message : new TranscribeError('unknown').message;
-        const toast = new Adw.Toast({ title: message, use_markup: false, timeout: 10 });
-        if (canRetry(error, this._hasRecording(recording) && recording.file.query_exists(null))) {
+        const file = recording.file;
+        const plan = retryPlan(error, {
+            recordingExists: this._hasRecording(recording) && file.query_exists(null),
+            hasUnsaved: this.transcriptionService.hasUnsaved(file),
+        });
+        // Sem como tentar de novo (gravação sumiu), a transcrição guardada só ocuparia memória.
+        if (plan === null)
+            this.transcriptionService.discardUnsaved(file);
+        const toast = new Adw.Toast({ title: failureMessage(error, plan), use_markup: false, timeout: 10 });
+        if (plan) {
             toast.button_label = 'Tentar de novo';
             toast.connect('button-clicked', () => {
-                if (!this._closed)
+                if (this._closed)
+                    return;
+                if (plan === 'save')
+                    this._retrySave(recording, file, options);
+                else
                     this._requestTranscription(recording, options);
             });
         }
         this._toastOverlay.add_toast(toast);
+    }
+
+    // A transcrição já foi paga: só salva de novo, sem diálogo de custo nem chamada à API.
+    _retrySave(recording, file, options) {
+        this.transcriptionService.retrySave(file).then(
+            transcript => this._onTranscriptionDone(file, transcript),
+            error => this._onTranscriptionFailed(recording, error, options));
     }
 
     _hasRecording(recording) {

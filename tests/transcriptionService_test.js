@@ -43,6 +43,20 @@ const setup = (overrides = {}) => {
     return { service, calls };
 };
 
+// O serviço registra com logError o erro original que não é TranscribeError; captura
+// para a saída dos testes ficar limpa e para conferir o que foi registrado.
+const captureLogError = async fn => {
+    const original = globalThis.logError;
+    const logged = [];
+    globalThis.logError = (e, prefix) => logged.push({ e, prefix });
+    try {
+        await fn(logged);
+    } finally {
+        globalThis.logError = original;
+    }
+    return logged;
+};
+
 const args = (file, extra = {}) => ({ file, title: 'Reunião', recordedAt: '2026-10-22T10:00:00.000Z', ...extra });
 
 testAsync('sem chave: rejeita noKey sem chamar transcribe nem save', async () => {
@@ -86,9 +100,16 @@ testAsync('falha: status error, save não chamado, TranscribeError propaga igual
 });
 
 testAsync('falha que não é TranscribeError vira unknown em pt-BR, sem vazar a chave', async () => {
-    const { service, calls } = setup({ transcribe: () => Promise.reject(new Error(`boom ${KEY}`)) });
+    const original = new Error(`boom ${KEY}`);
+    const { service, calls } = setup({ transcribe: () => Promise.reject(original) });
     const file = fakeFile('file:///a.ogg');
-    const e = await rejection(service.run(args(file)));
+    let e;
+    const logged = await captureLogError(async () => {
+        e = await rejection(service.run(args(file)));
+    });
+    // o erro original vai para o log (antes era engolido)
+    assert.equal(logged.length, 1);
+    assert.equal(logged[0].e, original);
     assert.equal(e instanceof TranscribeError, true);
     assert.equal(e.kind, 'unknown');
     assert.equal(e.message, 'Erro inesperado ao transcrever.');
@@ -107,12 +128,129 @@ testAsync('falha ao salvar também vira erro e não deixa a execução presa', a
         },
     });
     const file = fakeFile('file:///a.ogg');
-    const e = await rejection(service.run(args(file)));
+    let e;
+    await captureLogError(async () => {
+        e = await rejection(service.run(args(file)));
+    });
     assert.equal(e.kind, 'unknown');
     assert.equal(service.status(file), 'error');
     fail = false;
     await service.run(args(file));
     assert.equal(service.status(file), 'none');
+});
+
+// ---- salvar de novo sem nova chamada à API ----
+
+const failingSave = (calls, failures) => (file, t) => {
+    calls.save.push({ file, t });
+    if (failures.n-- > 0)
+        throw new TranscribeError('saveFailed', 0, 'A transcrição foi feita, mas não foi possível salvá-la no disco.');
+};
+
+testAsync('save falha: a transcrição paga fica guardada e retrySave salva sem chamar a API', async () => {
+    const calls = { transcribe: [], save: [] };
+    const failures = { n: 1 };
+    const { service } = setup({
+        transcribe: opts => {
+            calls.transcribe.push(opts);
+            return Promise.resolve(RESPONSE);
+        },
+        save: failingSave(calls, failures),
+    });
+    const file = fakeFile('file:///a.ogg');
+    const events = [];
+    service.connectChange((uri, status) => events.push(status));
+    const e = await rejection(service.run(args(file)));
+    assert.equal(e.kind, 'saveFailed');
+    assert.equal(service.status(file), 'error');
+    assert.equal(service.hasUnsaved(file), true);
+    assert.equal(service.hasUnsaved(fakeFile('file:///b.ogg')), false);
+
+    const t = await service.retrySave(file);
+    assert.equal(calls.transcribe.length, 1);
+    assert.equal(calls.save.length, 2);
+    assert.equal(calls.save[1].t, calls.save[0].t);
+    assert.equal(t, calls.save[0].t);
+    assert.equal(t.text, 'oi');
+    assert.equal(service.hasUnsaved(file), false);
+    assert.equal(service.status(file), 'none');
+    assert.deepEqual(events, ['running', 'error', 'running', 'none']);
+});
+
+testAsync('retrySave que falha de novo mantém a transcrição guardada e o status error', async () => {
+    const calls = { transcribe: [], save: [] };
+    const failures = { n: 2 };
+    const { service } = setup({ save: failingSave(calls, failures) });
+    const file = fakeFile('file:///a.ogg');
+    await rejection(service.run(args(file)));
+    const e = await rejection(service.retrySave(file));
+    assert.equal(e.kind, 'saveFailed');
+    assert.equal(service.hasUnsaved(file), true);
+    assert.equal(service.status(file), 'error');
+    await service.retrySave(file);
+    assert.equal(service.hasUnsaved(file), false);
+    assert.equal(calls.save.length, 3);
+});
+
+testAsync('retrySave sem transcrição guardada rejeita sem chamar save', async () => {
+    const { service, calls } = setup();
+    const e = await rejection(service.retrySave(fakeFile('file:///a.ogg')));
+    assert.equal(e instanceof TranscribeError, true);
+    assert.equal(calls.save.length, 0);
+});
+
+testAsync('nova execução só descarta a transcrição guardada depois de salvar com sucesso', async () => {
+    const calls = { transcribe: [], save: [] };
+    const failures = { n: 2 };
+    let n = 0;
+    const { service } = setup({
+        transcribe: () => {
+            calls.transcribe.push(++n);
+            return Promise.resolve(Object.assign({}, RESPONSE, { text: `versão ${n}` }));
+        },
+        save: failingSave(calls, failures),
+    });
+    const file = fakeFile('file:///a.ogg');
+    await rejection(service.run(args(file)));
+    // segunda execução também não salva: continua havendo uma transcrição guardada
+    await rejection(service.run(args(file)));
+    assert.equal(service.hasUnsaved(file), true);
+    const t = await service.run(args(file));
+    assert.equal(t.text, 'versão 3');
+    assert.equal(service.hasUnsaved(file), false);
+});
+
+testAsync('retrySave durante uma execução devolve a mesma promessa (sem duplicar)', async () => {
+    const calls = { transcribe: [], save: [] };
+    const failures = { n: 1 };
+    const d = deferred();
+    let first = true;
+    const { service } = setup({
+        transcribe: () => {
+            if (first) {
+                first = false;
+                return Promise.resolve(RESPONSE);
+            }
+            return d.promise;
+        },
+        save: failingSave(calls, failures),
+    });
+    const file = fakeFile('file:///a.ogg');
+    await rejection(service.run(args(file)));
+    const p1 = service.run(args(file));
+    const p2 = service.retrySave(file);
+    assert.equal(p1, p2);
+    d.resolve(RESPONSE);
+    await p1;
+});
+
+testAsync('discardUnsaved esquece a transcrição guardada', async () => {
+    const calls = { transcribe: [], save: [] };
+    const { service } = setup({ save: failingSave(calls, { n: 1 }) });
+    const file = fakeFile('file:///a.ogg');
+    await rejection(service.run(args(file)));
+    service.discardUnsaved(file);
+    assert.equal(service.hasUnsaved(file), false);
 });
 
 testAsync('status: running durante a execução, none depois do sucesso', async () => {

@@ -1,5 +1,5 @@
 /* exported rowStatus, formatUsd, formatDuration, confirmMessage, hasNamedSpeakers, hasKey,
-   statusInfo, guardedSave, canRetry, rowActions */
+   statusInfo, guardedSave, canRetry, rowActions, retryPlan, failureMessage */
 // Decisões da interface de "Gerar transcrição", sem GTK: testáveis isoladamente.
 const { TranscribeError, estimateCostUsd } = imports.transcriber;
 
@@ -99,3 +99,21 @@ var guardedSave = save => (recordingFile, transcript) => {
 
 var canRetry = (error, recordingExists) =>
     recordingExists && !(error instanceof TranscribeError && error.kind === 'recordingGone');
+
+// O que o "Tentar de novo" de um toast de falha faz: 'save' (só salva a transcrição já
+// paga que ficou em memória, sem diálogo de custo nem API), 'transcribe' (fluxo normal,
+// com confirmação de custo) ou null (sem botão).
+var retryPlan = (error, { recordingExists, hasUnsaved }) => {
+    if (!canRetry(error, recordingExists))
+        return null;
+    if (error instanceof TranscribeError && error.kind === 'saveFailed' && hasUnsaved)
+        return 'save';
+    return 'transcribe';
+};
+
+// Só a mensagem fixa do TranscribeError chega à tela (nunca chave nem resposta bruta).
+var failureMessage = (error, plan) => {
+    const message = error instanceof TranscribeError
+        ? error.message : new TranscribeError('unknown').message;
+    return plan === 'save' ? `${message} Tentar de novo só salva, sem nova cobrança.` : message;
+};
