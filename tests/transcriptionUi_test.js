@@ -138,18 +138,23 @@ test('confirmMessage: duração desconhecida não promete custo', () => {
 });
 
 test('rowActions: transcrever exige duração conhecida e nada em andamento', () => {
-    assert.deepEqual(U.rowActions({ status: 'none', seconds: 60, editMode: false }), { transcribe: true, rename: true });
-    assert.deepEqual(U.rowActions({ status: 'none', seconds: 0, editMode: false }), { transcribe: false, rename: true });
-    assert.deepEqual(U.rowActions({ status: 'ready', seconds: 60, editMode: false }), { transcribe: true, rename: true });
-    assert.deepEqual(U.rowActions({ status: 'error', seconds: 60, editMode: false }), { transcribe: true, rename: true });
+    assert.deepEqual(U.rowActions({ status: 'none', seconds: 60, editMode: false }), { transcribe: true, rename: true, open: false });
+    assert.deepEqual(U.rowActions({ status: 'none', seconds: 0, editMode: false }), { transcribe: false, rename: true, open: false });
+    assert.deepEqual(U.rowActions({ status: 'ready', seconds: 60, editMode: false }), { transcribe: true, rename: true, open: true });
+    assert.deepEqual(U.rowActions({ status: 'error', seconds: 60, editMode: false }), { transcribe: true, rename: true, open: false });
 });
 
-test('rowActions: em andamento bloqueia transcrever e renomear', () => {
-    assert.deepEqual(U.rowActions({ status: 'running', seconds: 60, editMode: false }), { transcribe: false, rename: false });
+test('rowActions: em andamento bloqueia transcrever, renomear e abrir', () => {
+    assert.deepEqual(U.rowActions({ status: 'running', seconds: 60, editMode: false }), { transcribe: false, rename: false, open: false });
 });
 
 test('rowActions: em edição nada fica ativo', () => {
-    assert.deepEqual(U.rowActions({ status: 'none', seconds: 60, editMode: true }), { transcribe: false, rename: false });
+    assert.deepEqual(U.rowActions({ status: 'none', seconds: 60, editMode: true }), { transcribe: false, rename: false, open: false });
+    assert.deepEqual(U.rowActions({ status: 'ready', seconds: 60, editMode: true }), { transcribe: false, rename: false, open: false });
+});
+
+test('rowActions: abrir só com transcrição pronta, mesmo sem duração', () => {
+    assert.equal(U.rowActions({ status: 'ready', seconds: 0, editMode: false }).open, true);
 });
 
 finish();

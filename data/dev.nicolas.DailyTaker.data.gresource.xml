@@ -6,6 +6,7 @@
     <file>ui/preferences.ui</file>
     <file>ui/recorder.ui</file>
     <file>ui/row.ui</file>
+    <file>ui/transcript-view.ui</file>
     <file>ui/window.ui</file>
     <file alias="gtk/help-overlay.ui">ui/help-overlay.ui</file>
   </gresource>

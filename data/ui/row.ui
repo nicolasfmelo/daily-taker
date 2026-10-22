@@ -317,6 +317,18 @@
                       </object>
                     </child>
                     <child>
+                      <object class="GtkButton" id="openTranscriptBtn">
+                        <property name="visible">False</property>
+                        <property name="valign">center</property>
+                        <property name="label">Abrir transcrição</property>
+                        <property name="action_name">recording.open-transcript</property>
+                        <style>
+                          <class name="pill"/>
+                          <class name="suggested-action"/>
+                        </style>
+                      </object>
+                    </child>
+                    <child>
                       <object class="GtkButton" id="transcribeBtn">
                         <property name="valign">center</property>
                         <property name="label">Gerar transcrição</property>

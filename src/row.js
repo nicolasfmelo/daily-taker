@@ -17,6 +17,7 @@ var Row = GObject.registerClass({
         'name', 'entry', 'date', 'duration', 'revealer', 'playbackControls',
         'saveBtn', 'playBtn', 'pauseBtn',
         'transcriptionStatusStack', 'transcriptionSpinner', 'transcriptionStatusIcon',
+        'openTranscriptBtn',
     ],
     Signals: {
         'play': { param_types: [GObject.TYPE_STRING] },
@@ -133,6 +134,10 @@ var Row = GObject.registerClass({
         });
         this.actionGroup.add_action(this.transcribeAction);
 
+        this.openTranscriptAction = new Gio.SimpleAction({ name: 'open-transcript', enabled: false });
+        this.openTranscriptAction.connect('activate', this.onOpenTranscript.bind(this));
+        this.actionGroup.add_action(this.openTranscriptAction);
+
         this.insert_action_group('recording', this.actionGroup);
         this.refreshTranscriptionStatus();
 
@@ -187,6 +192,18 @@ var Row = GObject.registerClass({
         }
     }
 
+    onOpenTranscript() {
+        const window = this.get_root();
+        const transcript = loadTranscript(this._recording.file);
+        if (transcript) {
+            window.showTranscript(this._recording.file, transcript);
+            return;
+        }
+        // Apagada ou corrompida desde a última verificação.
+        window.addToast('Não foi possível abrir a transcrição');
+        this.refreshTranscriptionStatus();
+    }
+
     // Recalcula o estado a partir do serviço e do disco: vale tanto na criação da linha
     // (que pode ser refeita a qualquer momento) quanto a cada mudança avisada pelo serviço.
     refreshTranscriptionStatus() {
@@ -207,6 +224,7 @@ var Row = GObject.registerClass({
         if (info.icon)
             this._transcriptionStatusIcon.icon_name = info.icon;
         this._transcriptionStatusStack.tooltip_text = info.tooltip;
+        this._openTranscriptBtn.visible = status === 'ready';
         this._syncTranscriptionActions();
     }
 
@@ -220,6 +238,7 @@ var Row = GObject.registerClass({
         });
         this.transcribeAction.enabled = actions.transcribe;
         this.renameAction.enabled = actions.rename;
+        this.openTranscriptAction.enabled = actions.open;
     }
 
     set editMode(state) {

@@ -50,9 +50,11 @@ var confirmMessage = seconds => {
 
 // Ações da linha que dependem da transcrição. Renomear durante a execução é bloqueado:
 // o serviço grava ao lado do arquivo antigo e a transcrição paga se perderia.
+// Abrir só faz sentido com a transcrição pronta.
 var rowActions = ({ status, seconds, editMode }) => ({
     transcribe: !editMode && status !== 'running' && Number.isFinite(seconds) && seconds > 0,
     rename: !editMode && status !== 'running',
+    open: !editMode && status === 'ready',
 });
 
 var hasKey = entry => Boolean(entry && entry.key);

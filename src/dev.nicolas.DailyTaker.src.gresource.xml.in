@@ -17,6 +17,8 @@
     <file>transcript.js</file>
     <file>transcriptFormat.js</file>
     <file>transcriptStore.js</file>
+    <file>transcriptView.js</file>
+    <file>transcriptViewModel.js</file>
     <file>transcriptionService.js</file>
     <file>transcriptionUi.js</file>
     <file>utils.js</file>

@@ -29,18 +29,22 @@ const { defaultKeyStore } = imports.secrets;
 const { TranscribeError, transcribeFile } = imports.transcriber;
 const { saveTranscript } = imports.transcriptStore;
 const { TranscriptionService } = imports.transcriptionService;
+const { TranscriptView } = imports.transcriptView;
+const { viewHeader } = imports.transcriptViewModel;
 const { canRetry, confirmMessage, guardedSave, hasKey } = imports.transcriptionUi;
 
 var WindowState = {
     EMPTY: 0,
     LIST: 1,
     RECORDER: 2,
+    TRANSCRIPT: 3,
 };
 
 var Window = GObject.registerClass({
     Template: 'resource:///dev/nicolas/DailyTaker/ui/window.ui',
     InternalChildren: [
         'mainStack', 'emptyPage', 'column', 'headerRevealer', 'toastOverlay',
+        'windowTitle', 'backButton', 'recordButton',
     ],
 }, class Window extends Adw.ApplicationWindow {
 
@@ -60,7 +64,8 @@ var Window = GObject.registerClass({
 
         this._recordingList = new RecordingList();
         this.itemsSignalId = this._recordingList.connect('items-changed', _ => {
-            if (this.state !== WindowState.RECORDER) {
+            // Gravando ou lendo uma transcrição: a página atual não muda.
+            if (this.state !== WindowState.RECORDER && this.state !== WindowState.TRANSCRIPT) {
                 if (this._recordingList.get_n_items() === 0)
                     this.state = WindowState.EMPTY;
                 else
@@ -109,6 +114,37 @@ var Window = GObject.registerClass({
         this.recorderWidget.connect('stopped', this.onRecorderStopped.bind(this));
         this.insert_action_group('recorder', this.recorderWidget.actionsGroup);
         this._emptyPage.icon_name = `${pkg.name}-symbolic`;
+
+        this._transcriptView = null;
+        this._backButton.connect('clicked', () => this.closeTranscript());
+    }
+
+    showTranscript(recordingFile, t) {
+        if (!this._transcriptView) {
+            this._transcriptView = new TranscriptView();
+            this._mainStack.add_named(this._transcriptView, 'transcript');
+        }
+        this._transcriptView.setTranscript(t, recordingFile);
+        this._windowTitle.title = viewHeader(t).title;
+        if (this.state !== WindowState.TRANSCRIPT)
+            this._stateBeforeTranscript = this.state;
+        this.state = WindowState.TRANSCRIPT;
+    }
+
+    closeTranscript() {
+        if (this.state !== WindowState.TRANSCRIPT)
+            return;
+        // Volta para a página anterior; lista e vazio são recalculados porque a lista
+        // pode ter mudado enquanto a transcrição estava aberta.
+        const previous = this._stateBeforeTranscript;
+        if (previous === WindowState.LIST || previous === WindowState.EMPTY || previous === undefined)
+            this.state = this._recordingList.get_n_items() === 0 ? WindowState.EMPTY : WindowState.LIST;
+        else
+            this.state = previous;
+    }
+
+    addToast(title) {
+        this._toastOverlay.add_toast(new Adw.Toast({ title, use_markup: false }));
     }
 
     vfunc_close_request() {
@@ -262,7 +298,17 @@ var Window = GObject.registerClass({
             visibleChild = 'empty';
             isHeaderVisible = true;
             break;
+        case WindowState.TRANSCRIPT:
+            visibleChild = 'transcript';
+            isHeaderVisible = true;
+            break;
         }
+
+        const inTranscript = state === WindowState.TRANSCRIPT;
+        this._backButton.visible = inTranscript;
+        this._recordButton.visible = !inTranscript;
+        if (!inTranscript)
+            this._windowTitle.title = 'Daily Taker';
 
         this._mainStack.visible_child_name = visibleChild;
         this._headerRevealer.reveal_child = isHeaderVisible;

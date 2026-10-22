@@ -16,8 +16,26 @@
             <property name="reveal_child">True</property>
             <child>
               <object class="AdwHeaderBar">
+                <property name="title_widget">
+                  <object class="AdwWindowTitle" id="windowTitle">
+                    <property name="title" translatable="yes">Daily Taker</property>
+                  </object>
+                </property>
                 <child>
-                  <object class="GtkButton">
+                  <object class="GtkButton" id="backButton">
+                    <property name="visible">False</property>
+                    <property name="valign">center</property>
+                    <property name="tooltip_text">Voltar para as gravações</property>
+                    <child>
+                      <object class="AdwButtonContent">
+                        <property name="icon_name">go-previous-symbolic</property>
+                        <property name="label">Voltar</property>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkButton" id="recordButton">
                     <property name="receives_default">False</property>
                     <property name="halign">center</property>
                     <property name="valign">center</property>
