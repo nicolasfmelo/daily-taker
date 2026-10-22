@@ -12,7 +12,7 @@
 
 ## Ajustes ao spec descobertos lendo o Vocalis
 
-1. O Vocalis grava Ogg/Opus com extensão **`.opus`** (perfil OPUS existente). O arquivo é enviado ao OpenRouter com nome `recording.ogg` (o `format` aceito é derivado da extensão). O spec diz `.ogg`; o conteúdo é o mesmo.
+1. O Vocalis grava Ogg/Opus em arquivos **sem extensão** (`Recording 1`; o tipo vem do conteúdo). O arquivo é enviado ao OpenRouter com nome `recording.ogg` (o `format` aceito é derivado da extensão). O spec diz `.ogg`; o conteúdo é o mesmo.
 2. `RecordingList` trata **todo arquivo** da pasta como gravação. `*.transcript.json` precisa ser filtrado, e `Recording` precisa mover/apagar a transcrição junto ao renomear/excluir (Task 4).
 3. O Vocalis usa o id `org.gnome.SoundRecorder` em schema, gresource e templates. Renomear para `dev.nicolas.DailyTaker` evita colisão com o Gravador de Som instalado (Task 1).
 
@@ -155,13 +155,13 @@ spikes/     diarize.sh     docs/superpowers/spikes/
 - Consumes: `parseTranscript`, `stringifyTranscript` (Task 2).
 - Produces:
   - `isTranscriptFileName(name: string): boolean` (`*.transcript.json`)
-  - `transcriptFileFor(recordingFile: Gio.File): Gio.File` (`Recording 1.opus` → `Recording 1.transcript.json`, mesma pasta)
+  - `transcriptFileFor(recordingFile: Gio.File): Gio.File` (acrescenta `.transcript.json` ao nome inteiro, sem remover extensão, mesma pasta: `Recording 1` → `Recording 1.transcript.json`, `Daily 22.10` → `Daily 22.10.transcript.json`; o Vocalis nomeia arquivos sem extensão)
   - `saveTranscript(recordingFile, t): void` (escrita atômica `REPLACE_DESTINATION`)
   - `loadTranscript(recordingFile): Transcript|null` (null se ausente ou corrompido; loga o nome, nunca o conteúdo)
   - `moveTranscript(oldRecordingFile, newRecordingFile): void`; `trashTranscript(recordingFile): void`
   - `listTranscripts(dir: Gio.File): {recordingFile: Gio.File, transcript: Transcript}[]` ordenado por `recorded_at` decrescente; ignora JSON corrompido
 
-- [ ] **Step 1: Testes falhando** (diretório temporário via `Gio.File.new_tmp_dir_async`/`GLib.Dir.make_tmp`): `isTranscriptFileName('a.transcript.json')` true e `('a.opus')` false; save→load deep-equal; **(Review Focus 5)** arquivo com `{` → `loadTranscript` null e `listTranscripts` pula só esse; `moveTranscript` leva o arquivo para o novo nome; `trashTranscript` remove; `listTranscripts` ordena 3 itens por data decrescente.
+- [ ] **Step 1: Testes falhando** (diretório temporário via `Gio.File.new_tmp_dir_async`/`GLib.Dir.make_tmp`): `isTranscriptFileName('a.transcript.json')` true e `('a.opus')` false; `transcriptFileFor` de `Recording 1` e de `Daily 22.10` conforme a interface; save→load deep-equal; **(Review Focus 5)** arquivo com `{` → `loadTranscript` null e `listTranscripts` pula só esse; `moveTranscript` leva o arquivo para o novo nome; `trashTranscript` remove; `listTranscripts` ordena 3 itens por data decrescente.
 - [ ] **Step 2: Implementar** `transcriptStore.js` (Gio síncrono, sem GTK).
 - [ ] **Step 3: Integrar:** em `recordingList.js` pular nomes com `isTranscriptFileName` em todos os pontos que criam `Recording` (enumeração e evento do `dirMonitor`); em `recording.js` o setter `name` chama `moveTranscript(antigo, novo)` e `delete()` chama `trashTranscript(this._file)` antes de trashar a gravação.
 - [ ] **Step 4:** `bash tests/run.sh` PASS. **Verificação manual:** `echo '{}' > ~/.local/share/daily-taker/x.transcript.json`; abrir o app — a lista não mostra "x.transcript.json".
