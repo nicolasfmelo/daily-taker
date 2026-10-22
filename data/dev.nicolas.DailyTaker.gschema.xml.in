@@ -1,14 +1,14 @@
 <schemalist>
-  <schema id="@app-id@" path="/dev/nicolas/DailyTaker/" gettext-domain="@gettext-package@">
+  <schema id="@app-id@" path="/dev/nicolas/DailyTaker/">
     <key name="window-size" type="ai">
       <default>[780, 480]</default>
-      <summary>Window size</summary>
-      <description>Window size (width and height).</description>
+      <summary>Tamanho da janela</summary>
+      <description>Tamanho da janela (largura e altura).</description>
     </key>
     <key name="window-position" type="ai">
       <default>[]</default>
-      <summary>Window position</summary>
-      <description>Window position (x and y).</description>
+      <summary>Posição da janela</summary>
+      <description>Posição da janela (x e y).</description>
     </key>
     <key name="language" type="s">
       <choices>
@@ -16,8 +16,8 @@
         <choice value="auto"/>
       </choices>
       <default>'pt'</default>
-      <summary>Transcription language</summary>
-      <description>Language sent to the transcription service: "pt" for Portuguese or "auto" for automatic detection.</description>
+      <summary>Idioma da transcrição</summary>
+      <description>Idioma enviado ao serviço de transcrição: "pt" para português ou "auto" para detecção automática.</description>
     </key>
   </schema>
 </schemalist>

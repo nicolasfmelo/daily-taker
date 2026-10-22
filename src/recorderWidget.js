@@ -116,13 +116,13 @@ var RecorderWidget = GObject.registerClass({
             destroy_with_parent: true,
             buttons: Gtk.ButtonsType.NONE,
             message_type: Gtk.MessageType.QUESTION,
-            text: _('Delete recording?'),
-            secondary_text: _('This recording will not be saved.'),
+            text: _('Excluir a gravação?'),
+            secondary_text: _('Esta gravação não será salva.'),
         });
 
         dialog.set_default_response(Gtk.ResponseType.NO);
-        dialog.add_button(_('Resume'), Gtk.ResponseType.NO);
-        dialog.add_button(_('Delete'), Gtk.ResponseType.YES)
+        dialog.add_button(_('Retomar'), Gtk.ResponseType.NO);
+        dialog.add_button(_('Excluir'), Gtk.ResponseType.YES)
             .add_css_class('destructive-action');
 
         dialog.set_transient_for(Gio.Application.get_default().get_active_window());

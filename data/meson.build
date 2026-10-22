@@ -36,7 +36,6 @@ endif
 
 gsettings_conf = configuration_data()
 gsettings_conf.set('app-id', application_id)
-gsettings_conf.set('gettext-package', gettext_package)
 configure_file(
   input: 'dev.nicolas.DailyTaker.gschema.xml.in',
   output: '@0@.gschema.xml'.format(application_id),
@@ -55,7 +54,6 @@ data_res = gnome.compile_resources(
 
 metainfo_conf = configuration_data()
 metainfo_conf.set('app-id', application_id)
-metainfo_conf.set('gettext-package', gettext_package)
 
 metainfo_file = configure_file(
   input: 'dev.nicolas.DailyTaker.metainfo.xml.in.in',

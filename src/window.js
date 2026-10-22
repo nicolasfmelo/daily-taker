@@ -123,7 +123,7 @@ var Window = GObject.registerClass({
 
         this._recordingListWidget.connect('row-deleted', (_listBox, recording, index) => {
             this._recordingList.remove(index);
-            this.sendNotification(_('"%s" deleted').format(recording.name), recording, index);
+            this.sendNotification(_('"%s" excluída').format(recording.name), recording, index);
         });
 
         const builder = Gtk.Builder.new_from_resource('/dev/nicolas/DailyTaker/gtk/help-overlay.ui');
@@ -362,7 +362,7 @@ var Window = GObject.registerClass({
         });
 
         toast.set_action_name('win.undo');
-        toast.set_button_label(_('Undo'));
+        toast.set_button_label(_('Desfazer'));
         this._toastOverlay.add_toast(toast);
     }
 

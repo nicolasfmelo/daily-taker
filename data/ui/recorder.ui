@@ -126,7 +126,7 @@
                         <property name="child">
                           <object class="GtkButton" id="resumeBtn">
                             <property name="receives_default">True</property>
-                            <property name="tooltip_text" translatable="yes">Resume Recording</property>
+                            <property name="tooltip_text" translatable="yes">Retomar a gravação</property>
                             <property name="halign">center</property>
                             <property name="valign">center</property>
                             <property name="action_name">recorder.resume</property>
@@ -144,7 +144,7 @@
                         <property name="child">
                           <object class="GtkButton" id="pauseBtn">
                             <property name="receives_default">True</property>
-                            <property name="tooltip_text" translatable="yes">Pause Recording</property>
+                            <property name="tooltip_text" translatable="yes">Pausar a gravação</property>
                             <property name="halign">center</property>
                             <property name="valign">center</property>
                             <property name="action_name">recorder.pause</property>
@@ -161,7 +161,7 @@
                 <child>
                   <object class="GtkButton">
                     <property name="receives_default">True</property>
-                    <property name="tooltip_text" translatable="yes">Stop Recording</property>
+                    <property name="tooltip_text" translatable="yes">Parar a gravação</property>
                     <property name="halign">center</property>
                     <property name="valign">center</property>
                     <property name="action_name">recorder.stop</property>
@@ -181,7 +181,7 @@
                 <child>
                   <object class="GtkButton">
                     <property name="receives_default">True</property>
-                    <property name="tooltip_text" translatable="yes">Delete Recording</property>
+                    <property name="tooltip_text" translatable="yes">Excluir a gravação</property>
                     <property name="halign">center</property>
                     <property name="valign">center</property>
                     <property name="action_name">recorder.cancel</property>

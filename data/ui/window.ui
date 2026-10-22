@@ -64,7 +64,7 @@
                     <child>
                       <object class="AdwButtonContent">
                         <property name="icon_name">media-record-symbolic</property>
-                        <property name="label" translatable="yes">Record</property>
+                        <property name="label" translatable="yes">Gravar</property>
                       </object>
                     </child>
                     <style>
@@ -113,8 +113,8 @@
                                     <property name="name">empty</property>
                                     <property name="child">
                                       <object class="AdwStatusPage" id="emptyPage">
-                                        <property name="title" translatable="yes">Add Recordings</property>
-                                        <property name="description" translatable="yes">Use the &lt;b&gt;Record&lt;/b&gt; button to make sound recordings</property>
+                                        <property name="title" translatable="yes">Adicione gravações</property>
+                                        <property name="description" translatable="yes">Use o botão &lt;b&gt;Gravar&lt;/b&gt; para gravar sua voz e o som do computador</property>
                                       </object>
                                     </property>
                                   </object>
@@ -175,12 +175,12 @@
     </section>
     <section>
       <item>
-        <attribute name="label" translatable="yes">_Keyboard Shortcuts</attribute>
+        <attribute name="label" translatable="yes">_Atalhos de teclado</attribute>
         <attribute name="action">win.show-help-overlay</attribute>
       </item>
       <item>
         <attribute name="action">app.about</attribute>
-        <attribute name="label" translatable="yes">About Daily Taker</attribute>
+        <attribute name="label" translatable="yes">Sobre o Daily Taker</attribute>
       </item>
     </section>
   </menu>

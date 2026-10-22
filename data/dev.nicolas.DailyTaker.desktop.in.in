@@ -1,14 +1,9 @@
 [Desktop Entry]
 Type=Application
 Name=Daily Taker
-Comment=Record sound via the microphone and play it back
-# Translators: Do NOT translate or transliterate this text (this is an icon file name)!
+Comment=Grave reuniões e conversas e gere a transcrição
 Icon=@app-id@
-Categories=GNOME;GTK;Audio;AudioVideo;
-# Translators: Search terms to find this application. Do NOT translate or localize the semicolons! The list MUST also end with a semicolon!
-Keywords=Audio;Application;Record;
+Categories=AudioVideo;Recorder;
+Keywords=Áudio;Gravar;Gravador;Reunião;Transcrição;Voz;
 Exec=dev.nicolas.DailyTaker
 StartupNotify=true
-# Translators: Do NOT translate or transliterate this text (these are enum types)!
-X-Purism-FormFactor=Workstation;Mobile;
-

@@ -22,7 +22,6 @@ endif
 application_id = 'dev.nicolas.DailyTaker@0@'.format(profile)
 
 
-gettext_package = application_id
 daily_taker_prefix = get_option('prefix')
 daily_taker_bindir = daily_taker_prefix / get_option('bindir')
 daily_taker_libdir = daily_taker_prefix / get_option('libdir')

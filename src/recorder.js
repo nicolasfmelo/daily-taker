@@ -103,9 +103,8 @@ var Recorder = new GObject.registerClass({
         let index = 1;
 
         do {
-            /* Translators: ""Recording %d"" is the default name assigned to a file created
-            by the application (for example, "Recording 1"). */
-            this.file = RecordingsDir.get_child_for_display_name(_('Recording %d').format(index++));
+            // Nome padrão de uma gravação nova (por exemplo, "Gravação 1").
+            this.file = RecordingsDir.get_child_for_display_name(_('Gravação %d').format(index++));
         } while (this.file.query_exists(null));
 
         this._peaks.length = 0;

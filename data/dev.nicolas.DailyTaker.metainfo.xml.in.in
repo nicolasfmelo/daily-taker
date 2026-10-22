@@ -1,98 +1,31 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Copyright 2014 Richard Hughes <richard@hughsie.com> -->
 <component type="desktop-application">
   <id>@app-id@.desktop</id>
   <name>Daily Taker</name>
-  <summary>Personal voice recorder and meeting notes taker</summary>
+  <summary>Gravador de voz pessoal com transcrição de reuniões</summary>
   <project_license>GPL-2.0+</project_license>
   <metadata_license>CC0-1.0</metadata_license>
   <description>
     <p>
-      Daily Taker provides a simple and modern interface that provides a
-      straight-forward way to record and play audio.
-      It allows you to do basic editing, and create voice memos.
+      O Daily Taker grava sua voz pelo microfone junto com o som do computador,
+      como o áudio de uma reunião online, e guarda tudo em um único arquivo.
     </p>
     <p>
-      Daily Taker automatically handles the saving process so that you
-      do not need to worry about accidentally discarding the previous recording.
+      Quando você pede, o áudio é enviado ao OpenRouter para gerar a transcrição,
+      com a fala separada por locutores. A transcrição pode ser lida junto com o
+      áudio, pesquisada, copiada e exportada em Markdown ou texto.
     </p>
-    <p>Supported audio formats:</p>
-    <ul>
-      <li>Ogg Vorbis, Opus, FLAC, MP3 and MOV</li>
-    </ul>
+    <p>
+      O Daily Taker é baseado no Vocalis, que por sua vez é baseado no
+      GNOME Sound Recorder.
+    </p>
   </description>
-  <kudos>
-    <kudo>HiDpiIcon</kudo>
-    <kudo>ModernToolkit</kudo>
-  </kudos>
   <content_rating type="oars-1.0" />
   <releases>
-    <release version="42.0" date="2022-03-19">
-      <description>
-        <p>42.0 is out!</p>
-        <ul>
-          <li>Port to GTK4 / libadwaita</li>
-          <li>Proper dark theme support</li>
-          <li>Translations updates</li>
-        </ul>
-      </description>
-    </release>
-    <release version="40.0" date="2021-03-23" />
-    <release version="3.38.1" date="2021-01-25">
-      <description>
-        <p>Bugfix release</p>
-        <ul>
-          <li>
-            Translation updates
-          </li>
-          <li>
-            Fix export dialog for recordings disappears shortly after opening
-          </li>
-          <li>
-            Fix not able to use space bar in recording name input
-          </li>
-          <li>
-            Fix recording is lost when using space bar in name input
-          </li>
-          <li>
-            Fix ui becomes unusable and recording is lost after stopping a record
-          </li>
-          <li>
-            Remove m4a option since using it results in unusable recordings
-          </li>
-        </ul>
-      </description>
-    </release>
-    <release version="3.38.0" date="2020-09-18">
-      <description>
-        <p>An overall update of Daily Taker's design</p>
-        <ul>
-          <li>
-            The possibility to seek backward/forward while playing a recording
-          </li>
-          <li>
-            Recordings now always display the associated wave
-          </li>
-          <li>
-            The possiblity to export a recording
-          </li>
-          <li>
-            Code cleanup and translations updates
-          </li>
-        </ul>
-      </description>
-    </release>
-    <release version="3.34.0" date="2019-09-10">
-      <description>
-        <p>Translations updates</p>
-      </description>
-    </release>
+    <release version="0.1.0" date="2026-10-22" />
   </releases>
   <launchable type="desktop-id">@app-id@.desktop</launchable>
-  <developer_name>Nicolas Melo</developer_name>
-  <translation type="gettext">@gettext-package@</translation>
-  <custom>
-    <value key="Purism::form_factor">workstation</value>
-    <value key="Purism::form_factor">mobile</value>
-  </custom>
+  <developer id="dev.nicolas">
+    <name>Nicolas Melo</name>
+  </developer>
 </component>

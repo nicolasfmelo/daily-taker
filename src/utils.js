@@ -45,19 +45,19 @@ var displayDateTime = time => {
     if (difference < DAY)
         return time.format('%X');
     else if (difference < 2 * DAY)
-        return _('Yesterday');
+        return _('Ontem');
     else if (difference < 7 * DAY)
-        return Gettext.ngettext('%d day ago', '%d days ago', days).format(days);
+        return Gettext.ngettext('há %d dia', 'há %d dias', days).format(days);
     else if (difference < 14 * DAY)
-        return _('Last week');
+        return _('Semana passada');
     else if (difference < 28 * DAY)
-        return Gettext.ngettext('%d week ago', '%d weeks ago',  weeks).format(weeks);
+        return Gettext.ngettext('há %d semana', 'há %d semanas',  weeks).format(weeks);
     else if (difference < 60 * DAY)
-        return _('Last month');
+        return _('Mês passado');
     else if (difference < 360 * DAY)
-        return Gettext.ngettext('%d month ago', '%d months ago', months).format(months);
+        return Gettext.ngettext('há %d mês', 'há %d meses', months).format(months);
     else if (difference < 730 * DAY)
-        return _('Last year');
+        return _('Ano passado');
 
-    return Gettext.ngettext('%d year ago', '%d years ago', years).format(years);
+    return Gettext.ngettext('há %d ano', 'há %d anos', years).format(years);
 };

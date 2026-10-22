@@ -35,7 +35,7 @@ var Application = GObject.registerClass(class Application extends Adw.Applicatio
         GLib.setenv('PULSE_PROP_application.icon_name', pkg.name, 1);
 
         this.add_main_option('version', 'v'.charCodeAt(0), GLib.OptionFlags.NONE, GLib.OptionArg.NONE,
-            'Print version information and exit', null);
+            'Mostra a versão e sai', null);
 
         this.connect('handle-local-options', (app, options) => {
             if (options.contains('version')) {
@@ -131,18 +131,17 @@ var Application = GObject.registerClass(class Application extends Adw.Applicatio
                 'Garrett LeSage <garrettl@gmail.com>',
                 'Hylke Bons <hylkebons@gmail.com>',
                 'Sam Hewitt <hewittsamuel@gmail.com>'],
-            authors: ['Meg Ford <megford@gnome.org>',
+            authors: ['Nicolas Melo',
+                'Meg Ford <megford@gnome.org>',
                 'Bilal Elmoussaoui <bil.elmoussaoui@gmail.com>',
                 'Felipe Borges <felipeborges@gnome.org>',
                 'Kavan Mevada <kavanmevada@gmail.com>'],
-            /* Translators: Replace "translator-credits" with your names, one name per line */
-            translator_credits: _('translator-credits'),
             program_name: GLib.get_application_name(),
-            comments: _('A personal voice recorder and meeting notes taker'),
+            comments: _('Gravador de voz pessoal e anotador de reuniões, com transcrição'),
             license_type: Gtk.License.GPL_2_0,
             logo_icon_name: pkg.name,
             version: pkg.version,
-            copyright: 'Based on Vocalis / GNOME Sound Recorder\nCopyright 2013-2019 Meg Ford\nCopyright 2019-2020 Bilal Elmoussaoui & Felipe Borges',
+            copyright: _('Baseado no Vocalis e no Gravador de Som do GNOME (GNOME Sound Recorder)') + '\nCopyright 2013-2019 Meg Ford\nCopyright 2019-2020 Bilal Elmoussaoui & Felipe Borges',
             wrap_license: true,
             modal: true,
             transient_for: this.window,

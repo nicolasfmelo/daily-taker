@@ -70,7 +70,7 @@ var Row = GObject.registerClass({
         let exportAction = new Gio.SimpleAction({ name: 'export' });
         exportAction.connect('activate', () => {
             const window = Gio.Application.get_default().get_active_window();
-            this.exportDialog = Gtk.FileChooserNative.new(_('Export Recording'), window, Gtk.FileChooserAction.SAVE, _('_Export'), _('_Cancel'));
+            this.exportDialog = Gtk.FileChooserNative.new(_('Exportar gravação'), window, Gtk.FileChooserAction.SAVE, _('_Exportar'), _('_Cancelar'));
             this.exportDialog.set_current_name(`${this._recording.name}.${this._recording.extension}`);
             this.exportDialog.connect('response', (_dialog, response) => {
                 if (response === Gtk.ResponseType.ACCEPT) {

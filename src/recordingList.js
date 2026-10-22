@@ -58,9 +58,8 @@ var RecordingList = new GObject.registerClass(class RecordingList extends Gio.Li
                     fileInfos.forEach(info => {
                         const name = info.get_name();
                         const src = oldDir.get_child(name);
-                        /* Translators: ""%s (Old)"" is the new name assigned to a file moved from
-                            the old recordings location */
-                        const dest = RecordingsDir.get_child(_('%s (Old)').format(name));
+                        // Novo nome de um arquivo movido do local antigo de gravações.
+                        const dest = RecordingsDir.get_child(_('%s (antiga)').format(name));
 
                         src.copy_async(dest, Gio.FileCopyFlags.OVERWRITE, GLib.PRIORITY_LOW, this.cancellable, null, (objCopy, resCopy) => {
                             try {

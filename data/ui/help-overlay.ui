@@ -8,77 +8,77 @@
         <property name="max-height">10</property>
         <child>
           <object class="GtkShortcutsGroup">
-            <property name="title" translatable="yes" context="shortcut window">General</property>
+            <property name="title" translatable="yes" context="shortcut window">Geral</property>
             <child>
               <object class="GtkShortcutsShortcut">
                 <property name="accelerator">&lt;ctrl&gt;R</property>
-                <property name="title" translatable="yes" context="shortcut window">Record</property>
+                <property name="title" translatable="yes" context="shortcut window">Gravar</property>
               </object>
             </child>
             <child>
               <object class="GtkShortcutsShortcut">
                 <property name="accelerator">S</property>
-                <property name="title" translatable="yes" context="shortcut window">Stop Recording</property>
+                <property name="title" translatable="yes" context="shortcut window">Parar a gravação</property>
               </object>
             </child>
             <child>
               <object class="GtkShortcutsShortcut">
                 <property name="accelerator">space</property>
-                <property name="title" translatable="yes" context="shortcut window">Play / Pause / Resume</property>
+                <property name="title" translatable="yes" context="shortcut window">Reproduzir / Pausar / Retomar</property>
               </object>
             </child>
 
              <child>
               <object class="GtkShortcutsShortcut">
                 <property name="accelerator">Delete</property>
-                <property name="title" translatable="yes" context="shortcut window">Delete</property>
+                <property name="title" translatable="yes" context="shortcut window">Excluir</property>
               </object>
             </child>
             <child>
               <object class="GtkShortcutsShortcut">
                 <property name="accelerator">F10</property>
-                <property name="title" translatable="yes" context="shortcut window">Open menu</property>
+                <property name="title" translatable="yes" context="shortcut window">Abrir o menu</property>
               </object>
             </child>
             <child>
               <object class="GtkShortcutsShortcut">
                 <property name="accelerator">&lt;ctrl&gt;question</property>
-                <property name="title" translatable="yes" context="shortcut window">Keyboard shortcuts</property>
+                <property name="title" translatable="yes" context="shortcut window">Atalhos de teclado</property>
               </object>
             </child>
             <child>
               <object class="GtkShortcutsShortcut">
                 <property name="accelerator">&lt;ctrl&gt;Q</property>
-                <property name="title" translatable="yes" context="shortcut window">Quit</property>
+                <property name="title" translatable="yes" context="shortcut window">Sair</property>
               </object>
             </child>
           </object>
         </child>
         <child>
           <object class="GtkShortcutsGroup">
-            <property name="title" translatable="yes" context="shortcut window">Recording</property>
+            <property name="title" translatable="yes" context="shortcut window">Gravação</property>
              <child>
               <object class="GtkShortcutsShortcut">
                 <property name="accelerator">B</property>
-                <property name="title" translatable="yes" context="shortcut window">Seek Backward</property>
+                <property name="title" translatable="yes" context="shortcut window">Voltar</property>
               </object>
             </child>
              <child>
               <object class="GtkShortcutsShortcut">
                 <property name="accelerator">N</property>
-                <property name="title" translatable="yes" context="shortcut window">Seek Forward</property>
+                <property name="title" translatable="yes" context="shortcut window">Avançar</property>
               </object>
             </child>
              <child>
               <object class="GtkShortcutsShortcut">
                 <property name="accelerator">F2</property>
-                <property name="title" translatable="yes" context="shortcut window">Rename</property>
+                <property name="title" translatable="yes" context="shortcut window">Renomear</property>
               </object>
             </child>
              <child>
               <object class="GtkShortcutsShortcut">
                 <property name="accelerator">&lt;ctrl&gt;s</property>
-                <property name="title" translatable="yes" context="shortcut window">Export</property>
+                <property name="title" translatable="yes" context="shortcut window">Exportar</property>
               </object>
             </child>
           </object>

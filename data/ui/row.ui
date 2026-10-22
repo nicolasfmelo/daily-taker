@@ -106,7 +106,7 @@
                             <property name="halign">center</property>
                             <property name="action_name">recording.delete</property>
                             <property name="receives_default">True</property>
-                            <property name="tooltip_text" translatable="yes">Delete</property>
+                            <property name="tooltip_text" translatable="yes">Excluir</property>
                             <property name="icon_name">user-trash-symbolic</property>
                             <style>
                               <class name="circular"/>
@@ -126,7 +126,7 @@
                             <property name="halign">center</property>
                             <property name="action_name">recording.seek-backward</property>
                             <property name="receives_default">True</property>
-                            <property name="tooltip_text" translatable="yes">Seek 10s Backward</property>
+                            <property name="tooltip_text" translatable="yes">Voltar 10 s</property>
                             <property name="icon_name">skip-back-symbolic</property>
                             <style>
                               <class name="circular"/>
@@ -144,7 +144,7 @@
                                     <property name="halign">center</property>
                                     <property name="receives_default">True</property>
                                     <property name="action_name">recording.play</property>
-                                    <property name="tooltip_text" translatable="yes">Play</property>
+                                    <property name="tooltip_text" translatable="yes">Reproduzir</property>
                                     <child>
                                       <object class="GtkImage">
                                         <property name="icon_name">media-playback-start-symbolic</property>
@@ -168,7 +168,7 @@
                                     <property name="halign">center</property>
                                     <property name="action_name">recording.pause</property>
                                     <property name="receives_default">True</property>
-                                    <property name="tooltip_text" translatable="yes">Pause</property>
+                                    <property name="tooltip_text" translatable="yes">Pausar</property>
                                     <child>
                                       <object class="GtkImage">
                                         <property name="icon_name">media-playback-pause-symbolic</property>
@@ -191,7 +191,7 @@
                             <property name="halign">center</property>
                             <property name="action_name">recording.seek-forward</property>
                             <property name="receives_default">True</property>
-                            <property name="tooltip_text" translatable="yes">Seek 10s Forward</property>
+                            <property name="tooltip_text" translatable="yes">Avançar 10 s</property>
                             <property name="icon_name">skip-forward-symbolic</property>
                             <style>
                               <class name="circular"/>
@@ -218,7 +218,7 @@
                                         <property name="valign">center</property>
                                         <property name="halign">center</property>
                                         <property name="receives_default">True</property>
-                                        <property name="tooltip_text" translatable="yes">Export</property>
+                                        <property name="tooltip_text" translatable="yes">Exportar</property>
                                         <property name="action_name">recording.export</property>
                                         <property name="icon_name">document-save-symbolic</property>
                                         <style>
@@ -231,7 +231,7 @@
                                         <property name="valign">center</property>
                                         <property name="halign">center</property>
                                         <property name="receives_default">True</property>
-                                        <property name="tooltip_text" translatable="yes">Rename</property>
+                                        <property name="tooltip_text" translatable="yes">Renomear</property>
                                         <property name="action_name">recording.rename</property>
                                         <property name="icon_name">document-edit-symbolic</property>
                                         <style>
@@ -265,7 +265,7 @@
                                 <property name="valign">center</property>
                                 <property name="halign">end</property>
                                 <property name="receives_default">False</property>
-                                <property name="tooltip_text" translatable="yes">Save</property>
+                                <property name="tooltip_text" translatable="yes">Salvar</property>
                                 <property name="action_name">recording.save</property>
                                 <property name="icon_name">emblem-ok-symbolic</property>
                                 <style>
@@ -351,11 +351,11 @@
     <section>
       <item>
         <attribute name="action">recording.rename</attribute>
-        <attribute name="label" translatable="yes">Rename</attribute>
+        <attribute name="label" translatable="yes">Renomear</attribute>
       </item>
       <item>
         <attribute name="action">recording.export</attribute>
-        <attribute name="label" translatable="yes">Export</attribute>
+        <attribute name="label" translatable="yes">Exportar</attribute>
       </item>
     </section>
   </menu>
