@@ -134,4 +134,50 @@ test('currentBlockIndex: posição inválida não destaca nada', () => {
     assert.equal(VM.currentBlockIndex([], 1e9), -1);
 });
 
+const FIND_BLOCKS = [
+    { speaker: 0, label: 'Nicolas', start: 0, end: 5, text: 'Bom dia, a Reunião começa agora.' },
+    { speaker: 1, label: 'Locutor 2', start: 6, end: 9, text: 'Finalizei a captura de áudio.' },
+    { speaker: 0, label: 'Nicolas', start: 10, end: 12, text: 'Depois da reuniao revisamos o áudio.' },
+    { speaker: null, label: '', start: 13, end: 15, text: 'Sem locutor nenhum.' },
+];
+
+test('findMatches: sem acento e sem caixa', () => {
+    assert.deepEqual(VM.findMatches(FIND_BLOCKS, 'reuniao'), [0, 2]);
+    assert.deepEqual(VM.findMatches(FIND_BLOCKS, 'REUNIÃO'), [0, 2]);
+    assert.deepEqual(VM.findMatches(FIND_BLOCKS, 'audio'), [1, 2]);
+});
+
+test('findMatches: todos os termos precisam aparecer (E)', () => {
+    assert.deepEqual(VM.findMatches(FIND_BLOCKS, 'reuniao audio'), [2]);
+    assert.deepEqual(VM.findMatches(FIND_BLOCKS, '  captura   finalizei '), [1]);
+    assert.deepEqual(VM.findMatches(FIND_BLOCKS, 'reuniao inexistente'), []);
+});
+
+test('findMatches: consulta vazia ou só espaços não acha nada', () => {
+    assert.deepEqual(VM.findMatches(FIND_BLOCKS, ''), []);
+    assert.deepEqual(VM.findMatches(FIND_BLOCKS, '   '), []);
+    assert.deepEqual(VM.findMatches(FIND_BLOCKS, null), []);
+    assert.deepEqual(VM.findMatches([], 'reuniao'), []);
+});
+
+test('findMatches: o nome do locutor entra na busca', () => {
+    assert.deepEqual(VM.findMatches(FIND_BLOCKS, 'locutor 2'), [1]);
+    assert.deepEqual(VM.findMatches(FIND_BLOCKS, 'nicolas audio'), [2]);
+    assert.deepEqual(VM.findMatches(FIND_BLOCKS, 'locutor'), [1, 3]);
+});
+
+test('nextIndex: avança e volta dando a volta', () => {
+    assert.equal(VM.nextIndex([2, 5, 9], -1, 1), 0);
+    assert.equal(VM.nextIndex([2, 5, 9], 0, 1), 1);
+    assert.equal(VM.nextIndex([2, 5, 9], 2, 1), 0);
+    assert.equal(VM.nextIndex([2, 5, 9], 0, -1), 2);
+    assert.equal(VM.nextIndex([2, 5, 9], 2, -1), 1);
+    assert.equal(VM.nextIndex([2, 5, 9], -1, -1), 2);
+});
+
+test('nextIndex: sem resultados devolve -1', () => {
+    assert.equal(VM.nextIndex([], -1, 1), -1);
+    assert.equal(VM.nextIndex([], 0, -1), -1);
+});
+
 finish();

@@ -1,8 +1,9 @@
 /* exported languageName blockTitle viewHeader exportContent exportExtension speakerEntry
-   currentBlockIndex */
+   currentBlockIndex findMatches nextIndex */
 // Textos da visão de transcrição, sem GTK: testáveis isoladamente.
 const { blockIndexAt, buildBlocks } = imports.transcript;
 const { copyText, formatClock, formatDateTime, toMarkdown } = imports.transcriptFormat;
+const { normalize } = imports.transcriptSearch;
 
 const DEFAULT_TITLE = 'Transcrição';
 const PORTUGUESE = ['por', 'pt'];
@@ -63,4 +64,30 @@ var currentBlockIndex = (blocks, positionNs) => {
     if (!Number.isFinite(positionNs) || positionNs < 0)
         return -1;
     return blockIndexAt(blocks, positionNs / 1e9);
+};
+
+// Busca dentro da transcrição: índices dos blocos cujo "nome + texto" contém todos os
+// termos da consulta, sem acento e sem caixa. Consulta vazia não acha nada.
+var findMatches = (blocks, query) => {
+    const terms = normalize(query).split(/\s+/).filter(Boolean);
+    if (terms.length === 0)
+        return [];
+    const matches = [];
+    blocks.forEach((block, i) => {
+        const haystack = normalize(`${block.label ?? ''} ${block.text ?? ''}`);
+        if (terms.every(term => haystack.includes(term)))
+            matches.push(i);
+    });
+    return matches;
+};
+
+// Próxima posição dentro de `matches` (dir 1 ou -1), dando a volta; -1 sem resultados.
+// `current` -1 (nenhum ativo) vai para o primeiro (dir 1) ou o último (dir -1).
+var nextIndex = (matches, current, dir) => {
+    const count = matches.length;
+    if (count === 0)
+        return -1;
+    if (current < 0 || current >= count)
+        return dir < 0 ? count - 1 : 0;
+    return (current + (dir < 0 ? -1 : 1) + count) % count;
 };
