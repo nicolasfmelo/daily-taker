@@ -39,6 +39,18 @@ var moveTranscript = (oldRecordingFile, newRecordingFile) => {
     if (src.equal(dest) || !src.query_exists(null))
         return;
     src.move(dest, Gio.FileCopyFlags.OVERWRITE, null, null);
+
+    // O título nasce do nome da gravação: acompanha o novo nome, salvo se o usuário o
+    // personalizou. Falhar aqui não desfaz a mudança de nome (só fica o título antigo).
+    const oldName = oldRecordingFile.get_basename();
+    const newName = newRecordingFile.get_basename();
+    try {
+        const t = loadTranscript(newRecordingFile);
+        if (t && t.title === oldName)
+            saveTranscript(newRecordingFile, Object.assign({}, t, { title: newName }));
+    } catch (e) {
+        log(`Não foi possível atualizar o título da transcrição: ${dest.get_basename()}`);
+    }
 };
 
 var trashTranscript = recordingFile => {

@@ -128,6 +128,37 @@ test('moveTranscript leva o arquivo para o novo nome', () => withDir(dir => {
     assert.deepEqual(S.loadTranscript(newRec), t);
 }));
 
+test('moveTranscript atualiza o título que era o nome antigo da gravação', () => withDir(dir => {
+    const oldRec = touch(dir, 'Gravação 3');
+    const t = makeTranscript(null, { title: 'Gravação 3' });
+    S.saveTranscript(oldRec, t);
+    const newRec = dir.get_child('Daily 22/10'.replace('/', '-'));
+    S.moveTranscript(oldRec, newRec);
+    assert.equal(dir.get_child('Gravação 3.transcript.json').query_exists(null), false);
+    const moved = S.loadTranscript(newRec);
+    assert.equal(moved.title, 'Daily 22-10');
+    assert.deepEqual(moved, Object.assign({}, t, { title: 'Daily 22-10' }));
+}));
+
+test('moveTranscript preserva um título personalizado', () => withDir(dir => {
+    const oldRec = touch(dir, 'Gravação 3');
+    const t = makeTranscript(null, { title: 'Planejamento do trimestre' });
+    S.saveTranscript(oldRec, t);
+    const newRec = dir.get_child('Daily');
+    S.moveTranscript(oldRec, newRec);
+    assert.deepEqual(S.loadTranscript(newRec), t);
+}));
+
+test('moveTranscript com transcrição ilegível só move, sem lançar', () => withDir(dir => {
+    const oldRec = touch(dir, 'Gravação 3');
+    dir.get_child('Gravação 3.transcript.json').replace_contents('{ quebrado', null, false,
+        Gio.FileCreateFlags.NONE, null);
+    const newRec = dir.get_child('Daily');
+    captureLog(() => S.moveTranscript(oldRec, newRec));
+    assert.equal(dir.get_child('Gravação 3.transcript.json').query_exists(null), false);
+    assert.equal(dir.get_child('Daily.transcript.json').query_exists(null), true);
+}));
+
 test('moveTranscript sem transcrição não faz nada', () => withDir(dir => {
     const oldRec = touch(dir, 'Recording 1');
     S.moveTranscript(oldRec, dir.get_child('Outro'));
