@@ -2,7 +2,6 @@
 <gresources>
   <gresource prefix="/dev/nicolas/DailyTaker">
     <file>style.css</file>
-    <file>style-hc.css</file>
     <file>ui/preferences.ui</file>
     <file>ui/recorder.ui</file>
     <file>ui/row.ui</file>

@@ -1,8 +1,177 @@
-@define-color dimmed_color alpha(currentColor, .55);
+/* Tema fixo escuro e laranja (o app força FORCE_DARK em src/appTheme.js).
+ * Tokens medidos na mockup; ver docs/superpowers/specs/2026-10-22-daily-taker-ui-redesign.md §3. */
+
+@define-color bg_window #1A1D22;
+@define-color bg_detail #1B1D22;
+@define-color bg_header #25272E;
+@define-color bg_item_selected #26292F;
+@define-color accent #FA841E;
+@define-color accent_alt #F28416;
+@define-color accent_soft alpha(#F88712, .12);
+@define-color ok #3FCF70;
+@define-color text_dim #9CA4B8;
+@define-color track #2F333B;
+
+/* Locutores: ciclo pelo id (speaker-N com N = id % 6). */
+@define-color speaker_0 #3D9BFD;
+@define-color speaker_1 #A655FD;
+@define-color speaker_2 #3FCF70;
+@define-color speaker_3 #22D3EE;
+@define-color speaker_4 #F472B6;
+@define-color speaker_5 #FACC15;
+
+/* Acento da libadwaita: botões suggested-action, switches, foco, seleção, sliders.
+ * As cores nomeadas servem a quem as lê (waveform.js usa accent_color e dimmed_color);
+ * as variáveis são o que o stylesheet da libadwaita 1.6+ consulta de fato. */
+@define-color accent_bg_color @accent;
+@define-color accent_fg_color #FFFFFF;
+@define-color accent_color @accent;
+@define-color dimmed_color @text_dim;
+
+:root {
+  --accent-bg-color: @accent_bg_color;
+  --accent-fg-color: @accent_fg_color;
+  --accent-color: @accent_color;
+  --window-bg-color: @bg_window;
+  --view-bg-color: @bg_detail;
+  --headerbar-bg-color: @bg_header;
+  --headerbar-backdrop-color: @bg_header;
+  --sidebar-bg-color: @bg_window;
+  --sidebar-backdrop-color: @bg_window;
+  --secondary-sidebar-bg-color: @bg_window;
+}
+
+/* Textos secundários no cinza-azulado da mockup, em vez de branco translúcido. */
+.dim-label,
+.dimmed {
+  color: @text_dim;
+  opacity: 1;
+}
+
+scale > trough {
+  background-color: @track;
+}
+
+/* Superfícies */
+
+.bg-window {
+  background-color: @bg_window;
+}
+
+.bg-detail {
+  background-color: @bg_detail;
+}
+
+/* Botão "Nova gravação" */
+
+button.accent-pill {
+  background-color: @accent;
+  color: @accent_fg_color;
+  font-weight: bold;
+  border-radius: 8px;
+  padding: 6px 14px;
+}
+
+button.accent-pill:hover {
+  background-color: @accent_alt;
+}
+
+button.accent-pill:active {
+  background-color: shade(@accent_alt, .9);
+}
+
+/* Sidebar */
+
+.group-label {
+  color: @text_dim;
+  font-size: smaller;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+
+.sidebar-item {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background-color: transparent;
+}
+
+/* Barra laranja de 3 px à esquerda do item selecionado. */
+.sidebar-item.selected,
+.sidebar-item:selected {
+  background-color: @bg_item_selected;
+  box-shadow: inset 3px 0 @accent;
+}
+
+.badge-ok {
+  color: @ok;
+  font-size: smaller;
+}
+
+.badge-error {
+  color: @error_color;
+  font-size: smaller;
+}
+
+/* Transcrição */
+
+.transcript-block {
+  padding: 6px 10px;
+  border-radius: 12px;
+  transition: background-color 150ms ease-out;
+}
+
+/* Bloco tocando: fundo laranja suave, barra à esquerda, horário e ponto em laranja. */
+.transcript-block.current {
+  background-color: @accent_soft;
+  box-shadow: inset 3px 0 @accent;
+}
+
+.transcript-block.current .numeric {
+  color: @accent;
+}
+
+.speaker-dot {
+  min-width: 10px;
+  min-height: 10px;
+  border-radius: 999px;
+  background-color: @text_dim;
+}
+
+.speaker-dot.speaker-none {
+  background-color: @text_dim;
+}
+
+.speaker-dot.speaker-0 { background-color: @speaker_0; }
+.speaker-dot.speaker-1 { background-color: @speaker_1; }
+.speaker-dot.speaker-2 { background-color: @speaker_2; }
+.speaker-dot.speaker-3 { background-color: @speaker_3; }
+.speaker-dot.speaker-4 { background-color: @speaker_4; }
+.speaker-dot.speaker-5 { background-color: @speaker_5; }
+
+.transcript-block.current .speaker-dot {
+  background-color: @accent;
+}
+
+.speaker-button {
+  padding: 2px 6px;
+  min-height: 0;
+}
+
+/* Player */
+
+.player-bar {
+  background-color: @bg_window;
+  border-top: 1px solid var(--border-color);
+  padding: 12px 24px;
+}
+
+/* Tela de gravação */
 
 .recorder-time-label {
   font-size: 32pt;
   font-weight: 300;
+  color: @dimmed_color;
 }
 
 @keyframes clocks-blink {
@@ -10,16 +179,12 @@
   100% { color: @destructive_color; }
 }
 
-.recorder-time-label {
-  color: @dimmed_color;
-}
-
 .recorder-time-label.paused {
-	color: @destructive_color;
-	animation-name: clocks-blink;
-	animation-iteration-count: infinite;
-	animation-timing-function: cubic-bezier(1.0,0,0,1.0);
-	animation-duration: 1s;
+  color: @destructive_color;
+  animation-name: clocks-blink;
+  animation-iteration-count: infinite;
+  animation-timing-function: cubic-bezier(1.0, 0, 0, 1.0);
+  animation-duration: 1s;
 }
 
 button.large {
@@ -30,26 +195,19 @@ button.large {
   padding: 0;
 }
 
-/* Visão de transcrição: bloco sendo falado no player (laranja do ícone, discreto). */
-.transcript-block {
-  padding: 6px 10px;
-  border-radius: 12px;
-  transition: background-color 150ms ease-out;
-}
-
-.transcript-block.current {
-  background-color: alpha(@orange_3, .15);
-}
-
-.speaker-button {
-  padding: 2px 6px;
-  min-height: 0;
-}
-
+/* Alto contraste (substitui o antigo style-hc.css). */
 @media (prefers-contrast: more) {
+  @define-color text_dim #D3D8E3;
+  @define-color accent_fg_color #1A1D22;
+
   .transcript-block.current {
-    background-color: alpha(@orange_3, .3);
-    outline: 2px solid @orange_4;
+    outline: 2px solid @accent;
     outline-offset: -2px;
+  }
+
+  .sidebar-item.selected,
+  .sidebar-item:selected {
+    outline: 1px solid @accent;
+    outline-offset: -1px;
   }
 }

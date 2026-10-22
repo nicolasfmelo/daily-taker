@@ -27,6 +27,7 @@ var Settings = new Gio.Settings({ schema: pkg.name });
 const { Window } = imports.window;
 const { PreferencesWindow } = imports.preferences;
 const { maybeSnapshot } = imports.devSnapshot;
+const { applyTheme } = imports.appTheme;
 
 var Application = GObject.registerClass(class Application extends Adw.Application {
     _init() {
@@ -85,6 +86,7 @@ var Application = GObject.registerClass(class Application extends Adw.Applicatio
     }
 
     vfunc_startup() {
+        applyTheme();
         super.vfunc_startup();
         log('Daily Taker (%s)'.format(pkg.name));
         log('Version: %s'.format(pkg.version));
