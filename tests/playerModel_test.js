@@ -104,4 +104,84 @@ test('toggleMute: muta lembrando o volume e desmuta restaurando', () => {
     assert.deepEqual(P.toggleMute({}), { volume: 0, muted: true, previous: 1 });
 });
 
+// Relógio e temporizadores falsos para o SeekCoalescer.
+const fakeClock = () => {
+    const clock = { now: 0, timers: [], sent: [] };
+    clock.schedule = (ms, fn) => {
+        const timer = { at: clock.now + ms, fn };
+        clock.timers.push(timer);
+        return timer;
+    };
+    clock.cancel = timer => {
+        clock.timers = clock.timers.filter(t => t !== timer);
+    };
+    clock.advance = ms => {
+        clock.now += ms;
+        const due = clock.timers.filter(t => t.at <= clock.now);
+        clock.timers = clock.timers.filter(t => t.at > clock.now);
+        due.forEach(t => t.fn());
+    };
+    return clock;
+};
+
+const coalescer = clock => new P.SeekCoalescer({
+    interval: 60,
+    now: () => clock.now,
+    schedule: clock.schedule,
+    cancel: clock.cancel,
+    send: v => clock.sent.push(v),
+});
+
+test('SeekCoalescer: o primeiro pedido sai já; os seguintes no máximo um a cada 60 ms', () => {
+    const clock = fakeClock();
+    const c = coalescer(clock);
+    c.request(0.1);
+    assert.deepEqual(clock.sent, [0.1]);
+    clock.advance(10);
+    c.request(0.2);
+    clock.advance(10);
+    c.request(0.3);
+    assert.deepEqual(clock.sent, [0.1]);
+    assert.equal(clock.timers.length, 1);
+    clock.advance(40);
+    // Só o último pedido pendente sai, no fim do intervalo.
+    assert.deepEqual(clock.sent, [0.1, 0.3]);
+    clock.advance(100);
+    assert.deepEqual(clock.sent, [0.1, 0.3]);
+    c.request(0.4);
+    assert.deepEqual(clock.sent, [0.1, 0.3, 0.4]);
+});
+
+test('SeekCoalescer: flush (soltar) manda o pendente já e cancela o temporizador', () => {
+    const clock = fakeClock();
+    const c = coalescer(clock);
+    c.request(0.1);
+    clock.advance(5);
+    c.request(0.5);
+    c.flush();
+    assert.deepEqual(clock.sent, [0.1, 0.5]);
+    assert.equal(clock.timers.length, 0);
+    // Nada pendente: flush não repete o último.
+    c.flush();
+    assert.deepEqual(clock.sent, [0.1, 0.5]);
+});
+
+test('SeekCoalescer: cancel descarta o pendente', () => {
+    const clock = fakeClock();
+    const c = coalescer(clock);
+    c.request(0.1);
+    c.request(0.2);
+    c.cancel();
+    clock.advance(100);
+    c.flush();
+    assert.deepEqual(clock.sent, [0.1]);
+});
+
+test('positionHeld: ignora a posição do player logo depois de soltar o arraste', () => {
+    assert.equal(P.positionHeld(1000, 900, 200), true);
+    assert.equal(P.positionHeld(1100, 900, 200), false);
+    assert.equal(P.positionHeld(1000, null, 200), false);
+    assert.equal(P.positionHeld(1000, undefined, 200), false);
+});
+
 finish();

@@ -1,4 +1,5 @@
-/* exported RATES formatShortClock positionLabel rateLabel clampVolume fractionFromX bucketPeaks shouldScroll toggleMute volumeIcon */
+/* exported RATES formatShortClock positionLabel rateLabel clampVolume fractionFromX bucketPeaks shouldScroll toggleMute volumeIcon
+   SeekCoalescer positionHeld */
 
 var RATES = [0.75, 1, 1.25, 1.5, 2];
 
@@ -75,3 +76,69 @@ var toggleMute = ({ volume, muted, previous } = {}) => {
     }
     return { volume: 0, muted: true, previous: v };
 };
+
+// Seeks pedidos durante o arraste na onda: o primeiro vai já; depois, no máximo um a cada
+// `interval` ms (só o último pedido pendente sai no fim do intervalo); flush() (ao soltar)
+// manda o pendente na hora. Relógio e temporizadores injetados (testável sem GLib).
+var SeekCoalescer = class SeekCoalescer {
+    constructor({ interval = 60, now, schedule, cancel, send }) {
+        this._interval = interval;
+        this._now = now;
+        this._schedule = schedule;
+        this._cancelTimer = cancel;
+        this._send = send;
+        this._lastSent = -Infinity;
+        this._pending = null;
+        this._timer = null;
+    }
+
+    request(value) {
+        const elapsed = this._now() - this._lastSent;
+        if (this._timer === null && elapsed >= this._interval) {
+            this._emit(value);
+            return;
+        }
+        this._pending = value;
+        if (this._timer === null) {
+            this._timer = this._schedule(this._interval - elapsed, () => {
+                this._timer = null;
+                this._emitPending();
+            });
+        }
+    }
+
+    flush() {
+        this._stopTimer();
+        this._emitPending();
+    }
+
+    cancel() {
+        this._stopTimer();
+        this._pending = null;
+    }
+
+    _emitPending() {
+        if (this._pending === null)
+            return;
+        const value = this._pending;
+        this._pending = null;
+        this._emit(value);
+    }
+
+    _emit(value) {
+        this._lastSent = this._now();
+        this._send(value);
+    }
+
+    _stopTimer() {
+        if (this._timer !== null) {
+            this._cancelTimer(this._timer);
+            this._timer = null;
+        }
+    }
+};
+
+// Logo depois de soltar o arraste (até `holdMs`), a posição que o player informa ainda
+// pode ser a de antes do seek: o marcador não deve pular de volta.
+var positionHeld = (now, releasedAt, holdMs) =>
+    finite(releasedAt) && now - releasedAt < holdMs;

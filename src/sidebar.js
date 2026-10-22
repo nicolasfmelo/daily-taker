@@ -6,9 +6,8 @@
 // linha destacada na lista só a reflete.
 const { Gio, GLib, GObject, Gtk, Pango } = imports.gi;
 
-const { groupLabel, itemSubtitle } = imports.recordingGroups;
-const { emptyListMessage, itemTimestamp, nextSelection, recordingMatchesHaystack, statusBadge } =
-    imports.sidebarModel;
+const { groupLabel, itemDate, itemSubtitle } = imports.recordingGroups;
+const { emptyListMessage, nextSelection, recordingMatchesHaystack, statusBadge } = imports.sidebarModel;
 const { rowStatus } = imports.transcriptionUi;
 const { searchableText } = imports.transcriptSearch;
 const { loadTranscript, transcriptFileFor } = imports.transcriptStore;
@@ -18,11 +17,9 @@ const EMPTY_TEXT = {
     'no-results': 'Nada encontrado para essa busca',
 };
 
-// Data do item: início da gravação (ver itemTimestamp), ou null.
-const itemDate = recording => {
-    const seconds = itemTimestamp(recording.timeCreated?.to_unix(), recording.timeModified?.to_unix());
-    return seconds === null ? null : new Date(seconds * 1000);
-};
+// Data do item: início da gravação (ver itemTimestamp em recordingGroups.js), ou null.
+const recordingDate = recording =>
+    itemDate(recording.timeCreated?.to_unix(), recording.timeModified?.to_unix());
 
 const SidebarItem = GObject.registerClass(class SidebarItem extends Gtk.ListBoxRow {
     _init(recording) {
@@ -119,6 +116,8 @@ var Sidebar = GObject.registerClass({
     InternalChildren: ['exportButton', 'searchEntry', 'listStack', 'list', 'emptyLabel'],
     Signals: {
         'recording-selected': { param_types: [GObject.TYPE_OBJECT] },
+        // Escolha explícita de uma linha (clique, Enter): na janela estreita abre o painel.
+        'recording-activated': { param_types: [GObject.TYPE_OBJECT] },
         'rename-requested': { param_types: [GObject.TYPE_OBJECT] },
         'delete-requested': { param_types: [GObject.TYPE_OBJECT] },
         'transcribe-requested': { param_types: [GObject.TYPE_OBJECT, GObject.TYPE_BOOLEAN] },
@@ -152,6 +151,10 @@ var Sidebar = GObject.registerClass({
         this._model.connect('items-changed', () => this._onModelChanged());
         this._list.set_header_func((row, before) => this._updateHeader(row, before));
         this._list.connect('row-selected', (_list, row) => this._onRowSelected(row));
+        this._list.connect('row-activated', (_list, row) => {
+            if (row.recording === this._selected)
+                this.emit('recording-activated', row.recording);
+        });
 
         this._storeChangedId = recordingList.connect('items-changed', () => {
             this._syncTracked();
@@ -207,6 +210,12 @@ var Sidebar = GObject.registerClass({
             this.setQuery('');
         this._setSelected(target);
         return true;
+    }
+
+    // "Hoje"/"Ontem" e os horários dos itens mudam com o tempo: recalcula (a janela chama
+    // à meia-noite e quando volta a ficar ativa).
+    refreshDates() {
+        this._refreshTimes();
     }
 
     // Reavalia o selo do item da gravação `uri` (se estiver visível).
@@ -351,7 +360,7 @@ var Sidebar = GObject.registerClass({
     }
 
     _subtitleOf(recording, now) {
-        return itemSubtitle({ created: itemDate(recording), durationSec: recording.duration / 1e9 }, now);
+        return itemSubtitle({ created: recordingDate(recording), durationSec: recording.duration / 1e9 }, now);
     }
 
     _fillMenu(button, recording) {
@@ -526,8 +535,8 @@ var Sidebar = GObject.registerClass({
 
     _updateHeader(row, before) {
         const now = new Date();
-        const label = groupLabel(itemDate(row.recording), now);
-        const previous = before ? groupLabel(itemDate(before.recording), now) : null;
+        const label = groupLabel(recordingDate(row.recording), now);
+        const previous = before ? groupLabel(recordingDate(before.recording), now) : null;
         if (label === previous || !label) {
             row.set_header(null);
             return;

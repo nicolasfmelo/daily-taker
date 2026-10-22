@@ -1,4 +1,5 @@
-/* exported groupLabel groupRecordings formatDurationShort itemSubtitle detailSubtitle */
+/* exported groupLabel groupRecordings formatDurationShort itemSubtitle detailSubtitle itemTimestamp itemDate
+   msUntilNextDay */
 
 const MONTHS_UPPER = ['JANEIRO', 'FEVEREIRO', 'MARÇO', 'ABRIL', 'MAIO', 'JUNHO', 'JULHO', 'AGOSTO',
     'SETEMBRO', 'OUTUBRO', 'NOVEMBRO', 'DEZEMBRO'];
@@ -81,4 +82,31 @@ var detailSubtitle = ({ created, durationSec, speakerCount } = {}) => {
         ? `${speakerCount} ${speakerCount === 1 ? 'locutor' : 'locutores'}`
         : '';
     return join([date, formatDurationShort(durationSec), speakers]);
+};
+
+// Horário de uma gravação (segundos Unix): o menor válido entre criação e modificação.
+// Numa gravação a criação é o início; numa cópia (restauração, fixtures) a "criação" é a
+// hora da cópia, depois da modificação, que então vale. null sem nenhum dos dois. Regra
+// única da sidebar (grupos, subtítulo) e do painel de detalhe (data do subtítulo).
+var itemTimestamp = (createdUnix, modifiedUnix) => {
+    const valid = [createdUnix, modifiedUnix].filter(t => Number.isFinite(t) && t > 0);
+    return valid.length ? Math.min(...valid) : null;
+};
+
+// O mesmo horário como Date (null sem data válida).
+var itemDate = (createdUnix, modifiedUnix) => {
+    const seconds = itemTimestamp(createdUnix, modifiedUnix);
+    return seconds === null ? null : new Date(seconds * 1000);
+};
+
+const HOUR_MS = 3600 * 1000;
+
+// Milissegundos até a próxima meia-noite local (quando "Hoje"/"Ontem" mudam); 1 h para
+// uma data inválida.
+var msUntilNextDay = now => {
+    if (!validDate(now))
+        return HOUR_MS;
+    const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+    const ms = midnight.getTime() - now.getTime();
+    return ms > 0 ? ms : HOUR_MS;
 };

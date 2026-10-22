@@ -1,4 +1,4 @@
-/* exported emptyListMessage generateCard itemTimestamp nextSelection paneActions paneBanner paneState
+/* exported emptyListMessage generateCard nextSelection paneActions paneBanner paneState
    recordingMatches recordingMatchesHaystack statusBadge */
 
 const { normalize, searchableText } = imports.transcriptSearch;
@@ -80,12 +80,4 @@ var emptyListMessage = (total, visible, query) => {
     if (!(total > 0))
         return 'no-recordings';
     return (query ?? '').trim() ? 'no-results' : 'none';
-};
-
-// Horário do item (segundos Unix): o menor válido entre criação e modificação. Numa
-// gravação a criação é o início; numa cópia (restauração, fixtures) a "criação" é a hora
-// da cópia, depois da modificação, que então vale. null sem nenhum dos dois.
-var itemTimestamp = (createdUnix, modifiedUnix) => {
-    const valid = [createdUnix, modifiedUnix].filter(t => Number.isFinite(t) && t > 0);
-    return valid.length ? Math.min(...valid) : null;
 };

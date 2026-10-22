@@ -126,4 +126,39 @@ test('recordingGroups: entradas inválidas nunca geram undefined/NaN/null', () =
     assert.deepEqual(groups.map(g => g.label), ['']);
 });
 
+test('itemTimestamp: o menor horário válido entre criação e modificação', () => {
+    const table = [
+        // [criação, modificação, esperado] (segundos Unix)
+        [100, 200, 100],     // gravação: criada no início, modificada no fim
+        [300, 200, 200],     // cópia: criação = hora da cópia, depois da modificação
+        [0, 200, 200],       // sistema de arquivos sem data de criação
+        [200, 0, 200],
+        [-5, 200, 200],
+        [NaN, 200, 200],
+        [undefined, 200, 200],
+        [0, 0, null],
+        [null, undefined, null],
+    ];
+    for (const [created, modified, expected] of table)
+        assert.equal(G.itemTimestamp(created, modified), expected);
+});
+
+test('itemDate: Date da regra itemTimestamp, ou null', () => {
+    assert.equal(G.itemDate(300, 200).getTime(), 200 * 1000);
+    assert.equal(G.itemDate(100, 200).getTime(), 100 * 1000);
+    assert.equal(G.itemDate(0, NaN), null);
+    assert.equal(G.itemDate(undefined, undefined), null);
+});
+
+test('msUntilNextDay: até a próxima meia-noite local, sempre > 0', () => {
+    assert.equal(G.msUntilNextDay(new Date(2026, 9, 22, 23, 59, 0)), 60 * 1000);
+    assert.equal(G.msUntilNextDay(new Date(2026, 9, 22, 0, 0, 0)), 24 * 3600 * 1000);
+    assert.equal(G.msUntilNextDay(new Date(2026, 9, 22, 14, 30)), (9 * 60 + 30) * 60 * 1000);
+    // Dia com mudança de horário (fuso dos testes sem horário de verão: só não pode ser ≤ 0).
+    assert.equal(G.msUntilNextDay(new Date(2026, 10, 1, 12, 0)) > 0, true);
+    // Data inválida: um valor seguro (1 h) em vez de NaN.
+    assert.equal(G.msUntilNextDay(new Date(NaN)), 3600 * 1000);
+    assert.equal(G.msUntilNextDay(null), 3600 * 1000);
+});
+
 finish();

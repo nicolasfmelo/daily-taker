@@ -21,6 +21,8 @@ var SeekWaveform = GObject.registerClass({
     },
     Signals: {
         'seek-requested': { param_types: [GObject.TYPE_DOUBLE] },
+        // O arraste (ou clique) terminou: o último seek-requested foi o final.
+        'drag-finished': {},
     },
 }, class SeekWaveform extends Gtk.DrawingArea {
     _init(params = {}) {
@@ -44,6 +46,7 @@ var SeekWaveform = GObject.registerClass({
         drag.connect('drag-end', (_gesture, dx) => {
             this._requestSeek(this._dragStartX + dx);
             this._dragging = false;
+            this.emit('drag-finished');
         });
         this.add_controller(drag);
         this.connect('notify::sensitive', () => this.queue_draw());

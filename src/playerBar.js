@@ -4,9 +4,16 @@
 // gravação passada a setRecording(); a janela carrega a mídia (playback.load).
 const { Gio, GLib, GObject, Gtk } = imports.gi;
 
-const { RATES, positionLabel, rateLabel, toggleMute, volumeIcon } = imports.playerModel;
+const { RATES, SeekCoalescer, positionHeld, positionLabel, rateLabel, toggleMute, volumeIcon } =
+    imports.playerModel;
 // Registra o tipo Gjs_SeekWaveform usado no template.
 imports.seekWaveform;
+
+// Arraste na onda: no máximo um seek a cada SEEK_INTERVAL_MS (o último sai ao soltar), e
+// por RELEASE_HOLD_MS depois de soltar o marcador não volta à posição antiga do player.
+const SEEK_INTERVAL_MS = 60;
+const RELEASE_HOLD_MS = 200;
+const nowMs = () => GLib.get_monotonic_time() / 1000;
 
 var PlayerBar = GObject.registerClass({
     Template: 'resource:///dev/nicolas/DailyTaker/ui/player-bar.ui',
@@ -31,6 +38,7 @@ var PlayerBar = GObject.registerClass({
         this._muted = false;
         this._previousVolume = 1;
         this._syncing = false;
+        this._releasedAt = null;
         super._init(params);
         this._settings = settings ?? imports.application.Settings;
 
@@ -39,7 +47,22 @@ var PlayerBar = GObject.registerClass({
             GObject.BindingFlags.BIDIRECTIONAL | GObject.BindingFlags.SYNC_CREATE);
 
         this._playButton.connect('clicked', () => this._playback?.toggle());
-        this._waveform.connect('seek-requested', (_w, fraction) => this._seek(fraction));
+        this._seeks = new SeekCoalescer({
+            interval: SEEK_INTERVAL_MS,
+            now: nowMs,
+            schedule: (ms, fn) => GLib.timeout_add(GLib.PRIORITY_DEFAULT, Math.max(1, Math.ceil(ms)), () => {
+                fn();
+                return GLib.SOURCE_REMOVE;
+            }),
+            cancel: id => GLib.source_remove(id),
+            send: fraction => this._seek(fraction),
+        });
+        this._waveform.connect('seek-requested', (_w, fraction) => this._seeks.request(fraction));
+        this._waveform.connect('drag-finished', () => {
+            this._seeks.flush();
+            this._releasedAt = nowMs();
+        });
+        this.connect('destroy', () => this._seeks.cancel());
         this._volumeButton.connect('clicked', () => this._toggleMute());
         this._volumeScale.connect('value-changed', () => {
             if (!this._syncing)
@@ -65,6 +88,7 @@ var PlayerBar = GObject.registerClass({
     // Liga a barra a um Playback (desliga o anterior). Aplica a velocidade e o volume
     // salvos nas configurações.
     bind(playback) {
+        this._seeks.cancel();
         for (const id of this._playbackIds)
             this._playback.disconnect(id);
         this._playbackIds = [];
@@ -92,6 +116,9 @@ var PlayerBar = GObject.registerClass({
 
     // Gravação mostrada na onda; null desabilita os controles.
     setRecording(recording) {
+        // Um seek pendente da gravação anterior não vale para a nova.
+        this._seeks.cancel();
+        this._releasedAt = null;
         for (const id of this._recordingIds)
             this._recording.disconnect(id);
         this._recordingIds = [];
@@ -164,8 +191,8 @@ var PlayerBar = GObject.registerClass({
         const position = this._playback?.position ?? 0;
         const duration = this._playback?.duration ?? 0;
         this._positionLabel.label = positionLabel(position, duration);
-        // Durante o arraste a onda segue o dedo, não o player.
-        if (!this._waveform.dragging)
+        // Durante o arraste (e logo depois de soltar) a onda segue o dedo, não o player.
+        if (!this._waveform.dragging && !positionHeld(nowMs(), this._releasedAt, RELEASE_HOLD_MS))
             this._waveform.position = duration > 0 ? position / duration : 0;
     }
 

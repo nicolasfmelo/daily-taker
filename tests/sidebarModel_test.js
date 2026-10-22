@@ -202,23 +202,6 @@ test('emptyListMessage: biblioteca vazia, busca sem resultado ou nada', () => {
         assert.equal(M.emptyListMessage(total, visible, query), expected);
 });
 
-test('itemTimestamp: o menor horário válido entre criação e modificação', () => {
-    const table = [
-        // [criação, modificação, esperado] (segundos Unix)
-        [100, 200, 100],     // gravação: criada no início, modificada no fim
-        [300, 200, 200],     // cópia: criação = hora da cópia, depois da modificação
-        [0, 200, 200],       // sistema de arquivos sem data de criação
-        [200, 0, 200],
-        [-5, 200, 200],
-        [NaN, 200, 200],
-        [undefined, 200, 200],
-        [0, 0, null],
-        [null, undefined, null],
-    ];
-    for (const [created, modified, expected] of table)
-        assert.equal(M.itemTimestamp(created, modified), expected);
-});
-
 test('recordingMatchesHaystack: texto já normalizado da transcrição', () => {
     const hay = 'planejamento do trimestre\nana\norcamento aprovado';
     const table = [

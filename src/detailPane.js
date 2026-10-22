@@ -5,7 +5,7 @@
 // Não chama a API nem abre diálogos de arquivo: pede ao dono (a janela) por sinais.
 const { Gdk, Gio, GLib, GObject, Gtk } = imports.gi;
 
-const { detailSubtitle } = imports.recordingGroups;
+const { detailSubtitle, itemDate } = imports.recordingGroups;
 const { generateCard, paneActions, paneBanner, paneState } = imports.sidebarModel;
 const { buildBlocks } = imports.transcript;
 const { findCounterText } = imports.transcriptViewModel;
@@ -21,13 +21,9 @@ const speakerCount = t => {
     return new Set(buildBlocks(t).map(b => b.speaker).filter(s => s !== null)).size;
 };
 
-// GLib.DateTime → Date; sem data de criação (0 em alguns sistemas de arquivos) usa a de
-// modificação.
-const recordingDate = recording => {
-    const created = recording.timeCreated;
-    const dt = created && created.to_unix() > 0 ? created : recording.timeModified;
-    return dt ? new Date(dt.to_unix() * 1000) : null;
-};
+// Data da gravação: a mesma regra da sidebar (itemTimestamp em recordingGroups.js).
+const recordingDate = recording =>
+    itemDate(recording.timeCreated?.to_unix(), recording.timeModified?.to_unix());
 
 var DetailPane = GObject.registerClass({
     Template: 'resource:///dev/nicolas/DailyTaker/ui/detail-pane.ui',
