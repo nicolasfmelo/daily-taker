@@ -1,4 +1,4 @@
-/* exported TranscriptionController */
+/* exported TranscriptionController GONE_MESSAGE */
 // Fluxo de "Gerar transcrição" da janela (migrado da janela antiga, mesma lógica e textos):
 // chave primeiro (sem chave abre as Preferências), diálogo de custo, execução pelo
 // TranscriptionService, toast de falha com "Tentar de novo" conforme retryPlan ('save' só
@@ -9,6 +9,9 @@ const { Adw } = imports.gi;
 
 const { defaultKeyStore } = imports.secrets;
 const { confirmMessage, failureMessage, hasKey, retryPlan } = imports.transcriptionUi;
+
+// Aviso quando o pedido é de uma gravação que não está na lista (ex.: esperando o "Desfazer").
+var GONE_MESSAGE = 'A gravação não está mais na lista.';
 
 var TranscriptionController = class TranscriptionController {
     // parent: janela dos diálogos; service: TranscriptionService; showToast(Adw.Toast);
@@ -37,10 +40,23 @@ var TranscriptionController = class TranscriptionController {
         return this._failures.get(recording.uri)?.message ?? '';
     }
 
+    // Gravação fora da lista (excluída, esperando o "Desfazer"): nenhuma chamada paga, nenhum
+    // diálogo e nenhum descarte da transcrição já paga que ficou em memória (com o Desfazer,
+    // o "Tentar de novo" ainda poderá salvá-la). Avisa e devolve true.
+    _gone(recording) {
+        if (this._hasRecording(recording))
+            return false;
+        if (!this._closed)
+            this._showToast(new Adw.Toast({ title: GONE_MESSAGE, use_markup: false }));
+        return true;
+    }
+
     // regenerate: a gravação já tem transcrição (mesmas guardas, outro texto);
     // namedSpeakers: os nomes dados aos locutores serão perdidos.
     request(recording, options = {}) {
         const { regenerate = false } = options;
+        if (this._gone(recording))
+            return;
         // A chave é verificada antes de tocar no serviço: sem chave a gravação não entra em erro.
         let key = null;
         try {
@@ -78,6 +94,8 @@ var TranscriptionController = class TranscriptionController {
     // "Tentar de novo" do painel: o plano da última falha desta gravação ('save' sem custo);
     // sem falha registrada, o fluxo normal com `options`.
     retry(recording, options = {}) {
+        if (this._gone(recording))
+            return;
         const failure = this._failures.get(recording.uri);
         if (failure?.plan === 'save')
             this._retrySave(recording, recording.file, failure.options);
@@ -86,6 +104,8 @@ var TranscriptionController = class TranscriptionController {
     }
 
     _run(recording, options) {
+        if (this._gone(recording))
+            return;
         const file = recording.file;
         const created = recording.timeCreated;
         const recordedAt = created && created.to_unix() > 0 ? created : recording.timeModified;
@@ -101,6 +121,8 @@ var TranscriptionController = class TranscriptionController {
 
     // A transcrição já foi paga: só salva de novo, sem diálogo de custo nem chamada à API.
     _retrySave(recording, file, options) {
+        if (this._gone(recording))
+            return;
         this._failures.delete(recording.uri);
         this._service.retrySave(file).then(
             transcript => this._done(file, transcript),

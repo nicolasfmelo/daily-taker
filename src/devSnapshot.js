@@ -344,6 +344,7 @@ const fakeService = (statuses = new Map()) => {
     const listeners = [];
     return {
         status: file => statuses.get(file.get_uri()) ?? 'none',
+        hasUnsaved: () => false,
         connectChange: fn => listeners.push(fn),
         set(uri, status) {
             if (status === 'none')
@@ -760,6 +761,8 @@ const windowCheckComponent = (params, { window }) => {
     const { NOTHING_RECORDED_MESSAGE } = imports.recorderPipeline;
     const { WindowState } = imports.window;
     const { loadTranscript, saveTranscript, transcriptFileFor } = imports.transcriptStore;
+    const { TranscribeError } = imports.transcriber;
+    const { GONE_MESSAGE } = imports.transcriptionController;
 
     const list = window._recordingList;
     const sidebar = window._sidebar;
@@ -1128,6 +1131,189 @@ const windowCheckComponent = (params, { window }) => {
             trashedFile('Cópia sem lixeira.transcript.json').query_exists(null)) && list.getIndex(stuck.file) < 0,
         'com a pasta liberada, excluir de novo vai para a lixeira');
         await select(daily);
+
+        // 6f. Transcrição paga que não foi salva (o disco falhou) e "Tentar de novo" de uma
+        // gravação que saiu da lista (esperando o Desfazer). Tudo com fakes no serviço: nenhuma
+        // chamada à API, nenhuma chave real (a variável de ambiente é só deste processo).
+        const ctl = window._transcription;
+        const original = {
+            transcribe: service._transcribe, save: service._save, getKey: service._getKey,
+            showToast: ctl._showToast, openPreferences: ctl._openPreferences,
+        };
+        let transcribeCalls = 0;
+        let saveCalls = 0;
+        let saveFails = false;
+        let prefsOpened = 0;
+        const ctlToasts = [];
+        service._transcribe = async () => {
+            transcribeCalls++;
+            return { text: 'olá', language: 'por', duration: 3, words: [] };
+        };
+        service._getKey = () => ({ key: 'sk-windowcheck-fake', source: 'env' });
+        service._save = (file, transcript) => {
+            if (saveFails)
+                throw new TranscribeError('saveFailed', 0, 'Falha simulada do disco.');
+            original.save(file, transcript);
+            saveCalls++;
+        };
+        ctl._showToast = toast => {
+            ctlToasts.push(toast);
+            original.showToast(toast);
+        };
+        ctl._openPreferences = () => prefsOpened++;
+        GLib.setenv('DAILY_TAKER_OP_KEY', 'sk-windowcheck-fake', true);
+        const costDialogs = () => Gtk.Window.list_toplevels().filter(w => w instanceof Adw.MessageDialog);
+        const trashAll = async recordings => {
+            for (const r of recordings) {
+                sidebar.emit('delete-requested', r);
+                window._deleteToasts.get(lastId()).toast.dismiss();
+                await waitFor(() => !r.file.query_exists(null));
+            }
+        };
+        const created = [];
+        const retryToastOf = () => ctlToasts[ctlToasts.length - 1];
+        try {
+            // Parte C: com a transcrição paga só na memória, excluir é recusado.
+            const unsaved = copyFixture(daily, 'Cópia com transcrição não salva', false);
+            created.push(unsaved);
+            await waitFor(() => unsaved.duration > 0);
+            saveFails = true;
+            ctl._run(unsaved, {});
+            check(await waitFor(() => service.status(unsaved.file) === 'error' && service.hasUnsaved(unsaved.file)) &&
+                transcribeCalls === 1 && !transcriptFileFor(unsaved.file).query_exists(null),
+            'falha ao salvar: transcrição paga retida em memória, nada no disco, uma chamada à API');
+            const failToast = retryToastOf();
+            check(failToast?.button_label === 'Tentar de novo' && failToast.use_markup === false &&
+                failToast.title.includes('só salva'),
+            `toast da falha: "Tentar de novo" com o plano só-salvar (${failToast?.title})`);
+            await select(unsaved);
+            const unsavedMessage = 'Há uma transcrição paga que ainda não foi salva. ' +
+                'Toque em Tentar de novo antes de excluir.';
+            const refused = () => list.getIndex(unsaved.file) >= 0 && queue.pending().length === 0 &&
+                service.hasUnsaved(unsaved.file);
+            rowOf(unsaved).grab_focus();
+            nt = toasts.length;
+            window.handleShortcutKey(Gdk.KEY_Delete, 0);
+            check(refused() && toasts[nt] === unsavedMessage && toasts.length === nt + 1,
+                'transcrição não salva: Delete recusado (continua na lista, fila vazia, aviso)');
+            nt = toasts.length;
+            winAction('win.delete', null);
+            check(refused() && toasts[nt] === unsavedMessage, 'transcrição não salva: win.delete recusado com aviso');
+            nt = toasts.length;
+            sidebar.activate_action('sidebar.delete', new GLib.Variant('s', unsaved.uri));
+            check(refused() && toasts[nt] === unsavedMessage,
+                'transcrição não salva: Excluir do menu ⋮ recusado na hora do clique, com aviso');
+            nt = toasts.length;
+            sidebar.emit('delete-requested', unsaved);
+            check(refused() && toasts[nt] === unsavedMessage, 'transcrição não salva: a janela confere de novo o pedido');
+            const unsavedMenu = rowOf(unsaved).menuButton;
+            unsavedMenu.popup();
+            check(unsavedMenu.menu_model.get_item_link(1, 'section').get_item_attribute_value(0, 'action', null)
+                .get_string()[0] === 'sidebar.busy', 'transcrição não salva: Excluir desligado no menu ⋮');
+            unsavedMenu.popdown();
+
+            // Parte B (defesa em profundidade; pela interface a Parte C já impede esta fila): a
+            // gravação sai da lista com a transcrição retida e o "Tentar de novo" do toast é clicado.
+            const index = list.getIndex(unsaved.file);
+            list.remove(index);
+            const idUnsaved = queue.add(unsaved, index);
+            check(window._indexOf(unsaved) < 0 && queue.has(unsaved), 'gravação com transcrição retida fora da lista (pendente)');
+            // O disco já não falha: o que impede salvar é só a guarda da gravação pendente
+            // (recordingGone), o caminho que descartava a transcrição paga.
+            saveFails = false;
+            const before = { calls: transcribeCalls, saves: saveCalls, toasts: ctlToasts.length };
+            failToast.emit('button-clicked');
+            await sleep(200);  // o salvar (se rodasse) é assíncrono
+            check(transcribeCalls === before.calls && saveCalls === before.saves && service.hasUnsaved(unsaved.file) &&
+                !transcriptFileFor(unsaved.file).query_exists(null) && ctlToasts.length === before.toasts + 1 &&
+                ctlToasts[ctlToasts.length - 1].title === GONE_MESSAGE && ctl.failureMessage(unsaved) !== '',
+            'Tentar de novo com a gravação pendente: nada salvo, nada descartado (ainda retida), sem API, ' +
+                'aviso e plano da falha mantido');
+            ctl.retry(unsaved, {});
+            ctl.request(unsaved, {});
+            await sleep(200);
+            check(transcribeCalls === before.calls && saveCalls === before.saves && service.hasUnsaved(unsaved.file) &&
+                costDialogs().length === 0 && prefsOpened === 0,
+            'retry()/request() com a gravação pendente: nenhuma chamada, nenhum diálogo, transcrição ainda retida');
+            // Desfazer e Tentar de novo: salva a mesma transcrição, sem cobrar de novo.
+            window._undoDelete(idUnsaved);
+            ctl.retry(unsaved, {});
+            check(await waitFor(() => !service.hasUnsaved(unsaved.file) && service.status(unsaved.file) === 'none') &&
+                saveCalls === 1 && transcribeCalls === 1 && loadTranscript(unsaved.file)?.text === 'olá' &&
+                list.getIndex(unsaved.file) >= 0,
+            'Desfazer + Tentar de novo: a transcrição retida é salva, com UMA única chamada à API no total');
+            check(ctl.failureMessage(unsaved) === '', 'depois de salvar, a falha some do painel');
+
+            // Parte C: salva, excluir volta a funcionar.
+            sidebar.emit('delete-requested', unsaved);
+            check(queue.has(unsaved) && list.getIndex(unsaved.file) < 0, 'transcrição salva: excluir funciona');
+            window._undoDelete(lastId());
+            // Descartada (o usuário desiste): também libera a exclusão.
+            const discarded = copyFixture(daily, 'Cópia com transcrição descartada', false);
+            created.push(discarded);
+            await waitFor(() => discarded.duration > 0);
+            saveFails = true;
+            ctl._run(discarded, {});
+            await waitFor(() => service.hasUnsaved(discarded.file));
+            sidebar.emit('delete-requested', discarded);
+            check(list.getIndex(discarded.file) >= 0 && !queue.has(discarded), 'outra gravação com transcrição retida: excluir recusado');
+            saveFails = false;
+            service.discardUnsaved(discarded.file);
+            sidebar.emit('delete-requested', discarded);
+            check(queue.has(discarded) && list.getIndex(discarded.file) < 0, 'transcrição descartada: excluir funciona');
+            window._undoDelete(lastId());
+
+            // Parte B, plano 'transcribe': falha sem chave (nenhuma chamada à API), a gravação
+            // é excluída (pendente) e o "Tentar de novo" é clicado: nenhuma execução começa.
+            const again = copyFixture(daily, 'Cópia para tentar de novo', false);
+            created.push(again);
+            await waitFor(() => again.duration > 0);
+            service._getKey = () => null;
+            const callsBefore = transcribeCalls;
+            ctl._run(again, {});
+            await waitFor(() => service.status(again.file) === 'error');
+            service._getKey = () => ({ key: 'sk-windowcheck-fake', source: 'env' });
+            const transcribeToast = retryToastOf();
+            check(transcribeCalls === callsBefore && transcribeToast.button_label === 'Tentar de novo' &&
+                !service.hasUnsaved(again.file), 'falha sem chave: plano transcrever (toast com Tentar de novo), sem API');
+            sidebar.emit('delete-requested', again);
+            const idAgain = lastId();
+            check(queue.has(again) && window._indexOf(again) < 0, 'gravação com falha excluída (pendente)');
+            const toastsBefore = ctlToasts.length;
+            transcribeToast.emit('button-clicked');
+            ctl.retry(again, {});
+            ctl.request(again, { regenerate: true });
+            const stray = costDialogs();
+            for (const dialog of stray)
+                dialog.response('transcribe');
+            await sleep(300);
+            check(stray.length === 0 && transcribeCalls === callsBefore && prefsOpened === 0 &&
+                service.status(again.file) === 'error' && ctlToasts.length === toastsBefore + 3 &&
+                ctlToasts.slice(toastsBefore).every(t => t.title === GONE_MESSAGE),
+            `Tentar de novo (toast, retry, request) com a gravação pendente: nenhuma execução, nenhum diálogo, ` +
+                `nenhuma chamada à API (${transcribeCalls - callsBefore}), aviso em cada um`);
+            // Controle: de volta à lista o mesmo pedido segue o fluxo normal (diálogo de custo).
+            winAction('win.undo-delete', new GLib.Variant('i', idAgain));
+            ctl.retry(again, {});
+            const dialogs = costDialogs();
+            check(list.getIndex(again.file) >= 0 && dialogs.length === 1 && transcribeCalls === callsBefore,
+                'de volta à lista, Tentar de novo abre o diálogo de custo (nada cobrado antes de confirmar)');
+            for (const dialog of dialogs) {
+                dialog.response('cancel');
+                dialog.close();
+            }
+            await sleep(100);
+            check(transcribeCalls === callsBefore && service.status(again.file) === 'error',
+                'cancelar o diálogo: nenhuma chamada à API');
+        } finally {
+            service._transcribe = original.transcribe;
+            service._save = original.save;
+            service._getKey = original.getKey;
+            ctl._showToast = original.showToast;
+            ctl._openPreferences = original.openPreferences;
+            GLib.unsetenv('DAILY_TAKER_OP_KEY');
+        }
+        await trashAll(created);
 
         // 7. Gravador: começar para o player; parar insere, seleciona e deixa parado.
         await select(daily);

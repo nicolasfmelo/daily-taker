@@ -91,7 +91,16 @@ bash tools/snapshot.sh OUT.png [--component window|windowcheck|playerbar|transcr
     sidebar, título do painel e player; **excluir durante a transcrição** é
     recusado (tecla Delete, menu ⋮ aberto antes e o pedido na janela: continua na
     lista, fila vazia, aviso "Aguarde a transcrição terminar para excluir.";
-    Excluir desligado no menu) e volta a funcionar quando ela termina;
+    Excluir desligado no menu) e volta a funcionar quando ela termina; **excluir com
+    a transcrição paga ainda não salva** (o disco falhou; fakes no serviço, sem API
+    nem chave real) é recusado do mesmo jeito (aviso "Há uma transcrição paga que
+    ainda não foi salva. Toque em Tentar de novo antes de excluir."), e volta a
+    funcionar depois de salvar ou descartar; **Tentar de novo com a gravação
+    pendente** (fora da lista, esperando o Desfazer): nem o botão do toast, nem
+    `retry()`/`request()` salvam, descartam a transcrição retida, abrem o diálogo
+    de custo ou chamam a API (aviso "A gravação não está mais na lista."); com o
+    Desfazer, o Tentar de novo salva a mesma transcrição com uma única chamada à
+    API no total;
     **confirmar** manda áudio e transcrição para a lixeira isolada; **lixeira
     impossível** (pasta das gravações sem escrita, `chmod 555` só durante o
     passo): aviso "Não foi possível mover a gravação para a lixeira.", a

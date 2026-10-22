@@ -61,6 +61,8 @@ const SEEK_STEP = 10;
 const UNDO_TIMEOUT = 8;
 const RENAME_BUSY_MESSAGE = 'Aguarde a transcrição terminar para renomear.';
 const DELETE_BUSY_MESSAGE = 'Aguarde a transcrição terminar para excluir.';
+const DELETE_UNSAVED_MESSAGE = 'Há uma transcrição paga que ainda não foi salva. ' +
+    'Toque em Tentar de novo antes de excluir.';
 const TRASH_FAILED_MESSAGE = 'Não foi possível mover a gravação para a lixeira.';
 
 // Do widget com o foco até a janela: algum ancestral satisfaz `pred`?
@@ -265,7 +267,8 @@ var Window = GObject.registerClass({
         });
         sidebar.connect('rename-requested', (_s, recording) => this._showRenameDialog(recording));
         sidebar.connect('delete-requested', (_s, recording) => this._deleteRecording(recording));
-        sidebar.connect('delete-refused', () => this.addToast(DELETE_BUSY_MESSAGE));
+        sidebar.connect('delete-refused', (_s, recording) =>
+            this.addToast(this._deleteRefusal(recording) ?? DELETE_BUSY_MESSAGE));
         sidebar.connect('export-audio-requested', (_s, recording) => this._exportAudio(recording));
     }
 
@@ -666,6 +669,18 @@ var Window = GObject.registerClass({
         return true;
     }
 
+    // Por que excluir agora perderia uma transcrição paga (aviso para o usuário), ou null.
+    // Em andamento: seria salva ao lado de uma gravação já fora da biblioteca (e perdida mesmo
+    // com Desfazer): excluir espera ela terminar. Paga e ainda não salva (o disco falhou): só
+    // existe na memória; excluir a perderia ao confirmar: o usuário salva antes ("Tentar de novo").
+    _deleteRefusal(recording) {
+        if (this._isTranscribing(recording))
+            return DELETE_BUSY_MESSAGE;
+        if (this.transcriptionService.hasUnsaved(recording.file))
+            return DELETE_UNSAVED_MESSAGE;
+        return null;
+    }
+
     // Excluir com "Desfazer": o player solta o arquivo, a gravação sai da lista (a sidebar
     // seleciona a vizinha ou nenhuma) e entra na fila; um toast por exclusão, com o id dela
     // na ação win.undo-delete. Sem Desfazer até o toast sumir, vai para a lixeira do sistema.
@@ -675,10 +690,9 @@ var Window = GObject.registerClass({
         const index = this._indexOf(recording);
         if (index < 0)
             return;
-        // A transcrição paga seria salva ao lado de uma gravação já fora da biblioteca (e
-        // perdida mesmo com Desfazer): excluir espera ela terminar.
-        if (this._isTranscribing(recording)) {
-            this.addToast(DELETE_BUSY_MESSAGE);
+        const refusal = this._deleteRefusal(recording);
+        if (refusal) {
+            this.addToast(refusal);
             return;
         }
         if (this.playback.uri === recording.uri) {

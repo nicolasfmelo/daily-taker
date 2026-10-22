@@ -375,6 +375,10 @@ var Sidebar = GObject.registerClass({
         });
     }
 
+    _deleteBlocked(recording) {
+        return this._service.status(recording.file) === 'running' || this._service.hasUnsaved(recording.file);
+    }
+
     _fillMenu(button, recording) {
         const menu = button.menu_model;
         const allowed = this._allowed(recording);
@@ -395,9 +399,9 @@ var Sidebar = GObject.registerClass({
         main.append_item(item('Exportar áudio', 'sidebar.export'));
         menu.append_section(null, main);
         const danger = new Gio.Menu();
-        // Durante a transcrição também não se exclui (o resultado pago se perderia).
-        danger.append_item(item('Excluir',
-            this._service.status(recording.file) === 'running' ? 'sidebar.busy' : 'sidebar.delete'));
+        // Durante a transcrição, ou com uma transcrição paga ainda não salva, também não se
+        // exclui (o resultado pago se perderia).
+        danger.append_item(item('Excluir', this._deleteBlocked(recording) ? 'sidebar.busy' : 'sidebar.delete'));
         menu.append_section(null, danger);
         // O popover recria as linhas a cada mudança do modelo: marca de novo.
         this._markDestructive(button.popover);
@@ -442,7 +446,7 @@ var Sidebar = GObject.registerClass({
         add('export', r => this.emit('export-audio-requested', r));
         // Confere na hora do clique: um menu aberto antes de a transcrição começar também recusa.
         add('delete', r => {
-            if (this._service.status(r.file) === 'running')
+            if (this._deleteBlocked(r))
                 this.emit('delete-refused', r);
             else
                 this.emit('delete-requested', r);
