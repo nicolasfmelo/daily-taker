@@ -219,4 +219,30 @@ test('itemTimestamp: o menor horário válido entre criação e modificação', 
         assert.equal(M.itemTimestamp(created, modified), expected);
 });
 
+test('recordingMatchesHaystack: texto já normalizado da transcrição', () => {
+    const hay = 'planejamento do trimestre\nana\norcamento aprovado';
+    const table = [
+        // [consulta, nome, haystack, esperado]
+        ['reuniao', 'Reunião', null, true],             // acento e caixa no nome
+        ['REUNIÃO', 'reuniao semanal', null, true],
+        ['orcamento', 'Gravação 22 out', null, false],   // sem haystack: só o nome
+        ['ORÇAMENTO', 'Gravação 22 out', hay, true],     // acento e caixa na consulta
+        ['gravacao aprovado', 'Gravação 22 out', hay, true],  // termos em AND: nome + texto
+        ['orcamento rejeitado', 'Gravação 22 out', hay, false],
+        ['', 'Reunião', null, true],                     // consulta vazia casa com tudo
+        ['   ', 'x', hay, true],
+        [null, null, null, true],
+        ['x', null, null, false],
+        ['trimestre', '', '', false],                    // haystack vazio = nada a achar
+    ];
+    for (const [query, name, haystack, expected] of table)
+        assert.equal(M.recordingMatchesHaystack(query, name, haystack), expected);
+});
+
+test('recordingMatches = recordingMatchesHaystack com searchableText', () => {
+    for (const q of ['orcamento', 'ana', 'gravacao aprovado', 'nada', ''])
+        assert.equal(M.recordingMatches(q, 'Gravação 22 out', transcript),
+            M.recordingMatchesHaystack(q, 'Gravação 22 out', imports.transcriptSearch.searchableText(transcript)));
+});
+
 finish();

@@ -420,7 +420,7 @@ const sidebarCheckComponent = () => {
     assertSandboxed();
     const { RecordingList } = imports.recordingList;
     const { Sidebar } = imports.sidebar;
-    const { loadTranscript, saveTranscript } = imports.transcriptStore;
+    const { loadTranscript, saveTranscript, transcriptFileFor } = imports.transcriptStore;
 
     const files = recordingFiles();
     if (files.length < 4)
@@ -444,8 +444,16 @@ const sidebarCheckComponent = () => {
         return [...emitted];
     };
 
-    const ready = listReady(list, files.length).then(items => {
+    // Deixa rodar o que foi agendado em ocioso (ex.: selo de uma transcrição ilegível).
+    const idle = () => new Promise(resolve => GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
+        resolve();
+        return GLib.SOURCE_REMOVE;
+    }));
+    const ready = listReady(list, files.length).then(async items => {
         const [daily, ideias, notas, sem] = items;
+        const entries = () => [...sidebar._transcripts.values()];
+        check(sidebar._parses === 0 && entries().length === 4 && entries().every(en => !en.parsed),
+            'na partida nenhuma transcrição é lida (selo só pela existência do arquivo)');
         check(names().join('|') === 'Daily · Projeto Atlas|Ideias para o app|Notas da reunião|Sem transcrição',
             'ordem da lista (mais recente primeiro)');
         check(rowOf(daily).badgeKind === 'ok' && rowOf(sem).badgeKind === 'none', 'selos: Transcrita / nada');
@@ -467,17 +475,30 @@ const sidebarCheckComponent = () => {
         sidebar.select(daily);
         e = emits(() => sidebar.setQuery('notas'));
         check(names().join('|') === 'Notas da reunião', 'busca "notas" filtra pelo nome');
-        check(e.length === 1 && e[0] === null && sidebar.selected === null, 'selecionada escondida pela busca → nenhuma');
-        sidebar.select(notas);
+        check(e.length === 0 && sidebar.selected === daily && sidebar._list.get_selected_row() === null &&
+            sidebar._exportButton.sensitive,
+            'selecionada escondida pela busca: continua selecionada, sem emissão, Exportar ligado');
+        e = emits(() => sidebar.setQuery(''));
+        check(e.length === 0 && sidebar.selected === daily && sidebar._list.get_selected_row() === rowOf(daily),
+            'limpar a busca destaca de novo a selecionada, sem emissão');
+        sidebar.setQuery('notas');
+        e = emits(() => sidebar._list.select_row(rowOf(notas)));
+        check(e.length === 1 && e[0] === notas && sidebar.selected === notas,
+            'escolher outra visível com a selecionada escondida emite uma vez');
         e = emits(() => sidebar.setQuery(''));
         check(names().length === 4 && e.length === 0 && sidebar.selected === notas &&
             sidebar._list.get_selected_row() === rowOf(notas), 'limpar a busca mantém a seleção visível');
         sidebar.setQuery('reuniao');
         check(names().join('|') === 'Daily · Projeto Atlas|Ideias para o app|Notas da reunião',
             'busca "reuniao": nome e conteúdo da transcrição (a sem transcrição fica de fora)');
+        const parsed = sidebar._parses;
+        check(parsed === 3, `transcrições lidas na primeira busca: ${parsed} (as 3 que existem)`);
         sidebar.setQuery('acompanhar');
         check(names().join('|') === 'Daily · Projeto Atlas|Ideias para o app|Notas da reunião',
             'busca só no conteúdo da transcrição');
+        check(sidebar._parses === parsed, 'outra busca não lê de novo (no máximo uma vez por URI)');
+        check(entries().every(en => !('words' in en) && (en.haystack === null || typeof en.haystack === 'string')),
+            'cache guarda só o texto de busca, não a transcrição');
         sidebar.setQuery('zzzz');
         check(names().length === 0 && sidebar._listStack.visible_child_name === 'empty' &&
             sidebar._emptyLabel.label === 'Nada encontrado para essa busca', 'sem resultado: aviso');
@@ -493,6 +514,7 @@ const sidebarCheckComponent = () => {
         check(rowOf(sem).badgeKind === 'ok', 'invalidateTranscript atualiza o selo');
         sidebar.setQuery('acompanhar');
         check(names().includes('Sem transcrição'), 'invalidateTranscript atualiza a busca');
+        check(sidebar._parses === parsed + 1, 'invalidar relê só aquela transcrição');
         sidebar.setQuery('');
 
         // 4. Status do serviço: running → spinner; sai de running → relê a transcrição.
@@ -544,18 +566,34 @@ const sidebarCheckComponent = () => {
         service.set(sem.uri, 'running');
         sidebar.activate_action('sidebar.transcribe', target);
         check(asked.length === 0, 'Gerar bloqueado durante a transcrição');
+        sidebar.activate_action('sidebar.rename', target);
+        check(asked.length === 0, 'Renomear bloqueado durante a transcrição (na ação)');
         service.set(sem.uri, 'none');
+
+        // 4c. Transcrição ilegível: conta como existente até ser lida; lida, sai o selo.
+        transcriptFileFor(sem.file).replace_contents('{ isto não é json', null, false,
+            Gio.FileCreateFlags.REPLACE_DESTINATION, null);
+        sidebar.invalidateTranscript(sem.uri);
+        check(rowOf(sem).badgeKind === 'ok', 'ilegível, ainda não lida: selo pela existência');
+        sidebar.setQuery('acompanhar');
+        check(!names().includes('Sem transcrição'), 'ilegível não casa pelo conteúdo');
+        sidebar.setQuery('');
+        await idle();
+        check(rowOf(sem).badgeKind === 'none', 'ilegível, depois de lida: sem selo');
 
         // 5. Renomear: rótulo, chave do cache (URI nova) e busca pelo nome novo.
         const oldUri = notas.uri;
         sidebar.select(notas);
         notas.name = 'Retro renomeada';
         check(rowOf(notas)._title.label === 'Retro renomeada', 'renomear atualiza o rótulo');
-        check(!sidebar._transcripts.has(oldUri) && sidebar._transcripts.get(notas.uri) !== null &&
-            sidebar._transcripts.has(notas.uri), 'renomear troca a chave do cache');
+        check(!sidebar._transcripts.has(oldUri) && sidebar._transcripts.get(notas.uri)?.exists === true,
+            'renomear troca a chave do cache');
         check(rowOf(notas).badgeKind === 'ok', 'renomeada continua Transcrita');
         sidebar.setQuery('retro');
         check(names().join('|') === 'Retro renomeada' && sidebar.selected === notas, 'busca pelo nome novo');
+        sidebar.setQuery('acompanhar');
+        check(names().includes('Retro renomeada') && sidebar._transcripts.get(notas.uri)?.haystack !== null,
+            'renomeada: busca no conteúdo pela transcrição movida');
         sidebar.setQuery('');
 
         // 6. Remover a selecionada seleciona a vizinha; a última → a nova última; tudo → nenhuma.
@@ -564,6 +602,15 @@ const sidebarCheckComponent = () => {
             'remover a selecionada seleciona a vizinha');
         e = emits(() => list.remove(list.getIndex(sem.file)));
         check(e.length === 1 && sidebar.selected === ideias, 'remover a última seleciona a nova última');
+        // Selecionada escondida pela busca e removida da biblioteca: decide nextSelection
+        // (ela não tinha posição visível → nenhuma), uma emissão.
+        sidebar.setQuery('daily');
+        check(sidebar.selected === ideias, 'escondida pela busca continua selecionada');
+        e = emits(() => list.remove(list.getIndex(ideias.file)));
+        check(e.length === 1 && e[0] === null && sidebar.selected === null,
+            'remover a selecionada escondida → nenhuma, uma emissão');
+        sidebar.setQuery('');
+        list.append(ideias);
         sidebar.select(daily);
         e = emits(() => list.remove(list.getIndex(ideias.file)));
         check(e.length === 0 && sidebar.selected === daily, 'remover outra não mexe na seleção');

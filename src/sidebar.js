@@ -7,10 +7,11 @@
 const { Gio, GLib, GObject, Gtk, Pango } = imports.gi;
 
 const { groupLabel, itemSubtitle } = imports.recordingGroups;
-const { emptyListMessage, itemTimestamp, nextSelection, recordingMatches, statusBadge } =
+const { emptyListMessage, itemTimestamp, nextSelection, recordingMatchesHaystack, statusBadge } =
     imports.sidebarModel;
 const { rowStatus } = imports.transcriptionUi;
-const { loadTranscript } = imports.transcriptStore;
+const { searchableText } = imports.transcriptSearch;
+const { loadTranscript, transcriptFileFor } = imports.transcriptStore;
 
 const EMPTY_TEXT = {
     'no-recordings': 'Nenhuma gravação ainda',
@@ -131,7 +132,9 @@ var Sidebar = GObject.registerClass({
         this._settings = settings;
         this._selected = null;
         this._query = '';
-        this._transcripts = new Map();   // uri → Transcript | null
+        // uri → { exists, parsed, haystack }: ver _entry/_haystackFor.
+        this._transcripts = new Map();
+        this._parses = 0;                // transcrições lidas e analisadas (verificação)
         this._tracked = new Map();       // Recording → { uri, ids }
         this._visible = [];              // itens visíveis, na ordem da lista
         this._modelChanging = false;
@@ -150,7 +153,13 @@ var Sidebar = GObject.registerClass({
         this._list.set_header_func((row, before) => this._updateHeader(row, before));
         this._list.connect('row-selected', (_list, row) => this._onRowSelected(row));
 
-        this._storeChangedId = recordingList.connect('items-changed', () => this._syncTracked());
+        this._storeChangedId = recordingList.connect('items-changed', () => {
+            this._syncTracked();
+            // Uma gravação escondida pela busca que sai da biblioteca não muda o modelo
+            // filtrado (nenhum items-changed lá): a seleção é conferida aqui também.
+            if (this._selected && this._storeItem(this._selected) !== this._selected)
+                this._reconcileSelection(this._visible);
+        });
         this._syncTracked();
 
         // Um único ouvinte para a sidebar inteira (o serviço não tem disconnect).
@@ -223,17 +232,55 @@ var Sidebar = GObject.registerClass({
         this._applyQuery(query);
     }
 
-    // Transcrição de uma gravação (cache por URI; leitura síncrona do disco).
-    _transcriptFor(recording) {
+    // Cache por URI, sem guardar a Transcript: na montagem da linha só se pergunta se o
+    // arquivo da transcrição existe (barato); a leitura e análise acontecem uma vez, na
+    // primeira necessidade (busca, menu, Gerar), e dela só fica o texto de busca já
+    // normalizado. Até ser analisada, uma transcrição corrompida conta como existente.
+    _entry(recording) {
         const uri = recording.uri;
-        if (!this._transcripts.has(uri))
-            this._transcripts.set(uri, loadTranscript(recording.file));
-        return this._transcripts.get(uri);
+        let entry = this._transcripts.get(uri);
+        if (!entry) {
+            entry = {
+                exists: transcriptFileFor(recording.file).query_exists(null),
+                parsed: false,
+                haystack: null,
+            };
+            this._transcripts.set(uri, entry);
+        }
+        return entry;
+    }
+
+    _hasTranscript(recording) {
+        const entry = this._entry(recording);
+        return entry.parsed ? entry.haystack !== null : entry.exists;
+    }
+
+    // Texto de busca da transcrição (null sem transcrição válida); analisa no máximo uma
+    // vez por URI até ser invalidada.
+    _haystackFor(recording) {
+        const entry = this._entry(recording);
+        if (!entry.parsed) {
+            const transcript = entry.exists ? loadTranscript(recording.file) : null;
+            if (entry.exists)
+                this._parses++;
+            entry.parsed = true;
+            entry.haystack = transcript ? searchableText(transcript) : null;
+            // Arquivo ilegível: o selo "Transcrita" sai (fora do filtro em andamento).
+            if (entry.exists && entry.haystack === null) {
+                const uri = recording.uri;
+                GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
+                    if (!this._disposed)
+                        this.refreshStatus(uri);
+                    return GLib.SOURCE_REMOVE;
+                });
+            }
+        }
+        return entry.haystack;
     }
 
     _statusOf(recording) {
         return rowStatus({
-            hasTranscript: this._transcriptFor(recording) !== null,
+            hasTranscript: this._hasTranscript(recording),
             serviceStatus: this._service.status(recording.file),
         });
     }
@@ -241,7 +288,7 @@ var Sidebar = GObject.registerClass({
     _matches(recording) {
         if (!this._query.trim())
             return true;
-        return recordingMatches(this._query, recording.name, this._transcriptFor(recording));
+        return recordingMatchesHaystack(this._query, recording.name, this._haystackFor(recording));
     }
 
     _applyQuery(query) {
@@ -311,7 +358,8 @@ var Sidebar = GObject.registerClass({
         const menu = button.menu_model;
         const status = this._statusOf(recording);
         const running = status === 'running';
-        const hasTranscript = this._transcriptFor(recording) !== null;
+        this._haystackFor(recording);
+        const hasTranscript = this._hasTranscript(recording);
         const target = new GLib.Variant('s', recording.uri);
         const item = (label, action) => {
             const it = Gio.MenuItem.new(label, null);
@@ -357,10 +405,17 @@ var Sidebar = GObject.registerClass({
             group.add_action(action);
             return action;
         };
-        add('rename', r => this.emit('rename-requested', r));
-        add('transcribe', r => {
+        // Renomear e Gerar: o menu já os bloqueia durante a transcrição; a ação confere
+        // de novo (a ação pode ser ativada por outro caminho).
+        add('rename', r => {
             if (this._service.status(r.file) !== 'running')
-                this.emit('transcribe-requested', r, this._transcriptFor(r) !== null);
+                this.emit('rename-requested', r);
+        });
+        add('transcribe', r => {
+            if (this._service.status(r.file) === 'running')
+                return;
+            this._haystackFor(r);
+            this.emit('transcribe-requested', r, this._hasTranscript(r));
         });
         add('export', r => this.emit('export-audio-requested', r));
         add('delete', r => this.emit('delete-requested', r));
@@ -420,16 +475,14 @@ var Sidebar = GObject.registerClass({
         this._syncEmpty();
     }
 
-    // Depois de qualquer mudança da lista: a selecionada continua destacada; se saiu da
-    // biblioteca, a vizinha (nextSelection) é selecionada; se a busca a escondeu, nenhuma.
+    // Depois de qualquer mudança da lista: a selecionada visível continua destacada; se a
+    // busca a escondeu, continua selecionada (painel e player seguem com ela), só sem
+    // linha destacada, e volta a ser destacada quando reaparecer; só se saiu da
+    // biblioteca a vizinha (nextSelection) é selecionada.
     _reconcileSelection(previous) {
         const selected = this._selected;
-        if (!selected || this._visible.includes(selected)) {
+        if (!selected || this._visible.includes(selected) || this._storeItem(selected) === selected) {
             this._syncRow();
-            return;
-        }
-        if (this._storeItem(selected) === selected) {
-            this._setSelected(null);
             return;
         }
         const index = nextSelection(this._visible, previous.indexOf(selected));

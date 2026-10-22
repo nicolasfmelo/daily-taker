@@ -1,17 +1,22 @@
 /* exported emptyListMessage generateCard itemTimestamp nextSelection paneActions paneBanner paneState
-   recordingMatches statusBadge */
+   recordingMatches recordingMatchesHaystack statusBadge */
 
 const { normalize, searchableText } = imports.transcriptSearch;
 
-var recordingMatches = (query, name, transcript) => {
+// `haystack`: searchableText da transcrição (já normalizado), calculado uma vez por quem
+// guarda o cache; null = sem transcrição (só o nome conta).
+var recordingMatchesHaystack = (query, name, haystack) => {
     const terms = normalize(query).split(/\s+/).filter(Boolean);
     if (terms.length === 0)
         return true;
-    const haystack = Array.isArray(transcript?.words)
-        ? `${normalize(name)}\n${searchableText(transcript)}`
+    const text = typeof haystack === 'string'
+        ? `${normalize(name)}\n${haystack}`
         : normalize(name);
-    return terms.every(term => haystack.includes(term));
+    return terms.every(term => text.includes(term));
 };
+
+var recordingMatches = (query, name, transcript) => recordingMatchesHaystack(query, name,
+    Array.isArray(transcript?.words) ? searchableText(transcript) : null);
 
 const BADGES = {
     ready: { kind: 'ok', label: 'Transcrita' },
