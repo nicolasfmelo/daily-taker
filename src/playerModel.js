@@ -1,4 +1,4 @@
-/* exported RATES formatShortClock positionLabel rateLabel clampVolume fractionFromX bucketPeaks shouldScroll */
+/* exported RATES formatShortClock positionLabel rateLabel clampVolume fractionFromX bucketPeaks shouldScroll toggleMute volumeIcon */
 
 var RATES = [0.75, 1, 1.25, 1.5, 2];
 
@@ -51,3 +51,27 @@ var bucketPeaks = (peaks, bars) => {
 
 var shouldScroll = ({ follow, index, previousIndex } = {}) =>
     follow === true && finite(index) && index >= 0 && index !== previousIndex;
+
+// Ícone do botão de volume: mudo (ou 0), baixo abaixo de 0,34, médio abaixo de 0,67, alto acima.
+var volumeIcon = (volume, muted) => {
+    const v = clampVolume(volume);
+    let level = 'high';
+    if (muted || v <= 0)
+        level = 'muted';
+    else if (v < 0.34)
+        level = 'low';
+    else if (v < 0.67)
+        level = 'medium';
+    return `audio-volume-${level}-symbolic`;
+};
+
+// Clique no botão de volume. Com som: guarda o volume e zera (mudo). Mudo ou em 0:
+// volta ao volume guardado (ou a 100 % se não houver um).
+var toggleMute = ({ volume, muted, previous } = {}) => {
+    const v = clampVolume(volume);
+    if (muted === true || v <= 0) {
+        const restored = finite(previous) && previous > 0 ? clampVolume(previous) : 1;
+        return { volume: restored, muted: false, previous: restored };
+    }
+    return { volume: 0, muted: true, previous: v };
+};

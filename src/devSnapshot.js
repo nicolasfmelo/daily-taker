@@ -2,15 +2,93 @@
 // Captura de tela para conferência visual (tools/snapshot.sh). Inerte sem a variável
 // DAILY_TAKER_SNAPSHOT: com ela, mostra a janela (ou um componente numa janela simples),
 // espera assentar, grava um PNG no caminho indicado e encerra o app.
-const { Adw, GLib, Graphene, Gtk } = imports.gi;
+const { Adw, Gio, GLib, Graphene, Gst, Gtk } = imports.gi;
 
 const SETTLE_MS = 1500;
+// Limite para um componente ficar pronto (ex.: picos da onda gerados).
+const READY_TIMEOUT_MS = 30000;
 
-// nome → (params, { app, window }) → Gtk.Widget. Se devolver um Gtk.Window, ele é
-// capturado como está; qualquer outro widget vai para uma janela simples do tamanho
-// pedido. As próximas tarefas acrescentam playerbar, transcriptview, detailpane e sidebar.
+// Resolve no primeiro `signal` de `obj` cujo predicado aceite os argumentos.
+const nextSignal = (obj, signal, pred = () => true) => new Promise(resolve => {
+    const id = obj.connect(signal, (_o, ...args) => {
+        if (!pred(...args))
+            return;
+        obj.disconnect(id);
+        resolve(args);
+    });
+});
+
+// Gravação mais recente da pasta de dados (a primeira da lista do app), ou null.
+const newestRecordingFile = () => {
+    const { RecordingsDir } = imports.application;
+    const children = RecordingsDir.enumerate_children('standard::name,time::modified',
+        Gio.FileQueryInfoFlags.NONE, null);
+    let newest = null;
+    let newestTime = -1;
+    for (let info = children.next_file(null); info; info = children.next_file(null)) {
+        const name = info.get_name();
+        if (name.endsWith('.json') || name.startsWith('.'))
+            continue;
+        const time = info.get_attribute_uint64('time::modified');
+        if (time > newestTime) {
+            newest = RecordingsDir.get_child(name);
+            newestTime = time;
+        }
+    }
+    children.close(null);
+    return newest;
+};
+
+// Barra do player sozinha, com a gravação mais recente das fixtures, pausada em --at
+// (padrão 0). Saída de áudio = fakesink e nada é posto para tocar: nenhum som.
+const playerBarComponent = params => {
+    const { Playback } = imports.playback;
+    const { PlayerBar } = imports.playerBar;
+    const { Recording } = imports.recording;
+
+    const file = newestRecordingFile();
+    if (!file)
+        throw new Error('nenhuma gravação nas fixtures');
+    const settings = Gio.Settings.new_with_backend(pkg.name, Gio.memory_settings_backend_new());
+    // Volume de exemplo, como na mockup (a saída é um fakesink: não sai som).
+    settings.set_double('playback-volume', 0.6);
+
+    const playback = new Playback({
+        audioSinkFactory: () => Gst.ElementFactory.make('fakesink', null),
+    });
+    silencePlayback(playback);
+    const bar = new PlayerBar({ settings });
+    bar.bind(playback);
+
+    const recording = new Recording(file);
+    const peaks = nextSignal(recording, 'peaks-updated');
+    const duration = nextSignal(playback, 'duration-changed', seconds => seconds > 0);
+    bar.setRecording(recording);
+    playback.load(recording.uri);
+
+    const at = params.at ?? 0;
+    const positioned = duration.then(() => {
+        if (at <= 0)
+            return null;
+        const done = nextSignal(playback, 'position-updated', pos => Math.abs(pos - at) < 0.5);
+        playback.seek(at);
+        return done;
+    });
+    return {
+        widget: bar,
+        ready: Promise.all([peaks, positioned]),
+        cleanup: () => playback.destroy(),
+    };
+};
+
+// nome → (params, { app, window }) → Gtk.Widget ou { widget, ready?, cleanup? }. Se o
+// widget for um Gtk.Window, ele é capturado como está; qualquer outro vai para uma janela
+// simples do tamanho pedido. `ready` (Promise) adia a captura até o componente terminar
+// de carregar (ex.: picos da onda); `cleanup` roda antes de sair. As próximas tarefas
+// acrescentam transcriptview, detailpane e sidebar.
 var COMPONENTS = {
     window: (_params, ctx) => ctx.window,
+    playerbar: playerBarComponent,
 };
 
 // --state (só com --component window): página mostrada no lugar da lista. Só troca a
@@ -116,12 +194,30 @@ var maybeSnapshot = (window, params = snapshotParams()) => {
     if (params.component === 'window' && (params.select !== null || params.tab || params.at !== null))
         print('devSnapshot: nota: --select/--tab/--at ainda são ignorados pela janela atual');
 
-    let target = build(params, { app, window });
+    let built;
+    try {
+        built = build(params, { app, window });
+    } catch (e) {
+        fail(`componente "${params.component}": ${e.message}`);
+        return true;
+    }
+    const isWidget = built instanceof Gtk.Widget;
+    let target = isWidget ? built : built.widget;
+    const ready = isWidget ? Promise.resolve() : built.ready ?? Promise.resolve();
+    const cleanup = isWidget ? () => {} : built.cleanup ?? (() => {});
     if (!(target instanceof Gtk.Window))
         target = new Adw.ApplicationWindow({ application: app, content: target });
     target.set_default_size(params.width, params.height);
 
-    target.connect('map', () => {
+    const timeout = new Promise((_resolve, reject) => {
+        GLib.timeout_add(GLib.PRIORITY_DEFAULT, READY_TIMEOUT_MS, () => {
+            reject(new Error(`componente não ficou pronto em ${READY_TIMEOUT_MS} ms`));
+            return GLib.SOURCE_REMOVE;
+        });
+    });
+    const mapped = nextSignal(target, 'map');
+
+    Promise.race([Promise.all([ready, mapped]), timeout]).then(() => {
         GLib.timeout_add(GLib.PRIORITY_DEFAULT, SETTLE_MS, () => {
             let ok = true;
             try {
@@ -130,6 +226,7 @@ var maybeSnapshot = (window, params = snapshotParams()) => {
                 ok = false;
                 printerr(`devSnapshot: falhou: ${e.message}`);
             }
+            cleanup();
             if (!ok)
                 imports.system.exit(3);
             if (target === window)
@@ -138,6 +235,10 @@ var maybeSnapshot = (window, params = snapshotParams()) => {
                 app.quit();
             return GLib.SOURCE_REMOVE;
         });
+    }).catch(e => {
+        printerr(`devSnapshot: falhou: ${e.message}`);
+        cleanup();
+        imports.system.exit(3);
     });
     target.present();
     return true;

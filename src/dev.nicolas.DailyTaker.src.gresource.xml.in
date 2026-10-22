@@ -7,6 +7,7 @@
     <file>main.js</file>
     <file>peaksPipeline.js</file>
     <file>playback.js</file>
+    <file>playerBar.js</file>
     <file>playerModel.js</file>
     <file>preferences.js</file>
     <file>preferencesLogic.js</file>
@@ -20,6 +21,7 @@
     <file>recordingName.js</file>
     <file>row.js</file>
     <file>secrets.js</file>
+    <file>seekWaveform.js</file>
     <file>sidebarModel.js</file>
     <file>speakerColors.js</file>
     <file>transcriber.js</file>

@@ -2,7 +2,7 @@ imports.gi.versions.Gtk = '4.0';
 imports.gi.versions.Adw = '1';
 const { GLib } = imports.gi;
 const { test, assert, finish } = imports.harness;
-const { silencePlayback, snapshotParams, stateError } = imports.devSnapshot;
+const { COMPONENTS, silencePlayback, snapshotParams, stateError } = imports.devSnapshot;
 
 const player = () => ({ volume: 1, mute: false });
 
@@ -44,6 +44,10 @@ test('--state: lido de DAILY_TAKER_SNAPSHOT_STATE; só "recorder" e só com a ja
         GLib.unsetenv('DAILY_TAKER_SNAPSHOT_STATE');
         GLib.unsetenv('DAILY_TAKER_SNAPSHOT');
     }
+});
+
+test('componente playerbar registrado', () => {
+    assert.equal(typeof COMPONENTS.playerbar, 'function');
 });
 
 finish();

@@ -79,4 +79,29 @@ test('playerModel: entradas ausentes ficam bem formadas', () => {
     assert.equal(P.shouldScroll({ follow: true, index: NaN, previousIndex: 1 }), false);
 });
 
+test('volumeIcon: mudo, baixo, médio e alto', () => {
+    assert.equal(P.volumeIcon(0.8, true), 'audio-volume-muted-symbolic');
+    assert.equal(P.volumeIcon(0, false), 'audio-volume-muted-symbolic');
+    assert.equal(P.volumeIcon(0.2, false), 'audio-volume-low-symbolic');
+    assert.equal(P.volumeIcon(0.33, false), 'audio-volume-low-symbolic');
+    assert.equal(P.volumeIcon(0.5, false), 'audio-volume-medium-symbolic');
+    assert.equal(P.volumeIcon(0.66, false), 'audio-volume-medium-symbolic');
+    assert.equal(P.volumeIcon(0.67, false), 'audio-volume-high-symbolic');
+    assert.equal(P.volumeIcon(1, false), 'audio-volume-high-symbolic');
+    assert.equal(P.volumeIcon(NaN, false), 'audio-volume-high-symbolic');
+});
+
+test('toggleMute: muta lembrando o volume e desmuta restaurando', () => {
+    assert.deepEqual(P.toggleMute({ volume: 0.6, muted: false, previous: 1 }),
+        { volume: 0, muted: true, previous: 0.6 });
+    assert.deepEqual(P.toggleMute({ volume: 0, muted: true, previous: 0.6 }),
+        { volume: 0.6, muted: false, previous: 0.6 });
+    // Volume já em 0 (arrastado até o fim): clicar volta ao anterior, ou a 100 %.
+    assert.deepEqual(P.toggleMute({ volume: 0, muted: false, previous: 0.3 }),
+        { volume: 0.3, muted: false, previous: 0.3 });
+    assert.deepEqual(P.toggleMute({ volume: 0, muted: false, previous: 0 }),
+        { volume: 1, muted: false, previous: 1 });
+    assert.deepEqual(P.toggleMute({}), { volume: 0, muted: true, previous: 1 });
+});
+
 finish();

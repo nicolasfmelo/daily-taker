@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <template class="Gjs_PlayerBar" parent="GtkBox">
+    <property name="orientation">horizontal</property>
+    <property name="spacing">20</property>
+    <style>
+      <class name="player-bar"/>
+    </style>
+    <child>
+      <object class="GtkButton" id="playButton">
+        <property name="valign">center</property>
+        <property name="icon_name">media-playback-start-symbolic</property>
+        <property name="tooltip_text">Reproduzir</property>
+        <style>
+          <class name="circular"/>
+          <class name="suggested-action"/>
+          <class name="large"/>
+          <class name="play-button"/>
+        </style>
+      </object>
+    </child>
+    <child>
+      <object class="GtkBox">
+        <property name="orientation">vertical</property>
+        <property name="spacing">4</property>
+        <property name="hexpand">True</property>
+        <property name="valign">center</property>
+        <child>
+          <object class="Gjs_SeekWaveform" id="waveform">
+            <property name="hexpand">True</property>
+          </object>
+        </child>
+        <child>
+          <object class="GtkLabel" id="positionLabel">
+            <property name="xalign">0</property>
+            <property name="label">00:00 / 00:00</property>
+            <style>
+              <class name="numeric"/>
+              <class name="dim-label"/>
+              <class name="position-label"/>
+            </style>
+          </object>
+        </child>
+      </object>
+    </child>
+    <child>
+      <object class="GtkMenuButton" id="rateButton">
+        <property name="valign">center</property>
+        <property name="always_show_arrow">True</property>
+        <property name="label">1x</property>
+        <property name="tooltip_text">Velocidade</property>
+        <style>
+          <class name="rate-button"/>
+        </style>
+      </object>
+    </child>
+    <child>
+      <object class="GtkBox">
+        <property name="spacing">6</property>
+        <property name="valign">center</property>
+        <child>
+          <object class="GtkButton" id="volumeButton">
+            <property name="valign">center</property>
+            <property name="icon_name">audio-volume-high-symbolic</property>
+            <property name="tooltip_text">Silenciar</property>
+            <style>
+              <class name="flat"/>
+              <class name="volume-button"/>
+            </style>
+          </object>
+        </child>
+        <child>
+          <object class="GtkScale" id="volumeScale">
+            <property name="valign">center</property>
+            <property name="width_request">110</property>
+            <property name="draw_value">False</property>
+            <property name="tooltip_text">Volume</property>
+            <property name="adjustment">
+              <object class="GtkAdjustment">
+                <property name="lower">0</property>
+                <property name="upper">100</property>
+                <property name="step_increment">5</property>
+                <property name="page_increment">10</property>
+                <property name="value">100</property>
+              </object>
+            </property>
+            <style>
+              <class name="volume-scale"/>
+            </style>
+          </object>
+        </child>
+      </object>
+    </child>
+    <child>
+      <object class="GtkBox">
+        <property name="spacing">12</property>
+        <property name="valign">center</property>
+        <child>
+          <object class="GtkLabel">
+            <property name="label">Acompanhar áudio</property>
+            <property name="mnemonic_widget">followSwitch</property>
+          </object>
+        </child>
+        <child>
+          <object class="GtkSwitch" id="followSwitch">
+            <property name="valign">center</property>
+            <property name="active">True</property>
+            <property name="tooltip_text">Rolar a transcrição junto com o áudio</property>
+          </object>
+        </child>
+      </object>
+    </child>
+  </template>
+</interface>

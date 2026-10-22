@@ -19,6 +19,22 @@
       <summary>Idioma da transcrição</summary>
       <description>Idioma enviado ao serviço de transcrição: "pt" para português ou "auto" para detecção automática.</description>
     </key>
+    <key name="playback-rate" type="d">
+      <default>1.0</default>
+      <summary>Velocidade de reprodução</summary>
+      <description>Velocidade do player: 0,75, 1, 1,25, 1,5 ou 2.</description>
+    </key>
+    <key name="playback-volume" type="d">
+      <range min="0" max="1"/>
+      <default>1.0</default>
+      <summary>Volume de reprodução</summary>
+      <description>Volume do player, de 0 a 1.</description>
+    </key>
+    <key name="follow-audio" type="b">
+      <default>true</default>
+      <summary>Acompanhar áudio</summary>
+      <description>Rola a transcrição para o trecho que está tocando.</description>
+    </key>
   </schema>
 </schemalist>
 

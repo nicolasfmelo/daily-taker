@@ -47,6 +47,13 @@ bash tools/snapshot.sh OUT.png [--component window|playerbar|transcriptview|deta
   demais são renderizados sozinhos numa janela simples, com dados de fixture;
   são registrados em `COMPONENTS` em `src/devSnapshot.js` pelas próximas
   tarefas. Um nome não registrado falha com mensagem clara e sem PNG.
+  - `playerbar`: a barra do player (`src/playerBar.js`) com a gravação mais
+    recente das fixtures (19:08), pausada em `--at SEG` (padrão 0), volume de
+    exemplo 60 % e `Gio.Settings` em memória. O `Playback` usa um `fakesink` e
+    nunca toca. A captura espera os picos da onda (`peaks-updated`) e a posição
+    (`ready` do componente, limite de 30 s) antes dos 1,5 s de assentamento.
+    Ex.: `bash tools/snapshot.sh /tmp/p.png --component playerbar --at 34 --size 1200x120`
+    (a janela simples tem altura mínima de 200 px).
 - `--select N` (item N da lista, a partir de 1), `--tab`, `--at SEG` (posição
   do player): já são lidos e repassados a `maybeSnapshot` (`params.select`,
   `params.tab`, `params.at`), mas a janela atual ainda os ignora (imprime uma

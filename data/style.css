@@ -166,6 +166,60 @@ button.accent-pill:active {
   padding: 12px 24px;
 }
 
+/* Botão redondo laranja de play/pausa (~56 px). */
+.player-bar button.play-button {
+  min-width: 56px;
+  min-height: 56px;
+  padding: 0;
+}
+
+.player-bar button.play-button image {
+  -gtk-icon-size: 22px;
+}
+
+.player-bar .position-label {
+  font-size: 1.05em;
+}
+
+/* Velocidade: botão contornado "1x ▾". */
+.player-bar menubutton.rate-button > button {
+  background-color: transparent;
+  border: 1px solid @track;
+  border-radius: 8px;
+  padding: 6px 12px;
+}
+
+.player-bar menubutton.rate-button > button:hover {
+  background-color: alpha(@track, .5);
+}
+
+.player-bar menubutton.rate-button > button:checked {
+  background-color: @track;
+}
+
+/* Volume: trilho escuro, preenchimento e alça laranja. */
+.player-bar scale.volume-scale > trough {
+  background-color: @track;
+  min-height: 4px;
+}
+
+.player-bar scale.volume-scale > trough > highlight {
+  background-color: @accent;
+}
+
+.player-bar scale.volume-scale > trough > slider {
+  background-color: @accent;
+  box-shadow: none;
+  min-width: 14px;
+  min-height: 14px;
+  margin: -5px;
+}
+
+.player-bar scale.volume-scale:disabled > trough > highlight,
+.player-bar scale.volume-scale:disabled > trough > slider {
+  background-color: @text_dim;
+}
+
 /* Tela de gravação */
 
 .recorder-time-label {
