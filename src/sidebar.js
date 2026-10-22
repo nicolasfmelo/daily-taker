@@ -120,6 +120,8 @@ var Sidebar = GObject.registerClass({
         'recording-activated': { param_types: [GObject.TYPE_OBJECT] },
         'rename-requested': { param_types: [GObject.TYPE_OBJECT] },
         'delete-requested': { param_types: [GObject.TYPE_OBJECT] },
+        // Excluir pedido durante a transcrição da gravação: recusado (a janela avisa).
+        'delete-refused': { param_types: [GObject.TYPE_OBJECT] },
         'transcribe-requested': { param_types: [GObject.TYPE_OBJECT, GObject.TYPE_BOOLEAN] },
         'export-audio-requested': { param_types: [GObject.TYPE_OBJECT] },
     },
@@ -393,7 +395,9 @@ var Sidebar = GObject.registerClass({
         main.append_item(item('Exportar áudio', 'sidebar.export'));
         menu.append_section(null, main);
         const danger = new Gio.Menu();
-        danger.append_item(item('Excluir', 'sidebar.delete'));
+        // Durante a transcrição também não se exclui (o resultado pago se perderia).
+        danger.append_item(item('Excluir',
+            this._service.status(recording.file) === 'running' ? 'sidebar.busy' : 'sidebar.delete'));
         menu.append_section(null, danger);
         // O popover recria as linhas a cada mudança do modelo: marca de novo.
         this._markDestructive(button.popover);
@@ -436,7 +440,13 @@ var Sidebar = GObject.registerClass({
             this.emit('transcribe-requested', r, this._hasTranscript(r));
         });
         add('export', r => this.emit('export-audio-requested', r));
-        add('delete', r => this.emit('delete-requested', r));
+        // Confere na hora do clique: um menu aberto antes de a transcrição começar também recusa.
+        add('delete', r => {
+            if (this._service.status(r.file) === 'running')
+                this.emit('delete-refused', r);
+            else
+                this.emit('delete-requested', r);
+        });
         // Destino dos itens bloqueados: sempre desligada (o item aparece insensível).
         add('busy', () => {}).enabled = false;
         this.insert_action_group('sidebar', group);

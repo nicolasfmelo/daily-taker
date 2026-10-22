@@ -53,15 +53,20 @@ var moveTranscript = (oldRecordingFile, newRecordingFile) => {
     }
 };
 
-var trashTranscript = recordingFile => {
+// Manda a transcrição para a lixeira; true se foi (ou não havia nada). Nunca apaga de
+// vez: sem lixeira nesse volume (ou outro erro) ela fica onde está e devolve false.
+// `trash` é injetável nos testes.
+var trashTranscript = (recordingFile, { trash = f => f.trash(null) } = {}) => {
     const file = transcriptFileFor(recordingFile);
     if (!file.query_exists(null))
-        return;
+        return true;
     try {
-        file.trash(null);
+        trash(file);
+        return true;
     } catch (e) {
-        // Sem lixeira nesse volume: remove de vez em vez de deixar órfão.
-        file.delete(null);
+        // Só o nome: o conteúdo é uma transcrição privada.
+        log(`Não foi possível mover para a lixeira: ${file.get_basename()} (${e.message})`);
+        return false;
     }
 };
 

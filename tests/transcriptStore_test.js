@@ -165,13 +165,41 @@ test('moveTranscript sem transcrição não faz nada', () => withDir(dir => {
     assert.equal(dir.get_child('Outro.transcript.json').query_exists(null), false);
 }));
 
-test('trashTranscript remove a transcrição e preserva a gravação', () => withDir(dir => {
+// Lixeira de mentira (nada vai para a lixeira real do usuário): registra e apaga o
+// arquivo do diretório temporário do teste.
+const fakeTrash = calls => f => {
+    calls.push(f.get_basename());
+    f.delete(null);
+};
+
+test('trashTranscript manda a transcrição para a lixeira e preserva a gravação', () => withDir(dir => {
     const rec = touch(dir, 'Recording 1');
     S.saveTranscript(rec, makeTranscript());
-    S.trashTranscript(rec);
+    const calls = [];
+    assert.equal(S.trashTranscript(rec, { trash: fakeTrash(calls) }), true);
+    assert.deepEqual(calls, ['Recording 1.transcript.json']);
     assert.equal(dir.get_child('Recording 1.transcript.json').query_exists(null), false);
     assert.equal(rec.query_exists(null), true);
-    S.trashTranscript(rec); // sem transcrição: não lança
+    // sem transcrição: não lança, nada a fazer
+    assert.equal(S.trashTranscript(rec, { trash: fakeTrash(calls) }), true);
+    assert.equal(calls.length, 1);
+}));
+
+test('trashTranscript: lixeira falhou → a transcrição fica (nunca apaga de vez) e avisa', () => withDir(dir => {
+    const rec = touch(dir, 'Recording 1');
+    S.saveTranscript(rec, makeTranscript());
+    let result = null;
+    const messages = captureLog(() => {
+        result = S.trashTranscript(rec, {
+            trash: () => {
+                throw new Gio.IOErrorEnum({ code: Gio.IOErrorEnum.NOT_SUPPORTED, message: 'sem lixeira' });
+            },
+        });
+    });
+    assert.equal(result, false);
+    assert.equal(dir.get_child('Recording 1.transcript.json').query_exists(null), true);
+    assert.equal(messages.length, 1);
+    assert.equal(messages[0].includes('words') || messages[0].includes('Oi tudo bem'), false);
 }));
 
 test('listTranscripts ordena por recorded_at decrescente', () => withDir(dir => {

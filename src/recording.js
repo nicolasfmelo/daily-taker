@@ -3,7 +3,8 @@ const { Gio, GLib, GObject, GstPbutils } = imports.gi;
 const { CacheDir } = imports.application;
 const ByteArray = imports.byteArray;
 const Recorder = imports.recorder;
-const { moveTranscript, trashTranscript } = imports.transcriptStore;
+const { moveTranscript, transcriptFileFor } = imports.transcriptStore;
+const { trashRecordingFiles, trashRecordingFilesSync } = imports.recordingTrash;
 const { generatePeaks } = imports.peaksPipeline;
 
 var Recording = new GObject.registerClass({
@@ -44,14 +45,29 @@ var Recording = new GObject.registerClass({
         this._timeModified = GLib.DateTime.new_from_unix_local(timeModified);
         this._timeCreated = GLib.DateTime.new_from_unix_local(timeCreated);
 
-        var discoverer = new GstPbutils.Discoverer();
-        discoverer.start();
+        // Referência guardada até o fim: só com a do próprio sinal o GJS podia coletar o
+        // Discoverer antes de 'discovered' (a duração ficava 0 até reabrir o app).
+        const discoverer = new GstPbutils.Discoverer();
+        this._discoverer = discoverer;
+        const release = () => {
+            if (this._discoverer !== discoverer)
+                return;
+            this._discoverer = null;
+            discoverer.stop();
+        };
         discoverer.connect('discovered', (_discoverer, audioInfo) => {
             this._duration = audioInfo.get_duration();
-
             this.notify('duration');
+            GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
+                release();
+                return GLib.SOURCE_REMOVE;
+            });
         });
-
+        discoverer.connect('finished', () => GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
+            release();
+            return GLib.SOURCE_REMOVE;
+        }));
+        discoverer.start();
         discoverer.discover_uri_async(this.uri);
     }
 
@@ -70,6 +86,13 @@ var Recording = new GObject.registerClass({
             }
             this.notify('name');
         }
+    }
+
+    // Interrompe a leitura da duração em andamento (fechar o app no meio dela).
+    cancelDiscovery() {
+        const discoverer = this._discoverer;
+        this._discoverer = null;
+        discoverer?.stop();
     }
 
     get extension() {
@@ -116,27 +139,19 @@ var Recording = new GObject.registerClass({
         return this._peaks;
     }
 
-    // Manda o áudio, a transcrição e a forma de onda para a lixeira do sistema. `sync`:
-    // espera terminar (ao fechar o app, quando uma operação assíncrona não chegaria ao fim).
-    delete({ sync = false } = {}) {
-        try {
-            trashTranscript(this._file);
-        } catch (e) {
-            log(`Failed to trash the transcript of ${this.name}: ${e.message}`);
-        }
-        if (!sync) {
-            this._file.trash_async(GLib.PRIORITY_HIGH, null, null);
-            this.waveformCache.trash_async(GLib.PRIORITY_DEFAULT, null, null);
-            return;
-        }
-        for (const file of [this._file, this.waveformCache]) {
-            try {
-                file.trash(null);
-            } catch (e) {
-                if (!e.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.NOT_FOUND))
-                    log(`Failed to trash ${file.get_basename()}: ${e.message}`);
-            }
-        }
+    // Manda a gravação para a lixeira do sistema (nunca apaga de vez): o áudio primeiro e,
+    // só se ele foi, a transcrição e a forma de onda (recordingTrash.js). Devolve
+    // Promise<boolean> (true = o áudio foi para a lixeira); com `sync` (fechar o app) espera
+    // e devolve o boolean. Se false, nada foi tocado. `trash`/`trashAsync`: testes.
+    delete({ sync = false, trash, trashAsync } = {}) {
+        const files = {
+            audio: this._file,
+            sidecar: transcriptFileFor(this._file),
+            waveform: this.waveformCache,
+        };
+        return sync
+            ? trashRecordingFilesSync(files, trash ? { trash } : {})
+            : trashRecordingFiles(files, trashAsync ? { trashAsync } : {});
     }
 
     // Copia o áudio para `dest` (substitui: o diálogo de salvar já confirmou). `onDone(ok)`

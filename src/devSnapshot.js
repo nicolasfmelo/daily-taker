@@ -695,8 +695,11 @@ const within = (promise, ms) => Promise.race([promise.then(() => true), sleep(ms
 const whenMapped = widget => widget.get_mapped() ? Promise.resolve() : nextSignal(widget, 'map');
 
 // Seleciona a gravação na janela real e espera os blocos da transcrição, se houver.
+// Já selecionada: nada muda (nenhum blocks-built viria).
 const selectInWindow = (window, recording) => {
     const { loadTranscript } = imports.transcriptStore;
+    if (window._sidebar.selected === recording)
+        return Promise.resolve();
     const built = loadTranscript(recording.file)
         ? nextSignal(window._detailPane.view, 'blocks-built')
         : Promise.resolve();
@@ -756,6 +759,7 @@ const windowCheckComponent = (params, { window }) => {
     const { Recording } = imports.recording;
     const { NOTHING_RECORDED_MESSAGE } = imports.recorderPipeline;
     const { WindowState } = imports.window;
+    const { loadTranscript, saveTranscript, transcriptFileFor } = imports.transcriptStore;
 
     const list = window._recordingList;
     const sidebar = window._sidebar;
@@ -776,10 +780,28 @@ const windowCheckComponent = (params, { window }) => {
         addToast.call(window, title);
     };
     const sameFile = (a, b) => Boolean(a && b && a.equal(b));
+    // Cópia de uma fixture (com a transcrição dela, se `withTranscript`) já na lista.
+    const copyFixture = (source, name, withTranscript) => {
+        const file = RecordingsDir.get_child(name);
+        source.file.copy(file, Gio.FileCopyFlags.NONE, null, null);
+        if (withTranscript)
+            saveTranscript(file, loadTranscript(source.file));
+        const recording = new Recording(file);
+        list.sortedInsert(recording);
+        return recording;
+    };
     const playing = () => within(nextSignal(playback, 'state-changed', p => p === true), 5000);
     const rowOf = r => sidebar._rowFor(r);
 
-    const ready = libraryReady(list).then(async items => {
+    // Esperas com limite: uma que não chega vira falha com mensagem, não uma captura travada.
+    const withTimeout = (promise, ms, what) => Promise.race([promise,
+        sleep(ms).then(() => {
+            throw new Error(`tempo esgotado esperando ${what}`);
+        })]);
+    const select = recording => withTimeout(selectInWindow(window, recording), 10000,
+        `a seleção de "${recording.name}"`);
+
+    const ready = withTimeout(libraryReady(list), 20000, 'a biblioteca (varredura e durações)').then(async items => {
         await whenMapped(window);
         check(items.length === 4, `biblioteca com as 4 fixtures (${items.length})`);
         const [daily, ideias, notas, sem] = items;
@@ -791,7 +813,7 @@ const windowCheckComponent = (params, { window }) => {
         // 1. Cada fixture mostra o estado certo, com o player carregado e parado.
         for (const [recording, expected] of [[daily, 'ready'], [ideias, 'ready'], [notas, 'ready'],
             [sem, 'not-transcribed']]) {
-            await selectInWindow(window, recording);
+            await select(recording);
             const viewFile = pane.view.recordingFile;
             check(sidebar.selected === recording && pane._state === expected &&
                 playback.uri === recording.uri && !playback.playing && bar._recording === recording &&
@@ -803,18 +825,18 @@ const windowCheckComponent = (params, { window }) => {
             `sem transcrição: custo estimado no cartão ("${pane._costLabel.label}")`);
 
         // 2. Trocar de gravação com outra tocando: o áudio anterior para.
-        await selectInWindow(window, daily);
+        await select(daily);
         await durationKnown(playback);
         let started = playing();
         playback.play();
         check(await started, 'daily tocando (fakesink, sem som)');
-        await selectInWindow(window, ideias);
+        await select(ideias);
         check(playback.uri === ideias.uri && !playback.playing, 'trocar de gravação: áudio anterior parado, a nova carregada parada');
         await sleep(400);
         check(playback.uri === ideias.uri && !playback.playing, 'depois de 400 ms continua parada (nada atrasado da mídia anterior)');
 
         // 3. Clique num bloco da transcrição: pula e toca.
-        await selectInWindow(window, daily);
+        await select(daily);
         await durationKnown(playback);
         // Recolhida, o painel só aparece (e realça) depois de aberto.
         if (split.collapsed)
@@ -828,7 +850,7 @@ const windowCheckComponent = (params, { window }) => {
         split.show_content = false;
 
         // 4. Renomear a selecionada (com o player posicionado): segue a gravação.
-        await selectInWindow(window, ideias);
+        await select(ideias);
         await durationKnown(playback);
         playback.seek(3);
         const oldUri = ideias.uri;
@@ -847,7 +869,7 @@ const windowCheckComponent = (params, { window }) => {
             toasts.length === before + 1, 'nome terminado em .transcript.json recusado com aviso');
 
         // 5. A selecionada sai da lista (só em memória): a vizinha é selecionada e carregada.
-        await selectInWindow(window, notas);
+        await select(notas);
         started = playing();
         playback.play();
         await started;
@@ -867,7 +889,7 @@ const windowCheckComponent = (params, { window }) => {
         const trashedFile = name => Gio.File.new_for_path(GLib.build_filenamev([GLib.get_user_data_dir(),
             'Trash', 'files', name]));
         const lastId = () => Math.max(...window._deleteToasts.keys());
-        await selectInWindow(window, notas);
+        await select(notas);
         await durationKnown(playback);
         started = playing();
         playback.play();
@@ -905,6 +927,8 @@ const windowCheckComponent = (params, { window }) => {
         `selecionada ${sidebar.selected?.name}, player ${playback.uri === notas.uri}, título ${pane._titleLabel.label})`);
         check(queue.has(sem) && list.getIndex(sem.file) < 0 && sem.file.query_exists(null),
             'Desfazer A não mexe em B (continua pendente)');
+        check(transcriptFileFor(notas.file).query_exists(null) && !trashedFile('Notas da reunião.transcript.json').query_exists(null),
+            'Desfazer A: a transcrição de A continua no lugar');
         window._deleteToasts.get(idB).toast.dismiss();
         for (let i = 0; i < 20 && sem.file.query_exists(null); i++)
             await sleep(100);
@@ -922,7 +946,7 @@ const windowCheckComponent = (params, { window }) => {
 
         // 6b. Atalhos de teclado (Review Focus 5). Sem Gdk.KeyEvent no GJS: a tecla entra por
         // handleShortcutKey (o mesmo caminho do controlador de teclas), com o foco real.
-        await selectInWindow(window, daily);
+        await select(daily);
         await durationKnown(playback);
         sidebar._searchEntry.grab_focus();
         check(!window.handleShortcutKey(Gdk.KEY_space, 0) && !window.handleShortcutKey(Gdk.KEY_b, 0) &&
@@ -1014,10 +1038,99 @@ const windowCheckComponent = (params, { window }) => {
             pane._titleLabel.label === 'Daily renomeada' && playback.uri === daily.uri,
         'renomear pelo diálogo: seleção, item da sidebar, título do painel e player seguem');
         daily.name = 'Daily · Projeto Atlas';
-        await selectInWindow(window, ideias);
+        await select(ideias);
+
+        // 6d. Transcrição em andamento: excluir é recusado (o resultado pago se perderia
+        // mesmo com Desfazer); terminada, excluir volta a funcionar.
+        const busy = 'Aguarde a transcrição terminar para excluir.';
+        service._running.set(ideias.uri, new Promise(() => {}));
+        window._onTranscriptionChanged(ideias.uri, 'running');
+        rowOf(ideias).grab_focus();
+        let nt = toasts.length;
+        window.handleShortcutKey(Gdk.KEY_Delete, 0);
+        check(list.getIndex(ideias.file) >= 0 && queue.pending().length === 0 && toasts[nt] === busy,
+            'transcrevendo: Delete recusado (continua na lista, fila vazia, aviso)');
+        const ideiasTarget = new GLib.Variant('s', ideias.uri);
+        nt = toasts.length;
+        sidebar.activate_action('sidebar.delete', ideiasTarget);
+        check(list.getIndex(ideias.file) >= 0 && queue.pending().length === 0 && toasts[nt] === busy,
+            'transcrevendo: Excluir do menu ⋮ (aberto antes) recusado na hora do clique, com aviso');
+        nt = toasts.length;
+        sidebar.emit('delete-requested', ideias);
+        check(list.getIndex(ideias.file) >= 0 && queue.pending().length === 0 && toasts[nt] === busy,
+            'transcrevendo: a janela confere de novo o pedido de exclusão');
+        const ideiasMenu = rowOf(ideias).menuButton;
+        ideiasMenu.popup();
+        const dangerSection = ideiasMenu.menu_model.get_item_link(1, 'section');
+        check(dangerSection.get_item_attribute_value(0, 'action', null).get_string()[0] === 'sidebar.busy',
+            'transcrevendo: Excluir desligado no menu ⋮');
+        ideiasMenu.popdown();
+        service._running.delete(ideias.uri);
+        window._onTranscriptionChanged(ideias.uri, 'none');
+        window.handleShortcutKey(Gdk.KEY_Delete, 0);
+        const idIdeias = lastId();
+        check(queue.has(ideias) && list.getIndex(ideias.file) < 0, 'transcrição terminou: excluir funciona');
+        winAction('win.undo-delete', new GLib.Variant('i', idIdeias));
+        check(list.getIndex(ideias.file) >= 0 && !queue.has(ideias), 'e o Desfazer devolve a gravação');
+
+        // 6e. Confirmar a exclusão: áudio e transcrição na lixeira. Lixeira impossível
+        // (pasta sem escrita): nada é tocado, aviso e a gravação volta para a lista.
+        const waitFor = async (pred, ms = 3000) => {
+            for (let t = 0; t < ms && !pred(); t += 50)
+                await sleep(50);
+            return pred();
+        };
+        const withSidecar = copyFixture(daily, 'Cópia com transcrição', true);
+        sidebar.emit('delete-requested', withSidecar);
+        const idSidecar = lastId();
+        const committed = new Promise(resolve => {
+            const commit = window._commitDelete.bind(window);
+            window._commitDelete = id => {
+                const result = commit(id);
+                if (id === idSidecar) {
+                    window._commitDelete = commit;
+                    resolve(result);
+                }
+                return result;
+            };
+        });
+        window._deleteToasts.get(idSidecar).toast.dismiss();
+        check(await within(committed.then(r => r), 3000) && await committed === true &&
+            !withSidecar.file.query_exists(null) && !transcriptFileFor(withSidecar.file).query_exists(null) &&
+            trashedFile('Cópia com transcrição').query_exists(null) &&
+            trashedFile('Cópia com transcrição.transcript.json').query_exists(null),
+        'confirmada: áudio e transcrição na lixeira isolada');
+
+        const stuck = copyFixture(daily, 'Cópia sem lixeira', true);
+        const mode = (file, value) => file.set_attribute_uint32('unix::mode', value,
+            Gio.FileQueryInfoFlags.NONE, null);
+        sidebar.emit('delete-requested', stuck);
+        const idStuck = lastId();
+        nt = toasts.length;
+        mode(RecordingsDir, 0o555);
+        try {
+            window._deleteToasts.get(idStuck).toast.dismiss();
+            await waitFor(() => toasts.length > nt);
+        } finally {
+            mode(RecordingsDir, 0o755);
+        }
+        check(toasts[nt] === 'Não foi possível mover a gravação para a lixeira.' &&
+            list.getIndex(stuck.file) >= 0 && !queue.has(stuck) && rowOf(stuck) !== null,
+        'lixeira falhou: aviso e a gravação volta para a lista (e para a sidebar)');
+        check(stuck.file.query_exists(null) && transcriptFileFor(stuck.file).query_exists(null) &&
+            loadTranscript(stuck.file) !== null && !trashedFile('Cópia sem lixeira').query_exists(null) &&
+            !trashedFile('Cópia sem lixeira.transcript.json').query_exists(null),
+        'lixeira falhou: áudio e transcrição intactos no lugar, nada apagado');
+        sidebar.emit('delete-requested', stuck);
+        const idStuck2 = lastId();
+        window._deleteToasts.get(idStuck2).toast.dismiss();
+        check(await waitFor(() => trashedFile('Cópia sem lixeira').query_exists(null) &&
+            trashedFile('Cópia sem lixeira.transcript.json').query_exists(null)) && list.getIndex(stuck.file) < 0,
+        'com a pasta liberada, excluir de novo vai para a lixeira');
+        await select(daily);
 
         // 7. Gravador: começar para o player; parar insere, seleciona e deixa parado.
-        await selectInWindow(window, daily);
+        await select(daily);
         await durationKnown(playback);
         started = playing();
         playback.play();
@@ -1053,7 +1166,7 @@ const windowCheckComponent = (params, { window }) => {
         split.collapsed = true;
         split.show_content = false;
         check(sidebar.selected === fresh && !window._backButton.visible, 'recolhida: lista visível, seleção mantida, sem Voltar');
-        await selectInWindow(window, daily);
+        await select(daily);
         sidebar._list.emit('row-activated', rowOf(daily));
         check(split.show_content && window._backButton.visible && pane._titleLabel.label === daily.name,
             'recolhida: escolher abre o painel com Voltar');
@@ -1074,17 +1187,34 @@ const windowCheckComponent = (params, { window }) => {
         list.splice(0, 0, all);
         check(pane._mainStack.visible_child_name === 'no-selection', 'lista de volta: "Selecione uma gravação"');
 
-        // 10. Fechar a janela com uma exclusão pendente: vai para a lixeira antes de sair
-        // (conferido no shutdown real, chamado pelo close() do fim da captura).
+        // 10. Fechar a janela com DUAS exclusões pendentes: cada uma vai para a lixeira uma
+        // vez, na ordem em que foram feitas, antes de sair (conferido no shutdown real,
+        // chamado pelo close() do fim da captura).
+        const second = copyFixture(daily, 'Gravação de teste 2', true);
+        // Duração lida antes de excluir (o Discoverer dela termina antes do fechamento).
+        const trashOrder = [];
+        for (const r of [fresh, second]) {
+            const original = r.delete.bind(r);
+            r.delete = opts => {
+                trashOrder.push(r.name);
+                return original(opts);
+            };
+        }
         sidebar.emit('delete-requested', fresh);
-        check(queue.has(fresh) && fresh.file.query_exists(null), 'exclusão pendente antes de fechar');
+        sidebar.emit('delete-requested', second);
+        check(queue.has(fresh) && queue.has(second) && fresh.file.query_exists(null) && second.file.query_exists(null),
+            'duas exclusões pendentes antes de fechar');
         const shutdown = window.shutdown;
         window.shutdown = function () {
-            const pending = queue.has(fresh);
+            const pending = queue.has(fresh) && queue.has(second);
             shutdown.call(this);
-            const ok = pending && !queue.has(fresh) && !fresh.file.query_exists(null) &&
-                trashedFile('Gravação de teste').query_exists(null) && queue.commitAll().length === 0;
-            print(`${ok ? 'PASS' : 'FAIL'} windowcheck: fechar a janela manda a exclusão pendente para a lixeira`);
+            const ok = pending && !queue.has(fresh) && !queue.has(second) &&
+                trashOrder.join('|') === 'Gravação de teste|Gravação de teste 2' &&
+                !fresh.file.query_exists(null) && !second.file.query_exists(null) &&
+                trashedFile('Gravação de teste').query_exists(null) && trashedFile('Gravação de teste 2').query_exists(null) &&
+                trashedFile('Gravação de teste 2.transcript.json').query_exists(null) && queue.commitAll().length === 0;
+            print(`${ok ? 'PASS' : 'FAIL'} windowcheck: fechar a janela manda as duas exclusões pendentes para a ` +
+                `lixeira, uma vez cada, em ordem (${trashOrder.join(' → ')})`);
             let again = true;
             try {
                 window._commitPendingDeletes();
@@ -1096,7 +1226,7 @@ const windowCheckComponent = (params, { window }) => {
         };
 
         // Captura: daily no 00:34.
-        await selectInWindow(window, daily);
+        await select(daily);
         await durationKnown(playback);
         playback.seek(34);
         await whenMapped(window);

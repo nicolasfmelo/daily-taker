@@ -88,13 +88,24 @@ bash tools/snapshot.sh OUT.png [--component window|windowcheck|playerbar|transcr
     inválido ou vazio desliga Renomear, uma transcrição que começa com o diálogo
     aberto bloqueia (aviso "Aguarde a transcrição terminar para renomear."),
     nome de outra gravação avisa sem exceção, renomear mantém seleção, item da
-    sidebar, título do painel e player; começar a
+    sidebar, título do painel e player; **excluir durante a transcrição** é
+    recusado (tecla Delete, menu ⋮ aberto antes e o pedido na janela: continua na
+    lista, fila vazia, aviso "Aguarde a transcrição terminar para excluir.";
+    Excluir desligado no menu) e volta a funcionar quando ela termina;
+    **confirmar** manda áudio e transcrição para a lixeira isolada; **lixeira
+    impossível** (pasta das gravações sem escrita, `chmod 555` só durante o
+    passo): aviso "Não foi possível mover a gravação para a lixeira.", a
+    gravação volta para a lista e a sidebar, áudio e transcrição intactos,
+    nada apagado; com a pasta liberada, excluir de novo funciona; começar a
     gravar para o player; parar insere a gravação nova (cópia de uma fixture,
     sem microfone) no topo, uma vez, e a seleciona com o player parado; parar
     sem nada gravado e falha do gravador avisam e voltam à lista; breakpoint
     conforme a largura, e recolher/Voltar mantém a seleção; lista vazia mostra a
-    biblioteca vazia; **fechar a janela** com uma exclusão pendente a manda para
-    a lixeira antes de sair, e fechar de novo/fila vazia não lança (conferido no
+    biblioteca vazia; **fechar a janela** com duas exclusões pendentes manda as
+    duas para a lixeira (cada uma uma vez, na ordem em que foram feitas, com a
+    transcrição) antes de sair, e fechar de novo/fila vazia não lança. Esperas
+    (biblioteca, seleção) têm limite: uma que não chega falha com mensagem em vez
+    de travar (conferido no
     `shutdown()` real, depois da captura). Tocar usa `fakesink`: nenhum som. Uma
     falha = sem PNG e saída ≠ 0; uma `FAIL` impressa depois da captura (o
     fechamento) também faz o `snapshot.sh` sair com erro. Rode também com `--size 600x900` (breakpoint real). Altera

@@ -59,6 +59,8 @@ const SEEK_STEP = 10;
 // Tempo do toast "… excluída" com Desfazer, em segundos.
 const UNDO_TIMEOUT = 8;
 const RENAME_BUSY_MESSAGE = 'Aguarde a transcrição terminar para renomear.';
+const DELETE_BUSY_MESSAGE = 'Aguarde a transcrição terminar para excluir.';
+const TRASH_FAILED_MESSAGE = 'Não foi possível mover a gravação para a lixeira.';
 
 // Do widget com o foco até a janela: algum ancestral satisfaz `pred`?
 const focusWithin = (widget, pred) => {
@@ -195,6 +197,12 @@ var Window = GObject.registerClass({
     shutdown() {
         if (this._closed)
             return;
+        // Leituras de duração em andamento param antes de o app sair (senão o GStreamer
+        // desmonta o Discoverer no meio, com avisos).
+        for (let i = 0; i < this._recordingList.get_n_items(); i++)
+            this._recordingList.get_item(i).cancelDiscovery();
+        for (const recording of this._deleteQueue.pending())
+            recording.cancelDiscovery();
         this._commitPendingDeletes();
         // Uma transcrição em andamento não segura o fechamento: é simplesmente abandonada.
         this._closed = true;
@@ -227,10 +235,14 @@ var Window = GObject.registerClass({
         });
     }
 
-    // Todas as exclusões pendentes vão para a lixeira agora (fechar a janela).
+    // Todas as exclusões pendentes vão para a lixeira agora (fechar a janela), na ordem em
+    // que foram feitas. Uma que não puder ir fica intacta no disco (volta na próxima
+    // abertura); só o nome vai para o log.
     _commitPendingDeletes() {
-        for (const recording of this._deleteQueue.commitAll())
-            recording.delete({ sync: true });
+        for (const recording of this._deleteQueue.commitAll()) {
+            if (!recording.delete({ sync: true }))
+                log(`Exclusão não concluída ao fechar (arquivos mantidos): ${recording.name}`);
+        }
     }
 
     // connect() que o shutdown desfaz.
@@ -251,6 +263,7 @@ var Window = GObject.registerClass({
         });
         sidebar.connect('rename-requested', (_s, recording) => this._showRenameDialog(recording));
         sidebar.connect('delete-requested', (_s, recording) => this._deleteRecording(recording));
+        sidebar.connect('delete-refused', () => this.addToast(DELETE_BUSY_MESSAGE));
         sidebar.connect('export-audio-requested', (_s, recording) => this._exportAudio(recording));
     }
 
@@ -648,6 +661,12 @@ var Window = GObject.registerClass({
         const index = this._indexOf(recording);
         if (index < 0)
             return;
+        // A transcrição paga seria salva ao lado de uma gravação já fora da biblioteca (e
+        // perdida mesmo com Desfazer): excluir espera ela terminar.
+        if (this._isTranscribing(recording)) {
+            this.addToast(DELETE_BUSY_MESSAGE);
+            return;
+        }
         if (this.playback.uri === recording.uri) {
             this._cancelPendingSeek();
             this.playback.load(null);
@@ -682,8 +701,20 @@ var Window = GObject.registerClass({
     }
 
     // O toast sumiu sem Desfazer: a gravação vai para a lixeira (nada se já foi desfeita).
+    // Se o áudio não puder ir, nada foi tocado: aviso e a gravação volta para a lista.
+    // Devolve a Promise do resultado (ou null), para a verificação do devSnapshot.
     _commitDelete(id) {
-        this._deleteQueue.commit(id)?.delete();
+        const recording = this._deleteQueue.commit(id);
+        if (!recording)
+            return null;
+        return recording.delete().then(ok => {
+            if (ok || this._closed)
+                return ok;
+            this.addToast(TRASH_FAILED_MESSAGE);
+            if (this._recordingList.getIndex(recording.file) < 0)
+                this._recordingList.sortedInsert(recording);
+            return ok;
+        });
     }
 
     // Desfazer: a gravação volta para a lista, na ordem por data, e é selecionada.

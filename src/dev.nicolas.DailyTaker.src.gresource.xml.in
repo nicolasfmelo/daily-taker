@@ -20,6 +20,7 @@
     <file>recordingGroups.js</file>
     <file>recordingList.js</file>
     <file>recordingName.js</file>
+    <file>recordingTrash.js</file>
     <file>secrets.js</file>
     <file>seekWaveform.js</file>
     <file>shortcuts.js</file>
