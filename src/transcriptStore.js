@@ -1,5 +1,5 @@
 /* exported isTranscriptFileName, transcriptFileFor, saveTranscript, loadTranscript,
-            moveTranscript, trashTranscript, listTranscripts */
+            moveTranscript, listTranscripts */
 // Persistência das transcrições ao lado das gravações. Gio/GLib síncronos,
 // sem dependência de GTK ou do módulo application (carregável em gjs puro).
 const { Gio, GLib } = imports.gi;
@@ -50,23 +50,6 @@ var moveTranscript = (oldRecordingFile, newRecordingFile) => {
             saveTranscript(newRecordingFile, Object.assign({}, t, { title: newName }));
     } catch (e) {
         log(`Não foi possível atualizar o título da transcrição: ${dest.get_basename()}`);
-    }
-};
-
-// Manda a transcrição para a lixeira; true se foi (ou não havia nada). Nunca apaga de
-// vez: sem lixeira nesse volume (ou outro erro) ela fica onde está e devolve false.
-// `trash` é injetável nos testes.
-var trashTranscript = (recordingFile, { trash = f => f.trash(null) } = {}) => {
-    const file = transcriptFileFor(recordingFile);
-    if (!file.query_exists(null))
-        return true;
-    try {
-        trash(file);
-        return true;
-    } catch (e) {
-        // Só o nome: o conteúdo é uma transcrição privada.
-        log(`Não foi possível mover para a lixeira: ${file.get_basename()} (${e.message})`);
-        return false;
     }
 };
 

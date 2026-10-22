@@ -20,6 +20,7 @@
       <description>Idioma enviado ao serviço de transcrição: "pt" para português ou "auto" para detecção automática.</description>
     </key>
     <key name="playback-rate" type="d">
+      <range min="0.75" max="2"/>
       <default>1.0</default>
       <summary>Velocidade de reprodução</summary>
       <description>Velocidade do player: 0,75, 1, 1,25, 1,5 ou 2.</description>
