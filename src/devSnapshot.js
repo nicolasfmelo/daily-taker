@@ -18,31 +18,51 @@ const nextSignal = (obj, signal, pred = () => true) => new Promise(resolve => {
     });
 });
 
-// Gravação mais recente da pasta de dados (a primeira da lista do app), ou null.
-const newestRecordingFile = () => {
+// Gravações da pasta de dados, da mais recente para a mais antiga (a ordem da lista do app).
+const recordingFiles = () => {
     const { RecordingsDir } = imports.application;
     const children = RecordingsDir.enumerate_children('standard::name,time::modified',
         Gio.FileQueryInfoFlags.NONE, null);
-    let newest = null;
-    let newestTime = -1;
+    const found = [];
     for (let info = children.next_file(null); info; info = children.next_file(null)) {
         const name = info.get_name();
         if (name.endsWith('.json') || name.startsWith('.'))
             continue;
-        const time = info.get_attribute_uint64('time::modified');
-        if (time > newestTime) {
-            newest = RecordingsDir.get_child(name);
-            newestTime = time;
-        }
+        found.push({ file: RecordingsDir.get_child(name), time: info.get_attribute_uint64('time::modified') });
     }
     children.close(null);
-    return newest;
+    return found.sort((a, b) => b.time - a.time).map(r => r.file);
+};
+
+// Gravação mais recente da pasta de dados (a primeira da lista do app), ou null.
+const newestRecordingFile = () => recordingFiles()[0] ?? null;
+
+// Playback que nunca faz som: saída fakesink e volume 0.
+const silentPlayback = () => {
+    const { Playback } = imports.playback;
+    const playback = new Playback({
+        audioSinkFactory: () => Gst.ElementFactory.make('fakesink', null),
+    });
+    silencePlayback(playback);
+    return playback;
+};
+
+// Carrega `uri` pausado e, com `at` > 0, posiciona em `at` s; resolve quando chegou lá.
+const positionPlayback = (playback, uri, at) => {
+    const duration = nextSignal(playback, 'duration-changed', seconds => seconds > 0);
+    playback.load(uri);
+    return duration.then(() => {
+        if (!(at > 0))
+            return null;
+        const done = nextSignal(playback, 'position-updated', pos => Math.abs(pos - at) < 0.5);
+        playback.seek(at);
+        return done;
+    });
 };
 
 // Barra do player sozinha, com a gravação mais recente das fixtures, pausada em --at
 // (padrão 0). Saída de áudio = fakesink e nada é posto para tocar: nenhum som.
 const playerBarComponent = params => {
-    const { Playback } = imports.playback;
     const { PlayerBar } = imports.playerBar;
     const { Recording } = imports.recording;
 
@@ -53,30 +73,53 @@ const playerBarComponent = params => {
     // Volume de exemplo, como na mockup (a saída é um fakesink: não sai som).
     settings.set_double('playback-volume', 0.6);
 
-    const playback = new Playback({
-        audioSinkFactory: () => Gst.ElementFactory.make('fakesink', null),
-    });
-    silencePlayback(playback);
+    const playback = silentPlayback();
     const bar = new PlayerBar({ settings });
     bar.bind(playback);
 
     const recording = new Recording(file);
     const peaks = nextSignal(recording, 'peaks-updated');
-    const duration = nextSignal(playback, 'duration-changed', seconds => seconds > 0);
     bar.setRecording(recording);
-    playback.load(recording.uri);
-
-    const at = params.at ?? 0;
-    const positioned = duration.then(() => {
-        if (at <= 0)
-            return null;
-        const done = nextSignal(playback, 'position-updated', pos => Math.abs(pos - at) < 0.5);
-        playback.seek(at);
-        return done;
-    });
+    const positioned = positionPlayback(playback, recording.uri, params.at ?? 0);
     return {
         widget: bar,
         ready: Promise.all([peaks, positioned]),
+        cleanup: () => playback.destroy(),
+    };
+};
+
+// Visão da transcrição sozinha (modo embutido, salvo --embedded 0) com a transcrição da
+// gravação --select N (padrão 1, a mais recente). --at SEG posiciona o Playback (pausado,
+// fakesink) e realça o bloco daquele instante; --find TEXTO aplica a busca interna.
+const transcriptViewComponent = params => {
+    const { loadTranscript } = imports.transcriptStore;
+    const { TranscriptView } = imports.transcriptView;
+
+    const files = recordingFiles();
+    const n = params.select ?? 1;
+    const file = files[n - 1];
+    if (!file)
+        throw new Error(`não há gravação ${n} nas fixtures (há ${files.length})`);
+    const transcript = loadTranscript(file);
+    if (!transcript)
+        throw new Error(`a gravação ${n} não tem transcrição`);
+
+    const view = new TranscriptView({ embedded: params.embedded !== 0 });
+    const playback = silentPlayback();
+    if (view.embedded)
+        view.bindPlayback(playback);
+    const built = nextSignal(view, 'blocks-built');
+    view.setTranscript(transcript, file);
+    const positioned = positionPlayback(playback, file.get_uri(), params.at ?? 0);
+    const ready = Promise.all([built, positioned]).then(() => {
+        if (params.find) {
+            const { count, index } = view.setFindQuery(params.find);
+            print(`devSnapshot: busca "${params.find}": ${count} resultado(s), ativo ${index}`);
+        }
+    });
+    return {
+        widget: view,
+        ready,
         cleanup: () => playback.destroy(),
     };
 };
@@ -85,10 +128,11 @@ const playerBarComponent = params => {
 // widget for um Gtk.Window, ele é capturado como está; qualquer outro vai para uma janela
 // simples do tamanho pedido. `ready` (Promise) adia a captura até o componente terminar
 // de carregar (ex.: picos da onda); `cleanup` roda antes de sair. As próximas tarefas
-// acrescentam transcriptview, detailpane e sidebar.
+// acrescentam detailpane e sidebar.
 var COMPONENTS = {
     window: (_params, ctx) => ctx.window,
     playerbar: playerBarComponent,
+    transcriptview: transcriptViewComponent,
 };
 
 // --state (só com --component window): página mostrada no lugar da lista. Só troca a
@@ -132,6 +176,8 @@ var snapshotParams = () => {
         tab: env('DAILY_TAKER_SNAPSHOT_TAB'),
         at: intOrNull(env('DAILY_TAKER_SNAPSHOT_AT')),
         state: env('DAILY_TAKER_SNAPSHOT_STATE'),
+        embedded: intOrNull(env('DAILY_TAKER_SNAPSHOT_EMBEDDED')),
+        find: env('DAILY_TAKER_SNAPSHOT_FIND'),
         width,
         height,
     };

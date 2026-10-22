@@ -11,6 +11,9 @@
 @define-color ok #3FCF70;
 @define-color text_dim #9CA4B8;
 @define-color track #2F333B;
+@define-color block_hover alpha(#FFFFFF, .03);
+@define-color find_match alpha(#FACC15, .08);
+@define-color find_active alpha(#FACC15, .55);
 
 /* Locutores: ciclo pelo id (speaker-N com N = id % 6). */
 @define-color speaker_0 #3D9BFD;
@@ -158,6 +161,74 @@ button.accent-pill:active {
   min-height: 0;
 }
 
+/* Blocos no layout da mockup (TranscriptView embutido no painel de detalhes). */
+
+.transcript-block.embedded {
+  padding: 18px 16px 18px 32px;
+  border-radius: 10px;
+}
+
+.transcript-block.embedded:hover {
+  background-color: @block_hover;
+}
+
+.transcript-block.embedded.current {
+  background-color: @accent_soft;
+}
+
+.transcript-block.embedded .transcript-time {
+  color: @text_dim;
+  font-size: 16px;
+}
+
+.transcript-block.embedded.current .transcript-time {
+  color: @accent;
+}
+
+.transcript-block.embedded .speaker-dot {
+  min-width: 12px;
+  min-height: 12px;
+}
+
+.transcript-block.embedded .speaker-name {
+  padding: 0 4px;
+  margin-left: -4px;
+  min-height: 0;
+  color: @text_dim;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.transcript-block.embedded .transcript-text {
+  font-size: 18px;
+  line-height: 1.45;
+}
+
+/* Menu do bloco: só aparece ao passar o mouse ou com o foco do teclado. */
+.transcript-block.embedded .block-menu {
+  opacity: 0;
+  transition: opacity 120ms ease-out;
+}
+
+.transcript-block.embedded:hover .block-menu,
+.transcript-block.embedded .block-menu:focus-within {
+  opacity: 1;
+}
+
+/* Busca dentro da transcrição: resultados com fundo sutil, o ativo com contorno. */
+.transcript-block.find-match {
+  background-color: @find_match;
+}
+
+.transcript-block.find-active {
+  outline: 1px solid @find_active;
+  outline-offset: -1px;
+}
+
+.transcript-block.embedded.current.find-match {
+  background-color: @accent_soft;
+}
+
 /* Player */
 
 .player-bar {
@@ -257,6 +328,15 @@ button.large {
   .transcript-block.current {
     outline: 2px solid @accent;
     outline-offset: -2px;
+  }
+
+  .transcript-block.find-active {
+    outline: 2px solid @find_active;
+    outline-offset: -2px;
+  }
+
+  .transcript-block.embedded .block-menu {
+    opacity: 1;
   }
 
   .sidebar-item.selected,

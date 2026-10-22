@@ -50,4 +50,23 @@ test('componente playerbar registrado', () => {
     assert.equal(typeof COMPONENTS.playerbar, 'function');
 });
 
+test('componente transcriptview registrado; --embedded e --find lidos do ambiente', () => {
+    assert.equal(typeof COMPONENTS.transcriptview, 'function');
+    GLib.setenv('DAILY_TAKER_SNAPSHOT', '/nonexistent/out.png', true);
+    try {
+        GLib.unsetenv('DAILY_TAKER_SNAPSHOT_EMBEDDED');
+        GLib.unsetenv('DAILY_TAKER_SNAPSHOT_FIND');
+        assert.equal(snapshotParams().embedded, null);
+        assert.equal(snapshotParams().find, null);
+        GLib.setenv('DAILY_TAKER_SNAPSHOT_EMBEDDED', '0', true);
+        GLib.setenv('DAILY_TAKER_SNAPSHOT_FIND', 'reunião', true);
+        assert.equal(snapshotParams().embedded, 0);
+        assert.equal(snapshotParams().find, 'reunião');
+    } finally {
+        GLib.unsetenv('DAILY_TAKER_SNAPSHOT_EMBEDDED');
+        GLib.unsetenv('DAILY_TAKER_SNAPSHOT_FIND');
+        GLib.unsetenv('DAILY_TAKER_SNAPSHOT');
+    }
+});
+
 finish();

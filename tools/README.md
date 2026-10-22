@@ -40,7 +40,7 @@ Cria `DIR/daily-taker/` (o `XDG_DATA_HOME` do app aponta para `DIR`):
 ```sh
 bash tools/snapshot.sh OUT.png [--component window|playerbar|transcriptview|detailpane|sidebar]
                        [--select N] [--tab transcricao|resumo] [--at SEG] [--size LxA]
-                       [--state recorder]
+                       [--state recorder] [--embedded 0|1] [--find TEXTO]
 ```
 
 - `--component` (padrão `window`): `window` é a janela principal real. Os
@@ -54,6 +54,15 @@ bash tools/snapshot.sh OUT.png [--component window|playerbar|transcriptview|deta
     (`ready` do componente, limite de 30 s) antes dos 1,5 s de assentamento.
     Ex.: `bash tools/snapshot.sh /tmp/p.png --component playerbar --at 34 --size 1200x120`
     (a janela simples tem altura mínima de 200 px).
+  - `transcriptview`: a visão da transcrição (`src/transcriptView.js`) no modo
+    embutido (o do painel de detalhes), com a transcrição da gravação `--select N`
+    (padrão 1 = a mais recente, "Daily · Projeto Atlas"). `--at SEG` posiciona um
+    `Playback` pausado (fakesink, volume 0) e realça o bloco daquele instante;
+    `--find TEXTO` aplica a busca interna (`.find-match`/`.find-active`);
+    `--embedded 0` mostra o modo antigo (cabeçalho próprio), usado pela janela
+    atual até a Task 10. Espera o sinal `blocks-built` (lotes ociosos) e a posição.
+    Tamanho padrão 1000x700.
+    Ex.: `bash tools/snapshot.sh /tmp/t.png --component transcriptview --select 1 --at 34`
 - `--select N` (item N da lista, a partir de 1), `--tab`, `--at SEG` (posição
   do player): já são lidos e repassados a `maybeSnapshot` (`params.select`,
   `params.tab`, `params.at`), mas a janela atual ainda os ignora (imprime uma
@@ -62,7 +71,7 @@ bash tools/snapshot.sh OUT.png [--component window|playerbar|transcriptview|deta
   lugar da lista, para conferir o tema nela. Só troca a página da janela; nenhuma
   gravação começa e nenhum dispositivo de áudio é aberto (`WINDOW_STATES` em
   `src/devSnapshot.js`).
-- `--size LxA` (padrão `1536x1024`, o tamanho da mockup): tamanho do monitor
+- `--size LxA` (padrão `1536x1024`, o tamanho da mockup; `1000x700` para `transcriptview`): tamanho do monitor
   virtual e da janela.
 - Leva ~4 s. Saída ≠ 0 se nenhum PNG for gerado; `SNAPSHOT_VERBOSE=1` mostra o
   log completo do mutter/app; `SNAPSHOT_TIMEOUT` (padrão 60 s) limita a execução.

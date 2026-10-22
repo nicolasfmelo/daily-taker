@@ -1,30 +1,63 @@
 /* exported TranscriptView */
-const { Adw, Gdk, Gio, GLib, GObject, GstPlayer, Gtk, Pango } = imports.gi;
+const { Adw, Gdk, Gio, GLib, GObject, Graphene, GstPlayer, Gtk, Pango } = imports.gi;
+const { formatShortClock, shouldScroll } = imports.playerModel;
+const { speakerClass } = imports.speakerColors;
 const { buildBlocks, renameSpeaker } = imports.transcript;
 const { copyBlock, copyText, exportFileName, formatClock } = imports.transcriptFormat;
 const { saveTranscript } = imports.transcriptStore;
 const {
-    blockTitle, currentBlockIndex, exportContent, exportExtension, speakerEntry, viewHeader,
+    blockTitle, currentBlockIndex, exportContent, exportExtension, findMatches, nextIndex,
+    speakerEntry, viewHeader,
 } = imports.transcriptViewModel;
 
 // Blocos criados por iteração ociosa: milhares de blocos não travam a interface.
 const CHUNK_SIZE = 100;
 // Intervalo do destaque do bloco falado enquanto o player toca esta gravação.
 const HIGHLIGHT_INTERVAL_MS = 150;
+// Largura máxima do texto: a visão antiga fica numa coluna estreita; a embutida
+// (painel de detalhes) ocupa o painel todo, como na mockup.
+const CLAMP_CLASSIC = 760;
+const CLAMP_EMBEDDED = 1400;
+const CLAMP_TIGHTENING = 400; // padrão do AdwClamp
+// Rolagem suave até o bloco atual / resultado da busca.
+const SCROLL_DURATION_MS = 250;
+
+// Sobe de `widget` até `stop` (exclusive): true se passou por um botão.
+const insideButton = (widget, stop) => {
+    for (let w = widget; w && w !== stop; w = w.get_parent()) {
+        if (w instanceof Gtk.Button || w instanceof Gtk.MenuButton)
+            return true;
+    }
+    return false;
+};
 
 var TranscriptView = GObject.registerClass({
     Template: 'resource:///dev/nicolas/DailyTaker/ui/transcript-view.ui',
     InternalChildren: [
-        'toastOverlay', 'scroller', 'titleLabel', 'dateTimeLabel', 'detailsLabel',
-        'speakersLabel', 'blocksBox', 'regenerateStack', 'regenerateSpinner',
+        'toastOverlay', 'scroller', 'clamp', 'contentBox', 'headerBox', 'titleLabel',
+        'dateTimeLabel', 'detailsLabel', 'speakersLabel', 'blocksBox', 'regenerateStack',
+        'regenerateSpinner',
     ],
+    Properties: {
+        // false: visão antiga (cabeçalho próprio, grupo de ações `transcript`, attachPlayer).
+        // true: dentro do DetailPane (sem cabeçalho, blocos da mockup, bindPlayback).
+        'embedded': GObject.ParamSpec.boolean('embedded', 'embedded', 'Inside the detail pane',
+            GObject.ParamFlags.READWRITE, false),
+        // Acompanhar áudio: rola até o bloco que está tocando (só no modo embutido).
+        'follow-audio': GObject.ParamSpec.boolean('follow-audio', 'follow-audio',
+            'Scroll to the block being played', GObject.ParamFlags.READWRITE, true),
+    },
     Signals: {
         'seek-requested': { param_types: [GObject.TYPE_DOUBLE] },
         'transcript-changed': { param_types: [GObject.TYPE_JSOBJECT] },
         'regenerate-requested': {},
+        // Todos os blocos foram criados (o preenchimento é feito em lotes ociosos).
+        'blocks-built': {},
     },
 }, class TranscriptView extends Gtk.Box {
     _init(params) {
+        this._embedded = false;
+        this._followAudio = true;
         super._init(params);
 
         this._transcript = null;
@@ -38,6 +71,13 @@ var TranscriptView = GObject.registerClass({
         this._highlightSourceId = 0;
         this._currentIndex = -1;
         this._running = false;
+        this._playback = null;
+        this._playbackIds = [];
+        this._findQuery = '';
+        this._findMatches = [];
+        this._findActive = -1;
+        this._pendingScroll = -1;
+        this._scrollAnimation = null;
 
         const actions = new Gio.SimpleActionGroup();
         const copyAll = new Gio.SimpleAction({
@@ -61,10 +101,73 @@ var TranscriptView = GObject.registerClass({
         this._regenerateAction.connect('activate', () => this.emit('regenerate-requested'));
         actions.add_action(this._regenerateAction);
 
+        // Menu de cada bloco (modo embutido): "Copiar bloco".
+        const copyBlockAction = new Gio.SimpleAction({
+            name: 'copy-block',
+            parameter_type: new GLib.VariantType('i'),
+        });
+        copyBlockAction.connect('activate', (_action, param) => {
+            const block = this._blocks[param.get_int32()];
+            if (block)
+                this._copy(copyBlock(block));
+        });
+        actions.add_action(copyBlockAction);
+
         this.insert_action_group('transcript', actions);
 
         this.connect('map', () => this._syncHighlight());
         this.connect('unmap', () => this._syncHighlight());
+        this._initialized = true;
+        this._applyMode();
+    }
+
+    get embedded() {
+        return this._embedded;
+    }
+
+    set embedded(value) {
+        value = Boolean(value);
+        if (value === this._embedded)
+            return;
+        this._embedded = value;
+        if (this._initialized) {
+            this._applyMode();
+            // Os blocos mudam de layout: refeitos com a transcrição atual.
+            if (this._transcript)
+                this._fillBlocks();
+        }
+        this.notify('embedded');
+    }
+
+    get followAudio() {
+        return this._followAudio;
+    }
+
+    set followAudio(value) {
+        value = Boolean(value);
+        if (value === this._followAudio)
+            return;
+        this._followAudio = value;
+        this.notify('follow-audio');
+        // Religar volta a mostrar o bloco que está tocando.
+        if (value && this._embedded && this._currentIndex >= 0)
+            this._scrollToBlock(this._currentIndex);
+    }
+
+    _applyMode() {
+        const embedded = this._embedded;
+        this._headerBox.visible = !embedded;
+        this._clamp.maximum_size = embedded ? CLAMP_EMBEDDED : CLAMP_CLASSIC;
+        // Embutido: ocupa a largura do painel até o máximo, sem estreitar antes.
+        this._clamp.tightening_threshold = embedded ? CLAMP_EMBEDDED : CLAMP_TIGHTENING;
+        this._blocksBox.spacing = embedded ? 8 : 18;
+        this._contentBox.margin_top = embedded ? 8 : 18;
+        this._contentBox.margin_start = embedded ? 8 : 16;
+        this._contentBox.margin_end = embedded ? 8 : 16;
+        if (embedded)
+            this._blocksBox.add_css_class('embedded');
+        else
+            this._blocksBox.remove_css_class('embedded');
     }
 
     get recordingFile() {
@@ -83,9 +186,21 @@ var TranscriptView = GObject.registerClass({
             this._connectPlayer();
     }
 
+    // Modo embutido: o destaque segue o Playback único (re-ligar troca o anterior).
+    bindPlayback(playback) {
+        if (playback === this._playback)
+            return;
+        this._disconnectPlayback();
+        this._playback = playback ?? null;
+        if (this.get_root())
+            this._connectPlayback();
+        this._syncHighlight();
+    }
+
     vfunc_root() {
         super.vfunc_root();
         this._connectPlayer();
+        this._connectPlayback();
     }
 
     vfunc_unroot() {
@@ -94,7 +209,25 @@ var TranscriptView = GObject.registerClass({
             this._player.disconnect(this._playerStateId);
             this._playerStateId = 0;
         }
+        this._disconnectPlayback();
         super.vfunc_unroot();
+    }
+
+    _connectPlayback() {
+        if (!this._playback || this._playbackIds.length > 0)
+            return;
+        const sync = () => this._syncHighlight();
+        this._playbackIds = [
+            this._playback.connect('position-updated', sync),
+            this._playback.connect('state-changed', sync),
+            this._playback.connect('notify::uri', sync),
+        ];
+    }
+
+    _disconnectPlayback() {
+        for (const id of this._playbackIds)
+            this._playback.disconnect(id);
+        this._playbackIds = [];
     }
 
     _connectPlayer() {
@@ -113,6 +246,9 @@ var TranscriptView = GObject.registerClass({
             this._fillSourceId = 0;
         }
         this._stopHighlightTimer();
+        this._pendingScroll = -1;
+        this._scrollAnimation?.skip();
+        this._scrollAnimation = null;
     }
 
     // Durante uma nova transcrição renomear fica bloqueado: o resultado sobrescreveria o nome.
@@ -132,11 +268,125 @@ var TranscriptView = GObject.registerClass({
         this._recordingFile = recordingFile;
         this._blocks = buildBlocks(t);
         this._currentIndex = -1;
+        // Outra transcrição: a busca anterior não vale mais (o painel limpa a barra).
+        this._findQuery = '';
+        this._findMatches = [];
+        this._findActive = -1;
+        this._pendingScroll = -1;
 
         this._fillHeader();
         this._fillBlocks();
+        this._scrollAnimation?.skip();
         this._scroller.vadjustment.value = 0;
         this._syncHighlight();
+    }
+
+    // Copiar tudo (no modo embutido o botão fica no DetailPane).
+    copyAll(withSpeakers) {
+        if (this._transcript)
+            this._copy(copyText(this._transcript, { withSpeakers: Boolean(withSpeakers) }));
+    }
+
+    // Busca dentro da transcrição: realça os blocos que batem (.find-match), o ativo com
+    // .find-active, e rola até ele. Devolve { count, index } (index na lista de
+    // resultados, a partir de 0; -1 sem resultados). Consulta vazia limpa.
+    setFindQuery(query) {
+        this._findQuery = query ?? '';
+        this._applyFind(findMatches(this._blocks, this._findQuery), 0, true);
+        return this._findResult();
+    }
+
+    findNext() {
+        return this._stepFind(1);
+    }
+
+    findPrevious() {
+        return this._stepFind(-1);
+    }
+
+    _stepFind(dir) {
+        this._setFindActive(nextIndex(this._findMatches, this._findActive, dir));
+        return this._findResult();
+    }
+
+    _findResult() {
+        return { count: this._findMatches.length, index: this._findActive };
+    }
+
+    // Troca os resultados da busca; `scroll` rola até o ativo (não ao renomear).
+    _applyFind(matches, active, scroll) {
+        this._markFindActive(false);
+        for (const i of this._findMatches)
+            this._blockRows[i]?.box.remove_css_class('find-match');
+        this._findMatches = matches;
+        for (const i of matches)
+            this._blockRows[i]?.box.add_css_class('find-match');
+        this._findActive = matches.length > 0 ? Math.min(Math.max(0, active), matches.length - 1) : -1;
+        this._markFindActive(true);
+        if (scroll && this._findActive >= 0)
+            this._scrollToBlock(matches[this._findActive]);
+    }
+
+    _markFindActive(on) {
+        const row = this._blockRows[this._findMatches[this._findActive]];
+        if (on)
+            row?.box.add_css_class('find-active');
+        else
+            row?.box.remove_css_class('find-active');
+    }
+
+    _setFindActive(position) {
+        this._markFindActive(false);
+        this._findActive = position;
+        this._markFindActive(true);
+        if (position >= 0)
+            this._scrollToBlock(this._findMatches[position]);
+    }
+
+    // Centraliza o bloco na área visível, com animação. Bloco ainda não criado (lote
+    // ocioso) ou sem tamanho: tenta de novo quando ele existir / no próximo quadro.
+    _scrollToBlock(index) {
+        const row = this._blockRows[index];
+        if (!row) {
+            this._pendingScroll = index;
+            return;
+        }
+        this._pendingScroll = -1;
+        // Coordenadas no conteúdo (o clamp), não no viewport que rola.
+        const [ok, point] = row.box.compute_point(this._clamp, new Graphene.Point({ x: 0, y: 0 }));
+        if (!ok || row.box.get_height() === 0) {
+            this._pendingScroll = index;
+            row.box.add_tick_callback(() => {
+                if (this._pendingScroll === index && this._blockRows[index] === row)
+                    this._scrollToBlock(index);
+                return GLib.SOURCE_REMOVE;
+            });
+            return;
+        }
+        const adj = this._scroller.vadjustment;
+        const max = Math.max(0, adj.upper - adj.page_size);
+        const wanted = point.y + row.box.get_height() / 2 - adj.page_size / 2;
+        const value = Math.min(max, Math.max(0, wanted));
+        this._scrollAnimation?.skip();
+        if (!this.get_mapped() || Math.abs(value - adj.value) < 1) {
+            this._scrollAnimation = null;
+            adj.value = value;
+            return;
+        }
+        const animation = new Adw.TimedAnimation({
+            widget: this._scroller,
+            value_from: adj.value,
+            value_to: value,
+            duration: SCROLL_DURATION_MS,
+            easing: Adw.Easing.EASE_OUT_CUBIC,
+            target: Adw.PropertyAnimationTarget.new(adj, 'value'),
+        });
+        animation.connect('done', () => {
+            if (this._scrollAnimation === animation)
+                this._scrollAnimation = null;
+        });
+        this._scrollAnimation = animation;
+        animation.play();
     }
 
     _fillHeader() {
@@ -171,22 +421,157 @@ var TranscriptView = GObject.registerClass({
                 this._blocksBox.append(row.box);
                 if (next === this._currentIndex)
                     row.box.add_css_class('current');
+                if (this._findMatches.includes(next))
+                    row.box.add_css_class('find-match');
+                if (this._findMatches[this._findActive] === next)
+                    row.box.add_css_class('find-active');
+                if (this._pendingScroll === next)
+                    this._scrollToBlock(next);
             }
             return next < this._blocks.length;
         };
 
         // O primeiro lote entra já; o resto em segundo plano.
-        if (!addChunk())
+        if (!addChunk()) {
+            this.emit('blocks-built');
             return;
+        }
         this._fillSourceId = GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
             if (addChunk())
                 return GLib.SOURCE_CONTINUE;
             this._fillSourceId = 0;
+            this.emit('blocks-built');
             return GLib.SOURCE_REMOVE;
         });
     }
 
     _createBlock(index) {
+        return this._embedded ? this._createEmbeddedBlock(index) : this._createClassicBlock(index);
+    }
+
+    // Layout da mockup: horário | ponto do locutor | nome (renomear) sobre o texto.
+    // Grade: linha 0 = horário, ponto, nome (ou o texto, sem locutor), menu; linha 1 = texto.
+    _createEmbeddedBlock(index) {
+        const block = this._blocks[index];
+        const box = new Gtk.Grid({
+            column_spacing: 14,
+            row_spacing: 6,
+            css_classes: ['transcript-block', 'embedded'],
+        });
+
+        box.attach(new Gtk.Label({
+            label: formatShortClock(block.start),
+            xalign: 0,
+            width_chars: 7,
+            valign: Gtk.Align.BASELINE_FILL,
+            css_classes: ['numeric', 'transcript-time'],
+        }), 0, 0, 1, 1);
+
+        // Sem locutor (transcrição sem palavras): só o texto, com ponto neutro.
+        const hasName = block.speaker !== null && block.label !== '';
+        const dot = new Gtk.Box({
+            valign: hasName ? Gtk.Align.CENTER : Gtk.Align.START,
+            halign: Gtk.Align.CENTER,
+            css_classes: ['speaker-dot', speakerClass(block.speaker)],
+        });
+        if (!hasName)
+            dot.margin_top = 9;
+        box.attach(dot, 1, 0, 1, 1);
+
+        let speakerButton = null;
+        if (hasName) {
+            speakerButton = new Gtk.Button({
+                child: new Gtk.Label({
+                    label: block.label,
+                    use_markup: false,
+                    ellipsize: Pango.EllipsizeMode.END,
+                    xalign: 0,
+                }),
+                tooltip_text: 'Renomear locutor',
+                sensitive: !this._running,
+                halign: Gtk.Align.START,
+                valign: Gtk.Align.BASELINE_FILL,
+                css_classes: ['flat', 'speaker-button', 'speaker-name'],
+            });
+            const speaker = block.speaker;
+            speakerButton.connect('clicked', () => this._renameSpeakerDialog(speaker));
+            box.attach(speakerButton, 2, 0, 1, 1);
+        }
+
+        const text = new Gtk.Label({
+            label: block.text,
+            use_markup: false,
+            selectable: true,
+            wrap: true,
+            wrap_mode: Pango.WrapMode.WORD_CHAR,
+            xalign: 0,
+            hexpand: true,
+            valign: Gtk.Align.BASELINE_FILL,
+            css_classes: ['transcript-text'],
+        });
+        box.attach(text, 2, hasName ? 1 : 0, 1, 1);
+
+        // Menu do bloco: aparece ao passar o mouse (CSS :hover) ou com o foco (Tab).
+        const menuButton = new Gtk.MenuButton({
+            icon_name: 'view-more-symbolic',
+            tooltip_text: 'Mais ações do bloco',
+            valign: Gtk.Align.START,
+            css_classes: ['flat', 'circular', 'block-menu'],
+        });
+        menuButton.update_property([Gtk.AccessibleProperty.LABEL], ['Mais ações do bloco']);
+        // O menu só é montado ao abrir: milhares de blocos não criam milhares de menus.
+        menuButton.set_create_popup_func(button => {
+            if (button.menu_model)
+                return;
+            const menu = new Gio.Menu();
+            const item = Gio.MenuItem.new('Copiar bloco', null);
+            item.set_action_and_target_value('transcript.copy-block', new GLib.Variant('i', index));
+            menu.append_item(item);
+            button.menu_model = menu;
+        });
+        box.attach(menuButton, 3, 0, 1, hasName ? 2 : 1);
+
+        this._addBlockSeek(box, text, block.start);
+        return { box, speakerButton };
+    }
+
+    // Clique no bloco (fora dos botões e sem texto selecionado) pula o áudio.
+    // Mesma lógica de _addSeekOnClick, observando o bloco todo na fase de captura.
+    _addBlockSeek(box, text, start) {
+        const controller = new Gtk.EventControllerLegacy({
+            propagation_phase: Gtk.PropagationPhase.CAPTURE,
+        });
+        let pressed = false;
+        controller.connect('event', (_controller, event) => {
+            const type = event.get_event_type();
+            if (type === Gdk.EventType.BUTTON_PRESS) {
+                pressed = event.get_button() === Gdk.BUTTON_PRIMARY &&
+                    !this._eventOnButton(box, event);
+            } else if (type === Gdk.EventType.BUTTON_RELEASE && pressed) {
+                pressed = false;
+                const [hasSelection] = text.get_selection_bounds();
+                if (!hasSelection)
+                    this.emit('seek-requested', start);
+            }
+            return Gdk.EVENT_PROPAGATE;
+        });
+        box.add_controller(controller);
+    }
+
+    // O evento caiu num botão do bloco (nome do locutor, menu)?
+    _eventOnButton(box, event) {
+        const native = box.get_native();
+        const [hasPos, sx, sy] = event.get_position();
+        if (!native || !hasPos)
+            return false;
+        const [tx, ty] = native.get_surface_transform();
+        const [ok, point] = native.compute_point(box, new Graphene.Point({ x: sx - tx, y: sy - ty }));
+        if (!ok)
+            return false;
+        return insideButton(box.pick(point.x, point.y, Gtk.PickFlags.DEFAULT), box);
+    }
+
+    _createClassicBlock(index) {
         const block = this._blocks[index];
         const box = new Gtk.Box({
             orientation: Gtk.Orientation.VERTICAL,
@@ -274,6 +659,10 @@ var TranscriptView = GObject.registerClass({
     }
 
     _syncHighlight() {
+        if (this._embedded || this._playback) {
+            this._syncPlaybackHighlight();
+            return;
+        }
         const active = this._isPlayingThis() && this.get_mapped();
         if (active && !this._highlightSourceId) {
             this._highlightSourceId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, HIGHLIGHT_INTERVAL_MS, () => {
@@ -291,6 +680,21 @@ var TranscriptView = GObject.registerClass({
         // Parado (fim do áudio ou outra gravação): nenhum bloco fica destacado.
         if (!this._isThisLoaded() || this._playerState === GstPlayer.PlayerState.STOPPED)
             this._setCurrent(-1);
+    }
+
+    // Modo embutido: reage a position-updated (sem timer). Só com ESTA gravação carregada
+    // e a visão visível; descarregada (ou nada tocado ainda) nenhum bloco fica realçado.
+    _syncPlaybackHighlight() {
+        const playback = this._playback;
+        const loaded = Boolean(playback && this._recordingFile &&
+            playback.uri === this._recordingFile.get_uri());
+        if (!loaded || (!playback.playing && playback.position <= 0)) {
+            this._setCurrent(-1);
+            return;
+        }
+        if (!this.get_mapped())
+            return;
+        this._setCurrent(currentBlockIndex(this._blocks, playback.position * 1e9));
     }
 
     _stopHighlightTimer() {
@@ -314,11 +718,14 @@ var TranscriptView = GObject.registerClass({
     }
 
     _setCurrent(index) {
-        if (index === this._currentIndex)
+        const previousIndex = this._currentIndex;
+        if (index === previousIndex)
             return;
-        this._blockRows[this._currentIndex]?.box.remove_css_class('current');
+        this._blockRows[previousIndex]?.box.remove_css_class('current');
         this._currentIndex = index;
         this._blockRows[index]?.box.add_css_class('current');
+        if (this._embedded && shouldScroll({ follow: this._followAudio, index, previousIndex }))
+            this._scrollToBlock(index);
     }
 
     _renameSpeakerDialog(speaker) {
@@ -368,6 +775,9 @@ var TranscriptView = GObject.registerClass({
             if (row.speakerButton)
                 row.speakerButton.child.label = this._blocks[i].label;
         });
+        // O nome entra na busca: recalcula sem pular para outro resultado.
+        if (this._findQuery)
+            this._applyFind(findMatches(this._blocks, this._findQuery), this._findActive, false);
         this.emit('transcript-changed', renamed);
     }
 
