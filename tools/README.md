@@ -40,7 +40,8 @@ Cria `DIR/daily-taker/` (o `XDG_DATA_HOME` do app aponta para `DIR`):
 ```sh
 bash tools/snapshot.sh OUT.png [--component window|playerbar|transcriptview|detailpane|sidebar]
                        [--select N] [--tab transcricao|resumo] [--at SEG] [--size LxA]
-                       [--state recorder] [--embedded 0|1] [--find TEXTO]
+                       [--state recorder|none|running|error|ready] [--embedded 0|1]
+                       [--find TEXTO] [--empty 0|1]
 ```
 
 - `--component` (padrão `window`): `window` é a janela principal real. Os
@@ -63,15 +64,27 @@ bash tools/snapshot.sh OUT.png [--component window|playerbar|transcriptview|deta
     atual até a Task 10. Espera o sinal `blocks-built` (lotes ociosos) e a posição.
     Tamanho padrão 1000x700.
     Ex.: `bash tools/snapshot.sh /tmp/t.png --component transcriptview --select 1 --at 34`
-- `--select N` (item N da lista, a partir de 1), `--tab`, `--at SEG` (posição
+  - `detailpane`: o painel de detalhe (`src/detailPane.js`): cabeçalho, abas,
+    Buscar/Copiar/Exportar e o painel do estado. Gravação `--select N` (padrão 1;
+    `0` = nenhuma selecionada, "Selecione uma gravação"; a 4, "Sem transcrição",
+    não tem transcrição); `--empty 1` = biblioteca vazia ("Nenhuma gravação
+    ainda"). `--state none|running|error|ready` força o estado (padrão: `ready`
+    com transcrição, `none` sem); `--tab resumo` mostra a aba Resumo; `--at SEG`
+    posiciona o `Playback` (fakesink, sem som); `--find TEXTO` abre a barra de
+    busca do painel. Espera `blocks-built`, a posição e a duração da gravação.
+    Tamanho padrão 1100x760.
+    Ex.: `bash tools/snapshot.sh /tmp/d.png --component detailpane --select 4`
+- `--select N` (item N da lista, a partir de 1; 0 só no `detailpane`), `--tab`, `--at SEG` (posição
   do player): já são lidos e repassados a `maybeSnapshot` (`params.select`,
   `params.tab`, `params.at`), mas a janela atual ainda os ignora (imprime uma
   nota); passam a valer quando a janela nova existir.
 - `--state recorder` (só com `--component window`): mostra a tela de gravação no
   lugar da lista, para conferir o tema nela. Só troca a página da janela; nenhuma
   gravação começa e nenhum dispositivo de áudio é aberto (`WINDOW_STATES` em
-  `src/devSnapshot.js`).
-- `--size LxA` (padrão `1536x1024`, o tamanho da mockup; `1000x700` para `transcriptview`): tamanho do monitor
+  `src/devSnapshot.js`). Com `--component detailpane`, `--state` é o estado do
+  painel (`PANE_STATES`).
+- `--size LxA` (padrão `1536x1024`, o tamanho da mockup; `1000x700` para `transcriptview`;
+  `1100x760` para `detailpane`): tamanho do monitor
   virtual e da janela.
 - Leva ~4 s. Saída ≠ 0 se nenhum PNG for gerado; `SNAPSHOT_VERBOSE=1` mostra o
   log completo do mutter/app; `SNAPSHOT_TIMEOUT` (padrão 60 s) limita a execução.

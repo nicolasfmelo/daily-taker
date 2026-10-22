@@ -1,4 +1,4 @@
-/* exported COMPONENTS WINDOW_STATES maybeSnapshot silencePlayback snapshotParams stateError */
+/* exported COMPONENTS PANE_STATES WINDOW_STATES maybeSnapshot silencePlayback snapshotParams stateError */
 // Captura de tela para conferência visual (tools/snapshot.sh). Inerte sem a variável
 // DAILY_TAKER_SNAPSHOT: com ela, mostra a janela (ou um componente numa janela simples),
 // espera assentar, grava um PNG no caminho indicado e encerra o app.
@@ -124,15 +124,72 @@ const transcriptViewComponent = params => {
     };
 };
 
+// Exemplo de erro mostrado no cartão de erro (--state error).
+const SAMPLE_ERROR = 'Sem conexão com o serviço de transcrição. Verifique a internet e tente de novo.';
+
+// Painel de detalhe com a gravação --select N (padrão 1; 0 = nenhuma selecionada) e a
+// transcrição dela, se houver. --empty 1 = biblioteca vazia. --state força o estado
+// (padrão: ready com transcrição, none sem); --tab escolhe a aba; --at SEG posiciona o
+// Playback (pausado, fakesink: sem som) e --find TEXTO abre a busca do painel.
+const detailPaneComponent = params => {
+    const { DetailPane } = imports.detailPane;
+    const { Recording } = imports.recording;
+    const { loadTranscript } = imports.transcriptStore;
+    const { confirmMessage } = imports.transcriptionUi;
+
+    const files = params.empty ? [] : recordingFiles();
+    const playback = silentPlayback();
+    const pane = new DetailPane();
+    pane.bindPlayback(playback);
+    pane.setHasRecordings(files.length > 0);
+    const cleanup = () => playback.destroy();
+
+    const n = params.select ?? 1;
+    if (files.length === 0 || n === 0) {
+        pane.setRecording(null);
+        return { widget: pane, cleanup };
+    }
+    const file = files[n - 1];
+    if (!file)
+        throw new Error(`não há gravação ${n} nas fixtures (há ${files.length})`);
+
+    const recording = new Recording(file);
+    const durationKnown = recording.duration > 0
+        ? Promise.resolve()
+        : nextSignal(recording, 'notify::duration');
+    const transcript = loadTranscript(file);
+    const state = params.state ?? (transcript ? 'ready' : 'none');
+
+    pane.setRecording(recording);
+    pane.setErrorMessage(SAMPLE_ERROR);
+    const built = transcript ? nextSignal(pane.view, 'blocks-built') : Promise.resolve();
+    pane.setTranscript(transcript);
+    pane.setState(state);
+    if (params.tab)
+        pane.tab = params.tab;
+
+    const positioned = positionPlayback(playback, file.get_uri(), params.at ?? 0);
+    const ready = Promise.all([built, positioned, durationKnown]).then(() => {
+        // O custo estimado vem da janela no app; aqui, o mesmo texto do diálogo de custo.
+        pane.setCostText(confirmMessage(recording.duration / 1e9).body);
+        if (params.find) {
+            const { count, index } = pane.search(params.find) ?? { count: 0, index: -1 };
+            print(`devSnapshot: busca "${params.find}": ${count} resultado(s), ativo ${index}`);
+        }
+    });
+    return { widget: pane, ready, cleanup };
+};
+
 // nome → (params, { app, window }) → Gtk.Widget ou { widget, ready?, cleanup? }. Se o
 // widget for um Gtk.Window, ele é capturado como está; qualquer outro vai para uma janela
 // simples do tamanho pedido. `ready` (Promise) adia a captura até o componente terminar
-// de carregar (ex.: picos da onda); `cleanup` roda antes de sair. As próximas tarefas
-// acrescentam detailpane e sidebar.
+// de carregar (ex.: picos da onda); `cleanup` roda antes de sair. A próxima tarefa
+// acrescenta sidebar.
 var COMPONENTS = {
     window: (_params, ctx) => ctx.window,
     playerbar: playerBarComponent,
     transcriptview: transcriptViewComponent,
+    detailpane: detailPaneComponent,
 };
 
 // --state (só com --component window): página mostrada no lugar da lista. Só troca a
@@ -143,14 +200,18 @@ var WINDOW_STATES = {
     },
 };
 
+// --state com --component detailpane: estado forçado do painel (DetailPane.setState).
+var PANE_STATES = ['none', 'running', 'error', 'ready'];
+
 // Mensagem de erro para um --state inválido, ou null.
 var stateError = params => {
     if (!params.state)
         return null;
-    if (params.component !== 'window')
-        return `--state só vale com --component window (recebido "${params.component}")`;
-    if (!(params.state in WINDOW_STATES))
-        return `estado desconhecido: "${params.state}" (disponíveis: ${Object.keys(WINDOW_STATES).join(', ')})`;
+    const available = { window: Object.keys(WINDOW_STATES), detailpane: PANE_STATES }[params.component];
+    if (!available)
+        return `--state só vale com --component window ou detailpane (recebido "${params.component}")`;
+    if (!available.includes(params.state))
+        return `estado desconhecido: "${params.state}" (disponíveis: ${available.join(', ')})`;
     return null;
 };
 
@@ -178,6 +239,7 @@ var snapshotParams = () => {
         state: env('DAILY_TAKER_SNAPSHOT_STATE'),
         embedded: intOrNull(env('DAILY_TAKER_SNAPSHOT_EMBEDDED')),
         find: env('DAILY_TAKER_SNAPSHOT_FIND'),
+        empty: env('DAILY_TAKER_SNAPSHOT_EMPTY') === '1',
         width,
         height,
     };
@@ -235,7 +297,7 @@ var maybeSnapshot = (window, params = snapshotParams()) => {
         return true;
     }
     silencePlayback(window.player);
-    if (params.state)
+    if (params.state && params.component === 'window')
         WINDOW_STATES[params.state](window);
     if (params.component === 'window' && (params.select !== null || params.tab || params.at !== null))
         print('devSnapshot: nota: --select/--tab/--at ainda são ignorados pela janela atual');

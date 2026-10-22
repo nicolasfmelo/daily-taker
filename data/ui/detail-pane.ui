@@ -1,0 +1,532 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <template class="Gjs_DetailPane" parent="GtkBox">
+    <property name="orientation">vertical</property>
+    <property name="hexpand">True</property>
+    <property name="vexpand">True</property>
+    <style>
+      <class name="detail-pane"/>
+      <class name="bg-detail"/>
+    </style>
+    <child>
+      <object class="GtkStack" id="mainStack">
+        <property name="vexpand">True</property>
+        <property name="hhomogeneous">False</property>
+        <property name="vhomogeneous">False</property>
+        <!-- Biblioteca vazia: nenhuma gravação ainda. -->
+        <child>
+          <object class="GtkStackPage">
+            <property name="name">empty-library</property>
+            <property name="child">
+              <object class="AdwStatusPage">
+                <property name="icon_name">audio-input-microphone-symbolic</property>
+                <property name="title">Nenhuma gravação ainda</property>
+                <property name="description">Grave uma reunião ou uma ideia; a transcrição aparece aqui.</property>
+                <property name="child">
+                  <object class="GtkButton" id="newRecordingButton">
+                    <property name="label">Nova gravação</property>
+                    <property name="halign">center</property>
+                    <style>
+                      <class name="pill"/>
+                      <class name="accent-pill"/>
+                    </style>
+                  </object>
+                </property>
+              </object>
+            </property>
+          </object>
+        </child>
+        <!-- Há gravações, nenhuma selecionada. -->
+        <child>
+          <object class="GtkStackPage">
+            <property name="name">no-selection</property>
+            <property name="child">
+              <object class="AdwStatusPage">
+                <property name="icon_name">view-list-symbolic</property>
+                <property name="title">Selecione uma gravação</property>
+                <property name="description">Escolha uma gravação na lista para ouvir e ver a transcrição.</property>
+              </object>
+            </property>
+          </object>
+        </child>
+        <!-- Gravação selecionada: cabeçalho, abas e o conteúdo da aba. -->
+        <child>
+          <object class="GtkStackPage">
+            <property name="name">detail</property>
+            <property name="child">
+              <object class="GtkBox">
+                <property name="orientation">vertical</property>
+                <child>
+                  <object class="GtkBox">
+                    <property name="orientation">vertical</property>
+                    <style>
+                      <class name="detail-header"/>
+                    </style>
+                    <child>
+                      <object class="GtkBox">
+                        <property name="spacing">12</property>
+                        <child>
+                          <object class="GtkLabel" id="titleLabel">
+                            <property name="hexpand">True</property>
+                            <property name="xalign">0</property>
+                            <property name="use_markup">False</property>
+                            <property name="ellipsize">end</property>
+                            <style>
+                              <class name="detail-title"/>
+                            </style>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkMenuButton" id="moreButton">
+                            <property name="icon_name">view-more-symbolic</property>
+                            <property name="tooltip_text">Mais ações</property>
+                            <property name="valign">center</property>
+                            <property name="menu_model">moreMenu</property>
+                            <style>
+                              <class name="flat"/>
+                              <class name="circular"/>
+                            </style>
+                          </object>
+                        </child>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkLabel" id="subtitleLabel">
+                        <property name="xalign">0</property>
+                        <property name="use_markup">False</property>
+                        <property name="ellipsize">end</property>
+                        <style>
+                          <class name="detail-subtitle"/>
+                          <class name="numeric"/>
+                        </style>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkBox" id="tabsRow">
+                        <property name="spacing">8</property>
+                        <style>
+                          <class name="detail-tabs-row"/>
+                        </style>
+                        <child>
+                          <object class="GtkToggleButton" id="transcriptTab">
+                            <property name="active">True</property>
+                            <property name="tooltip_text">Transcrição</property>
+                            <style>
+                              <class name="flat"/>
+                              <class name="detail-tab"/>
+                            </style>
+                            <property name="child">
+                              <object class="GtkBox">
+                                <property name="spacing">10</property>
+                                <child>
+                                  <object class="GtkImage">
+                                    <property name="icon_name">x-office-document-symbolic</property>
+                                  </object>
+                                </child>
+                                <child>
+                                  <object class="GtkLabel">
+                                    <property name="label">Transcrição</property>
+                                  </object>
+                                </child>
+                              </object>
+                            </property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkToggleButton" id="summaryTab">
+                            <property name="group">transcriptTab</property>
+                            <property name="tooltip_text">Resumo</property>
+                            <style>
+                              <class name="flat"/>
+                              <class name="detail-tab"/>
+                            </style>
+                            <property name="child">
+                              <object class="GtkBox">
+                                <property name="spacing">10</property>
+                                <child>
+                                  <object class="GtkImage">
+                                    <property name="icon_name">view-list-bullet-symbolic</property>
+                                  </object>
+                                </child>
+                                <child>
+                                  <object class="GtkLabel">
+                                    <property name="label">Resumo</property>
+                                  </object>
+                                </child>
+                              </object>
+                            </property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkBox">
+                            <property name="hexpand">True</property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkBox">
+                            <property name="spacing">10</property>
+                            <property name="valign">center</property>
+                            <child>
+                              <object class="GtkToggleButton" id="searchButton">
+                                <property name="icon_name">system-search-symbolic</property>
+                                <property name="tooltip_text">Buscar na transcrição</property>
+                                <style>
+                                  <class name="detail-toolbar-button"/>
+                                </style>
+                              </object>
+                            </child>
+                            <child>
+                              <object class="GtkMenuButton" id="copyButton">
+                                <property name="icon_name">edit-copy-symbolic</property>
+                                <property name="tooltip_text">Copiar</property>
+                                <property name="menu_model">copyMenu</property>
+                                <style>
+                                  <class name="detail-toolbar-button"/>
+                                </style>
+                              </object>
+                            </child>
+                            <child>
+                              <object class="GtkMenuButton" id="exportButton">
+                                <property name="icon_name">folder-download-symbolic</property>
+                                <property name="tooltip_text">Exportar</property>
+                                <property name="menu_model">exportMenu</property>
+                                <style>
+                                  <class name="detail-toolbar-button"/>
+                                </style>
+                              </object>
+                            </child>
+                          </object>
+                        </child>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkBox">
+                    <style>
+                      <class name="detail-divider"/>
+                    </style>
+                  </object>
+                </child>
+                <!-- Busca dentro da transcrição (botão Buscar). -->
+                <child>
+                  <object class="GtkRevealer" id="searchRevealer">
+                    <property name="transition_type">slide-down</property>
+                    <property name="child">
+                      <object class="GtkBox">
+                        <property name="spacing">8</property>
+                        <style>
+                          <class name="detail-search"/>
+                        </style>
+                        <child>
+                          <object class="GtkSearchEntry" id="searchEntry">
+                            <property name="hexpand">True</property>
+                            <property name="placeholder_text">Buscar na transcrição</property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkLabel" id="counterLabel">
+                            <property name="visible">False</property>
+                            <property name="use_markup">False</property>
+                            <style>
+                              <class name="dim-label"/>
+                              <class name="numeric"/>
+                            </style>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkButton" id="previousButton">
+                            <property name="icon_name">go-up-symbolic</property>
+                            <property name="tooltip_text">Resultado anterior (Shift+Enter)</property>
+                            <property name="sensitive">False</property>
+                            <style>
+                              <class name="flat"/>
+                            </style>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkButton" id="nextButton">
+                            <property name="icon_name">go-down-symbolic</property>
+                            <property name="tooltip_text">Próximo resultado (Enter)</property>
+                            <property name="sensitive">False</property>
+                            <style>
+                              <class name="flat"/>
+                            </style>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkButton" id="closeSearchButton">
+                            <property name="icon_name">window-close-symbolic</property>
+                            <property name="tooltip_text">Fechar busca (Esc)</property>
+                            <style>
+                              <class name="flat"/>
+                              <class name="circular"/>
+                            </style>
+                          </object>
+                        </child>
+                      </object>
+                    </property>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkStack" id="tabStack">
+                    <property name="vexpand">True</property>
+                    <property name="hhomogeneous">False</property>
+                    <property name="vhomogeneous">False</property>
+                    <child>
+                      <object class="GtkStackPage">
+                        <property name="name">transcricao</property>
+                        <property name="child">
+                          <!-- O TranscriptView (página "ready") é criado no código. -->
+                          <object class="GtkStack" id="stateStack">
+                            <property name="hhomogeneous">False</property>
+                            <property name="vhomogeneous">False</property>
+                            <child>
+                              <object class="GtkStackPage">
+                                <property name="name">not-transcribed</property>
+                                <property name="child">
+                                  <object class="GtkBox">
+                                    <property name="orientation">vertical</property>
+                                    <property name="spacing">12</property>
+                                    <property name="halign">center</property>
+                                    <property name="valign">center</property>
+                                    <style>
+                                      <class name="empty-card"/>
+                                    </style>
+                                    <child>
+                                      <object class="GtkImage">
+                                        <property name="icon_name">x-office-document-symbolic</property>
+                                        <property name="pixel_size">40</property>
+                                        <style>
+                                          <class name="dim-label"/>
+                                        </style>
+                                      </object>
+                                    </child>
+                                    <child>
+                                      <object class="GtkLabel">
+                                        <property name="label">Esta gravação ainda não foi transcrita</property>
+                                        <property name="wrap">True</property>
+                                        <property name="justify">center</property>
+                                        <style>
+                                          <class name="empty-card-title"/>
+                                        </style>
+                                      </object>
+                                    </child>
+                                    <child>
+                                      <object class="GtkLabel" id="costLabel">
+                                        <property name="visible">False</property>
+                                        <property name="use_markup">False</property>
+                                        <property name="wrap">True</property>
+                                        <property name="justify">center</property>
+                                        <style>
+                                          <class name="dim-label"/>
+                                        </style>
+                                      </object>
+                                    </child>
+                                    <child>
+                                      <object class="GtkButton" id="generateButton">
+                                        <property name="label">Gerar transcrição</property>
+                                        <property name="halign">center</property>
+                                        <property name="margin_top">8</property>
+                                        <style>
+                                          <class name="pill"/>
+                                          <class name="accent-pill"/>
+                                        </style>
+                                      </object>
+                                    </child>
+                                  </object>
+                                </property>
+                              </object>
+                            </child>
+                            <child>
+                              <object class="GtkStackPage">
+                                <property name="name">running</property>
+                                <property name="child">
+                                  <object class="GtkBox">
+                                    <property name="orientation">vertical</property>
+                                    <property name="spacing">12</property>
+                                    <property name="halign">center</property>
+                                    <property name="valign">center</property>
+                                    <style>
+                                      <class name="empty-card"/>
+                                    </style>
+                                    <child>
+                                      <object class="GtkSpinner" id="spinner">
+                                        <property name="width_request">32</property>
+                                        <property name="height_request">32</property>
+                                        <property name="halign">center</property>
+                                      </object>
+                                    </child>
+                                    <child>
+                                      <object class="GtkLabel">
+                                        <property name="label">Transcrevendo…</property>
+                                        <style>
+                                          <class name="empty-card-title"/>
+                                        </style>
+                                      </object>
+                                    </child>
+                                    <child>
+                                      <object class="GtkLabel">
+                                        <property name="label">Isso pode levar alguns minutos. Você pode continuar usando o app.</property>
+                                        <property name="wrap">True</property>
+                                        <property name="justify">center</property>
+                                        <style>
+                                          <class name="dim-label"/>
+                                        </style>
+                                      </object>
+                                    </child>
+                                  </object>
+                                </property>
+                              </object>
+                            </child>
+                            <child>
+                              <object class="GtkStackPage">
+                                <property name="name">error</property>
+                                <property name="child">
+                                  <object class="GtkBox">
+                                    <property name="orientation">vertical</property>
+                                    <property name="spacing">12</property>
+                                    <property name="halign">center</property>
+                                    <property name="valign">center</property>
+                                    <style>
+                                      <class name="empty-card"/>
+                                    </style>
+                                    <child>
+                                      <object class="GtkImage">
+                                        <property name="icon_name">dialog-error-symbolic</property>
+                                        <property name="pixel_size">40</property>
+                                        <style>
+                                          <class name="error"/>
+                                        </style>
+                                      </object>
+                                    </child>
+                                    <child>
+                                      <object class="GtkLabel">
+                                        <property name="label">Não foi possível transcrever</property>
+                                        <style>
+                                          <class name="empty-card-title"/>
+                                        </style>
+                                      </object>
+                                    </child>
+                                    <child>
+                                      <object class="GtkLabel" id="errorLabel">
+                                        <property name="use_markup">False</property>
+                                        <property name="wrap">True</property>
+                                        <property name="selectable">True</property>
+                                        <property name="justify">center</property>
+                                        <property name="max_width_chars">48</property>
+                                        <style>
+                                          <class name="dim-label"/>
+                                        </style>
+                                      </object>
+                                    </child>
+                                    <child>
+                                      <object class="GtkButton" id="retryButton">
+                                        <property name="label">Tentar de novo</property>
+                                        <property name="halign">center</property>
+                                        <property name="margin_top">8</property>
+                                        <style>
+                                          <class name="pill"/>
+                                          <class name="accent-pill"/>
+                                        </style>
+                                      </object>
+                                    </child>
+                                  </object>
+                                </property>
+                              </object>
+                            </child>
+                          </object>
+                        </property>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkStackPage">
+                        <property name="name">resumo</property>
+                        <property name="child">
+                          <object class="GtkStack" id="summaryStack">
+                            <property name="hhomogeneous">False</property>
+                            <property name="vhomogeneous">False</property>
+                            <child>
+                              <object class="GtkStackPage">
+                                <property name="name">no-transcript</property>
+                                <property name="child">
+                                  <object class="AdwStatusPage">
+                                    <property name="icon_name">view-list-bullet-symbolic</property>
+                                    <property name="title">Gere a transcrição primeiro</property>
+                                    <property name="description">O resumo é feito a partir da transcrição desta gravação.</property>
+                                  </object>
+                                </property>
+                              </object>
+                            </child>
+                            <child>
+                              <object class="GtkStackPage">
+                                <property name="name">coming-soon</property>
+                                <property name="child">
+                                  <object class="AdwStatusPage">
+                                    <property name="icon_name">view-list-bullet-symbolic</property>
+                                    <property name="title">Resumo em breve</property>
+                                    <property name="description">O resumo da reunião com IA chega em uma próxima versão.</property>
+                                    <property name="child">
+                                      <object class="GtkButton">
+                                        <property name="label">Gerar resumo</property>
+                                        <property name="halign">center</property>
+                                        <property name="sensitive">False</property>
+                                        <style>
+                                          <class name="pill"/>
+                                        </style>
+                                      </object>
+                                    </property>
+                                  </object>
+                                </property>
+                              </object>
+                            </child>
+                          </object>
+                        </property>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+              </object>
+            </property>
+          </object>
+        </child>
+      </object>
+    </child>
+  </template>
+  <menu id="moreMenu">
+    <section>
+      <item>
+        <attribute name="label">Gerar novamente</attribute>
+        <attribute name="action">pane.regenerate</attribute>
+      </item>
+    </section>
+  </menu>
+  <menu id="copyMenu">
+    <section>
+      <item>
+        <attribute name="label">Com locutores e tempos</attribute>
+        <attribute name="action">pane.copy</attribute>
+        <attribute name="target" type="b">true</attribute>
+      </item>
+      <item>
+        <attribute name="label">Só o texto</attribute>
+        <attribute name="action">pane.copy</attribute>
+        <attribute name="target" type="b">false</attribute>
+      </item>
+    </section>
+  </menu>
+  <menu id="exportMenu">
+    <section>
+      <item>
+        <attribute name="label">Markdown (.md)</attribute>
+        <attribute name="action">pane.export</attribute>
+        <attribute name="target">md</attribute>
+      </item>
+      <item>
+        <attribute name="label">Texto (.txt)</attribute>
+        <attribute name="action">pane.export</attribute>
+        <attribute name="target">txt</attribute>
+      </item>
+    </section>
+  </menu>
+</interface>

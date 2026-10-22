@@ -69,4 +69,31 @@ test('componente transcriptview registrado; --embedded e --find lidos do ambient
     }
 });
 
+test('componente detailpane registrado; --state none|running|error|ready só com ele', () => {
+    assert.equal(typeof COMPONENTS.detailpane, 'function');
+    for (const state of ['none', 'running', 'error', 'ready'])
+        assert.equal(stateError({ component: 'detailpane', state }), null);
+    assert.equal(typeof stateError({ component: 'detailpane', state: 'recorder' }), 'string');
+    assert.equal(typeof stateError({ component: 'window', state: 'running' }), 'string');
+    assert.equal(typeof stateError({ component: 'transcriptview', state: 'ready' }), 'string');
+});
+
+test('--empty e --select 0 lidos do ambiente', () => {
+    GLib.setenv('DAILY_TAKER_SNAPSHOT', '/nonexistent/out.png', true);
+    try {
+        GLib.unsetenv('DAILY_TAKER_SNAPSHOT_EMPTY');
+        assert.equal(snapshotParams().empty, false);
+        GLib.setenv('DAILY_TAKER_SNAPSHOT_EMPTY', '1', true);
+        assert.equal(snapshotParams().empty, true);
+        GLib.setenv('DAILY_TAKER_SNAPSHOT_EMPTY', '0', true);
+        assert.equal(snapshotParams().empty, false);
+        GLib.setenv('DAILY_TAKER_SNAPSHOT_SELECT', '0', true);
+        assert.equal(snapshotParams().select, 0);
+    } finally {
+        GLib.unsetenv('DAILY_TAKER_SNAPSHOT_EMPTY');
+        GLib.unsetenv('DAILY_TAKER_SNAPSHOT_SELECT');
+        GLib.unsetenv('DAILY_TAKER_SNAPSHOT');
+    }
+});
+
 finish();
