@@ -16,6 +16,15 @@ test('constantes', () => {
     assert.equal(T.MODEL, 'elevenlabs/scribe-v2');
     assert.equal(T.MAX_UPLOAD_BYTES, 25 * 1024 * 1024);
     assert.equal(T.API_BASE, 'https://openrouter.ai/api/v1');
+    // inatividade do socket: o servidor pode levar minutos para responder áudio longo
+    assert.equal(T.UPLOAD_TIMEOUT_SEC, 600);
+    assert.equal(T.CHECK_TIMEOUT_SEC, 30);
+});
+
+test('tooLarge: mensagem diz o limite, a duração aproximada e o que fazer', () => {
+    const e = new T.TranscribeError('tooLarge');
+    assert.equal(e.message, 'A gravação passa de 25 MB, o limite de envio do OpenRouter. ' +
+        'Gravações de até cerca de 1h45 podem ser transcritas; divida o áudio e tente de novo.');
 });
 
 test('formFields inclui os campos fixos e o idioma', () => {
@@ -103,7 +112,13 @@ const withServer = async (respond, fn) => {
             }
         }
         requests.push(rec);
-        const [status, body] = respond(requests.length, rec);
+        const response = respond(requests.length, rec);
+        // null: servidor travado, nunca responde.
+        if (response === null) {
+            msg.pause();
+            return;
+        }
+        const [status, body] = response;
         if (Object.values(Soup.Status).includes(status)) {
             msg.set_status(status, null);
             msg.set_response('application/json', Soup.MemoryUse.COPY, body);
@@ -281,6 +296,27 @@ testAsync('transcribeFile: conexão recusada vira network (retryable)', () =>
         assert.equal(e.retryable, true);
         assert.equal(e.message.includes(KEY), false);
     }));
+
+testAsync('transcribeFile: servidor que nunca responde estoura o timeout e vira network', () =>
+    withDir(dir => withServer(() => null, async (baseUrl, requests) => {
+        const file = writeFile(dir, 'a.ogg', 10);
+        const t0 = Date.now();
+        const e = await rejection(T.transcribeFile({ apiKey: KEY, file, language: 'pt', baseUrl, backoffMs: 1, timeoutSec: 1 }));
+        assert.equal(e instanceof T.TranscribeError, true);
+        assert.equal(e.kind, 'network');
+        assert.equal(e.retryable, true);
+        assert.equal(e.message.includes(KEY), false);
+        // 1 + 2 tentativas, cada uma desistindo após ~1 s sem resposta
+        assert.equal(requests.length, 3);
+        assert.equal(Date.now() - t0 < 8000, true);
+    })), 15000);
+
+testAsync('checkApiKey: servidor que nunca responde estoura o timeout e vira network', () =>
+    withServer(() => null, async (baseUrl) => {
+        const r = await T.checkApiKey({ apiKey: KEY, baseUrl, timeoutSec: 1 });
+        assert.equal(r.ok, false);
+        assert.equal(r.error.kind, 'network');
+    }), 10000);
 
 testAsync('checkApiKey: 200 -> ok, com Authorization e GET /key', () =>
     withServer(() => [200, '{"data":{}}'], async (baseUrl, requests) => {

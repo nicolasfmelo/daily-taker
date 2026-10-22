@@ -1,4 +1,5 @@
-/* exported API_BASE, MODEL, MAX_UPLOAD_BYTES, PRICE_PER_SECOND_USD, estimateCostUsd,
+/* exported API_BASE, MODEL, MAX_UPLOAD_BYTES, PRICE_PER_SECOND_USD, UPLOAD_TIMEOUT_SEC,
+            CHECK_TIMEOUT_SEC, estimateCostUsd,
             formFields, TranscribeError, classifyError, transcribeFile, checkApiKey */
 // Cliente do endpoint de transcrição do OpenRouter (elevenlabs/scribe-v2).
 // A chave da API só aparece no header Authorization: nunca em mensagens de erro nem em logs.
@@ -10,6 +11,11 @@ var API_BASE = 'https://openrouter.ai/api/v1';
 var MODEL = 'elevenlabs/scribe-v2';
 var MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 var PRICE_PER_SECOND_USD = 0.000031;
+// Soup.Session:timeout = segundos de inatividade do socket (conectar, enviar ou esperar a
+// resposta), não duração total. Generoso: para áudio longo o servidor pode passar minutos
+// calado antes de responder, e abortar uma transcrição válida (já cobrada) seria pior.
+var UPLOAD_TIMEOUT_SEC = 600;
+var CHECK_TIMEOUT_SEC = 30;
 
 var estimateCostUsd = seconds => seconds * PRICE_PER_SECOND_USD;
 
@@ -33,7 +39,8 @@ const MESSAGES = {
     upstream: 'O serviço de transcrição está indisponível no momento.',
     diarize: 'O modelo não aceitou a separação de locutores.',
     badRequest: 'O OpenRouter recusou a requisição (dados inválidos).',
-    tooLarge: 'O arquivo de áudio passa de 25 MB, o limite do OpenRouter.',
+    tooLarge: 'A gravação passa de 25 MB, o limite de envio do OpenRouter. ' +
+        'Gravações de até cerca de 1h45 podem ser transcritas; divida o áudio e tente de novo.',
     empty: 'O arquivo de áudio está vazio.',
     network: 'Falha de conexão com o OpenRouter. Verifique a internet.',
     unknown: 'Erro inesperado ao transcrever.',
@@ -76,7 +83,8 @@ const sleep = ms => new Promise(resolve => {
 
 const decode = bytes => new TextDecoder().decode(bytes.get_data());
 
-// Uma tentativa; resolve com {status, text} ou rejeita com TranscribeError('network').
+// Uma tentativa; resolve com {status, text} ou rejeita com TranscribeError('network')
+// (inclui o estouro do timeout da sessão: G_IO_ERROR_TIMED_OUT).
 const send = async (session, msg) => {
     try {
         const bytes = await session.send_and_read_async(msg, GLib.PRIORITY_DEFAULT, null);
@@ -89,8 +97,8 @@ const send = async (session, msg) => {
     }
 };
 
-const newSession = () => {
-    const session = new Soup.Session();
+const newSession = timeoutSec => {
+    const session = new Soup.Session({ timeout: timeoutSec });
     session.user_agent = 'DailyTaker/1 ';
     return session;
 };
@@ -122,11 +130,14 @@ const readAudio = file => {
     }
 };
 
-var transcribeFile = async ({ apiKey, file, language, baseUrl = API_BASE, retries = 2, backoffMs = 2000 }) => {
+var transcribeFile = async ({
+    apiKey, file, language, baseUrl = API_BASE, retries = 2, backoffMs = 2000,
+    timeoutSec = UPLOAD_TIMEOUT_SEC,
+}) => {
     if (!apiKey)
         throw new TranscribeError('noKey');
     const audio = readAudio(file);
-    const session = newSession();
+    const session = newSession(timeoutSec);
 
     for (let attempt = 0; ; attempt++) {
         const form = Soup.Multipart.new('multipart/form-data');
@@ -161,12 +172,12 @@ var transcribeFile = async ({ apiKey, file, language, baseUrl = API_BASE, retrie
     }
 };
 
-var checkApiKey = async ({ apiKey, baseUrl = API_BASE }) => {
+var checkApiKey = async ({ apiKey, baseUrl = API_BASE, timeoutSec = CHECK_TIMEOUT_SEC }) => {
     if (!apiKey)
         return { ok: false, error: new TranscribeError('noKey') };
     try {
         const msg = newMessage('GET', `${baseUrl}/key`, apiKey);
-        const { status, text } = await send(newSession(), msg);
+        const { status, text } = await send(newSession(timeoutSec), msg);
         if (status >= 200 && status < 300)
             return { ok: true };
         return { ok: false, error: classifyError(status, text) };
