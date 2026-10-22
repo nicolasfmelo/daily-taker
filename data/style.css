@@ -29,3 +29,27 @@ button.large {
 .recording-row {
   padding: 0;
 }
+
+/* Visão de transcrição: bloco sendo falado no player (laranja do ícone, discreto). */
+.transcript-block {
+  padding: 6px 10px;
+  border-radius: 12px;
+  transition: background-color 150ms ease-out;
+}
+
+.transcript-block.current {
+  background-color: alpha(@orange_3, .15);
+}
+
+.speaker-button {
+  padding: 2px 6px;
+  min-height: 0;
+}
+
+@media (prefers-contrast: more) {
+  .transcript-block.current {
+    background-color: alpha(@orange_3, .3);
+    outline: 2px solid @orange_4;
+    outline-offset: -2px;
+  }
+}

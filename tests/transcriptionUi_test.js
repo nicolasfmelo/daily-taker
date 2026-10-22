@@ -137,6 +137,22 @@ test('confirmMessage: duração desconhecida não promete custo', () => {
     assert.deepEqual(U.confirmMessage(Infinity), expected);
 });
 
+test('confirmMessage regenerate: avisa que cobra de novo, com a estimativa', () => {
+    assert.deepEqual(U.confirmMessage(2700, { regenerate: true }), {
+        heading: 'Gerar novamente?',
+        body: 'Isto cobra de novo (US$ 0,08).',
+    });
+});
+
+test('confirmMessage regenerate: duração desconhecida não promete custo', () => {
+    const expected = {
+        heading: 'Gerar novamente?',
+        body: 'Isto cobra de novo. A duração ainda não é conhecida, então não é possível estimar o custo.',
+    };
+    assert.deepEqual(U.confirmMessage(0, { regenerate: true }), expected);
+    assert.deepEqual(U.confirmMessage(NaN, { regenerate: true }), expected);
+});
+
 test('rowActions: transcrever exige duração conhecida e nada em andamento', () => {
     assert.deepEqual(U.rowActions({ status: 'none', seconds: 60, editMode: false }), { transcribe: true, rename: true, open: false });
     assert.deepEqual(U.rowActions({ status: 'none', seconds: 0, editMode: false }), { transcribe: false, rename: true, open: false });

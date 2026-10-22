@@ -80,4 +80,58 @@ test('viewHeader com campos ausentes nunca imprime undefined', () => {
     assert.equal(h.language, '');
 });
 
+const { toMarkdown, copyText } = imports.transcriptFormat;
+
+test('exportContent: md usa o Markdown e txt o texto com locutores', () => {
+    const t = makeTranscript();
+    assert.equal(VM.exportContent(t, 'md'), toMarkdown(t));
+    assert.equal(VM.exportContent(t, 'txt'), copyText(t, { withSpeakers: true }));
+});
+
+test('exportContent: ambos começam pelo cabeçalho com data e hora', () => {
+    const t = makeTranscript();
+    assert.equal(VM.exportContent(t, 'md').startsWith('# Daily 22/10\n\n- 22/10/2026 · 14:30'), true);
+    assert.equal(VM.exportContent(t, 'txt').startsWith('Daily 22/10\n22/10/2026 · 14:30'), true);
+});
+
+test('exportContent: extensão desconhecida é erro', () => {
+    assert.throws(() => VM.exportContent(makeTranscript(), 'pdf'));
+});
+
+test('exportExtension: a extensão do nome escolhido vence a do menu', () => {
+    assert.equal(VM.exportExtension('notas.txt', 'md'), 'txt');
+    assert.equal(VM.exportExtension('notas.MD', 'txt'), 'md');
+    assert.equal(VM.exportExtension('notas', 'md'), 'md');
+    assert.equal(VM.exportExtension('notas.odt', 'txt'), 'txt');
+    assert.equal(VM.exportExtension(null, 'md'), 'md');
+});
+
+test('speakerEntry: locutor com nome vem preenchido', () => {
+    assert.deepEqual(VM.speakerEntry(makeTranscript(), 0), { text: 'Ana', placeholder: 'Locutor 1' });
+});
+
+test('speakerEntry: locutor padrão vem vazio com o nome padrão de dica', () => {
+    assert.deepEqual(VM.speakerEntry(makeTranscript(), 1), { text: '', placeholder: 'Locutor 2' });
+    assert.deepEqual(VM.speakerEntry(makeTranscript({ speakers: undefined }), 2),
+        { text: '', placeholder: 'Locutor 3' });
+});
+
+test('currentBlockIndex: converte nanossegundos em segundos', () => {
+    const blocks = imports.transcript.buildBlocks(makeTranscript());
+    assert.equal(VM.currentBlockIndex(blocks, 0), -1);
+    assert.equal(VM.currentBlockIndex(blocks, 1.5e9), 0);
+    assert.equal(VM.currentBlockIndex(blocks, 3.1e9), 1);
+    assert.equal(VM.currentBlockIndex(blocks, 4e9), 1);
+    assert.equal(VM.currentBlockIndex(blocks, 7.2e9), 3);
+    assert.equal(VM.currentBlockIndex(blocks, 9e9), -1);
+});
+
+test('currentBlockIndex: posição inválida não destaca nada', () => {
+    const blocks = imports.transcript.buildBlocks(makeTranscript());
+    assert.equal(VM.currentBlockIndex(blocks, -1), -1);
+    assert.equal(VM.currentBlockIndex(blocks, NaN), -1);
+    assert.equal(VM.currentBlockIndex(blocks, undefined), -1);
+    assert.equal(VM.currentBlockIndex([], 1e9), -1);
+});
+
 finish();

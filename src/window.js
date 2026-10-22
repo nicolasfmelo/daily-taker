@@ -52,6 +52,8 @@ var Window = GObject.registerClass({
         super._init(Object.assign({
             icon_name: pkg.name,
         }, params));
+        // Título restaurado ao sair da transcrição.
+        this._defaultTitle = this._windowTitle.title;
 
         this.recorder = new Recorder();
         this.recorderWidget = new RecorderWidget(this.recorder);
@@ -60,6 +62,10 @@ var Window = GObject.registerClass({
         const dispatcher = GstPlayer.PlayerGMainContextSignalDispatcher.new(null);
         this.player = GstPlayer.Player.new(null, dispatcher);
         this.player.connect('end-of-stream', _p => this.player.stop());
+        this._playerState = GstPlayer.PlayerState.STOPPED;
+        this.player.connect('state-changed', (_p, state) => {
+            this._playerState = state;
+        });
 
 
         this._recordingList = new RecordingList();
@@ -85,6 +91,11 @@ var Window = GObject.registerClass({
         this._recordingListWidget = new RecordingsListWidget(this._recordingList, this.player, this.transcriptionService);
         this._recordingListWidget.connect('transcribe-requested', (_widget, recording) => {
             this._requestTranscription(recording);
+        });
+        this.transcriptionService.connectChange(uri => {
+            const file = this._transcriptView?.recordingFile;
+            if (file && file.get_uri() === uri)
+                this._transcriptView.running = this.transcriptionService.status(file) === 'running';
         });
 
         this._recordingListWidget.connect('row-deleted', (_listBox, recording, index) => {
@@ -119,12 +130,33 @@ var Window = GObject.registerClass({
         this._backButton.connect('clicked', () => this.closeTranscript());
     }
 
+    _createTranscriptView() {
+        const view = new TranscriptView();
+        view.attachPlayer(this.player, this._playerState);
+        view.connect('seek-requested', (_view, seconds) => {
+            const recording = this._findRecording(view.recordingFile);
+            if (!recording || !this._recordingListWidget.playRecordingAt(recording, Math.round(seconds * Gst.SECOND)))
+                this.addToast('A gravação não está mais disponível');
+        });
+        view.connect('transcript-changed', (_view, t) => {
+            this._windowTitle.title = viewHeader(t).title;
+        });
+        view.connect('regenerate-requested', () => {
+            const recording = this._findRecording(view.recordingFile);
+            if (recording)
+                this._requestTranscription(recording, { regenerate: true });
+            else
+                this.addToast('A gravação não está mais disponível');
+        });
+        this._mainStack.add_named(view, 'transcript');
+        return view;
+    }
+
     showTranscript(recordingFile, t) {
-        if (!this._transcriptView) {
-            this._transcriptView = new TranscriptView();
-            this._mainStack.add_named(this._transcriptView, 'transcript');
-        }
+        if (!this._transcriptView)
+            this._transcriptView = this._createTranscriptView();
         this._transcriptView.setTranscript(t, recordingFile);
+        this._transcriptView.running = this.transcriptionService.status(recordingFile) === 'running';
         this._windowTitle.title = viewHeader(t).title;
         if (this.state !== WindowState.TRANSCRIPT)
             this._stateBeforeTranscript = this.state;
@@ -136,6 +168,7 @@ var Window = GObject.registerClass({
             return;
         // Volta para a página anterior; lista e vazio são recalculados porque a lista
         // pode ter mudado enquanto a transcrição estava aberta.
+        this._transcriptView.release();
         const previous = this._stateBeforeTranscript;
         if (previous === WindowState.LIST || previous === WindowState.EMPTY || previous === undefined)
             this.state = this._recordingList.get_n_items() === 0 ? WindowState.EMPTY : WindowState.LIST;
@@ -187,7 +220,20 @@ var Window = GObject.registerClass({
         this.state = WindowState.LIST;
     }
 
-    _requestTranscription(recording) {
+    _findRecording(file) {
+        if (!file)
+            return null;
+        const uri = file.get_uri();
+        for (let i = 0; i < this._recordingList.get_n_items(); i++) {
+            const recording = this._recordingList.get_item(i);
+            if (recording.uri === uri)
+                return recording;
+        }
+        return null;
+    }
+
+    // regenerate: "Gerar novamente" na visão de transcrição (mesmas guardas, outro texto).
+    _requestTranscription(recording, { regenerate = false } = {}) {
         // A chave é verificada antes de tocar no serviço: sem chave a linha não entra em erro.
         let key = null;
         try {
@@ -203,7 +249,7 @@ var Window = GObject.registerClass({
         if (this.transcriptionService.status(recording.file) === 'running')
             return;
 
-        const { heading, body } = confirmMessage(recording.duration / 1e9);
+        const { heading, body } = confirmMessage(recording.duration / 1e9, { regenerate });
         const dialog = new Adw.MessageDialog({
             transient_for: this,
             modal: true,
@@ -211,18 +257,18 @@ var Window = GObject.registerClass({
             body,
         });
         dialog.add_response('cancel', 'Cancelar');
-        dialog.add_response('transcribe', 'Transcrever');
+        dialog.add_response('transcribe', regenerate ? 'Gerar novamente' : 'Transcrever');
         dialog.set_response_appearance('transcribe', Adw.ResponseAppearance.SUGGESTED);
         dialog.default_response = 'transcribe';
         dialog.close_response = 'cancel';
         dialog.connect('response', (_dialog, response) => {
             if (response === 'transcribe' && !this._closed)
-                this._runTranscription(recording);
+                this._runTranscription(recording, { regenerate });
         });
         dialog.present();
     }
 
-    _runTranscription(recording) {
+    _runTranscription(recording, options) {
         const file = recording.file;
         const created = recording.timeCreated;
         const recordedAt = created && created.to_unix() > 0 ? created : recording.timeModified;
@@ -230,10 +276,20 @@ var Window = GObject.registerClass({
             file,
             title: recording.name,
             recordedAt: recordedAt.format_iso8601(),
-        }).catch(error => this._onTranscriptionFailed(recording, error));
+        }).then(
+            transcript => this._onTranscriptionDone(file, transcript),
+            error => this._onTranscriptionFailed(recording, error, options));
     }
 
-    _onTranscriptionFailed(recording, error) {
+    // A visão aberta nesta gravação passa a mostrar a transcrição nova.
+    _onTranscriptionDone(file, transcript) {
+        if (this._closed || this.state !== WindowState.TRANSCRIPT)
+            return;
+        if (this._transcriptView.recordingFile?.equal(file))
+            this.showTranscript(file, transcript);
+    }
+
+    _onTranscriptionFailed(recording, error, options) {
         if (this._closed)
             return;
 
@@ -245,7 +301,7 @@ var Window = GObject.registerClass({
             toast.button_label = 'Tentar de novo';
             toast.connect('button-clicked', () => {
                 if (!this._closed)
-                    this._requestTranscription(recording);
+                    this._requestTranscription(recording, options);
             });
         }
         this._toastOverlay.add_toast(toast);
@@ -308,7 +364,7 @@ var Window = GObject.registerClass({
         this._backButton.visible = inTranscript;
         this._recordButton.visible = !inTranscript;
         if (!inTranscript)
-            this._windowTitle.title = 'Daily Taker';
+            this._windowTitle.title = this._defaultTitle;
 
         this._mainStack.visible_child_name = visibleChild;
         this._headerRevealer.reveal_child = isHeaderVisible;

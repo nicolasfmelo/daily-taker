@@ -22,6 +22,8 @@ var formatUsd = value => {
     return `US$ ${text.replace(/0{1,2}$/, '').replace('.', ',')}`;
 };
 
+const UNKNOWN_DURATION = 'A duração ainda não é conhecida, então não é possível estimar o custo.';
+
 var formatDuration = seconds => {
     const s = Math.round(seconds);
     if (s < 60)
@@ -34,14 +36,20 @@ var formatDuration = seconds => {
     return min ? `${h} h ${min} min` : `${h} h`;
 };
 
-var confirmMessage = seconds => {
+// regenerate: a gravação já tem transcrição e o usuário pede outra (cobrada de novo).
+var confirmMessage = (seconds, { regenerate = false } = {}) => {
     // Sem duração conhecida não há estimativa honesta: não mostra "0 s / US$ 0,00".
-    if (!Number.isFinite(seconds) || seconds <= 0) {
+    const known = Number.isFinite(seconds) && seconds > 0;
+    if (regenerate) {
         return {
-            heading: 'Transcrever esta gravação?',
-            body: 'A duração ainda não é conhecida, então não é possível estimar o custo.',
+            heading: 'Gerar novamente?',
+            body: known
+                ? `Isto cobra de novo (${formatUsd(estimateCostUsd(seconds))}).`
+                : `Isto cobra de novo. ${UNKNOWN_DURATION}`,
         };
     }
+    if (!known)
+        return { heading: 'Transcrever esta gravação?', body: UNKNOWN_DURATION };
     return {
         heading: `Transcrever ${formatDuration(seconds)}?`,
         body: `Custo estimado: ${formatUsd(estimateCostUsd(seconds))}`,

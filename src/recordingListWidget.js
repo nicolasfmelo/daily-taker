@@ -66,18 +66,7 @@ var RecordingsListWidget = new GObject.registerClass({
             });
 
             row.connect('play', _row => {
-                if (this.activePlayingRow) {
-                    if (this.activePlayingRow !== _row) {
-                        this.activePlayingRow.state = RowState.PAUSED;
-                        this.activePlayingRow.waveform.position = 0.0;
-                        this._player.set_uri(recording.uri);
-                    }
-                } else {
-                    this._player.set_uri(recording.uri);
-                }
-
-                this.activePlayingRow = _row;
-                this._player.play();
+                this._playRow(_row);
             });
 
             row.connect('pause', _row => {
@@ -117,6 +106,35 @@ var RecordingsListWidget = new GObject.registerClass({
         });
 
         this.list.connect('row-activated', this.rowActivated.bind(this));
+    }
+
+    _playRow(row) {
+        if (this.activePlayingRow) {
+            if (this.activePlayingRow !== row) {
+                this.activePlayingRow.state = RowState.PAUSED;
+                this.activePlayingRow.waveform.position = 0.0;
+                this._player.set_uri(row._recording.uri);
+            }
+        } else {
+            this._player.set_uri(row._recording.uri);
+        }
+
+        this.activePlayingRow = row;
+        this._player.play();
+    }
+
+    // Toca a gravação a partir de uma posição (ns) pelo mesmo caminho do botão de play
+    // da linha, para que play/pausa e a forma de onda da linha continuem coerentes.
+    playRecordingAt(recording, position) {
+        for (let i = 0, row; (row = this.list.get_row_at_index(i)); i++) {
+            if (row._recording === recording) {
+                this._playRow(row);
+                row.state = RowState.PLAYING;
+                this._player.seek(position);
+                return true;
+            }
+        }
+        return false;
     }
 
     rowActivated(list, row) {

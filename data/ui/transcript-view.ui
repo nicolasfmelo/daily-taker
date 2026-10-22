@@ -26,6 +26,7 @@
                     <property name="margin_bottom">24</property>
                     <child>
                       <object class="GtkBox">
+                        <property name="orientation">vertical</property>
                         <property name="spacing">12</property>
                         <child>
                           <object class="GtkBox">
@@ -72,14 +73,70 @@
                           </object>
                         </child>
                         <child>
-                          <object class="GtkMenuButton">
-                            <property name="valign">start</property>
-                            <property name="menu_model">copyAllMenu</property>
-                            <property name="tooltip_text">Copiar a transcrição inteira</property>
+                          <object class="AdwWrapBox">
+                            <property name="child_spacing">6</property>
+                            <property name="line_spacing">6</property>
                             <child>
-                              <object class="AdwButtonContent">
-                                <property name="icon_name">edit-copy-symbolic</property>
-                                <property name="label">Copiar tudo</property>
+                              <object class="GtkMenuButton">
+                                <property name="menu_model">copyAllMenu</property>
+                                <property name="tooltip_text">Copiar a transcrição inteira</property>
+                                <child>
+                                  <object class="AdwButtonContent">
+                                    <property name="icon_name">edit-copy-symbolic</property>
+                                    <property name="label">Copiar tudo</property>
+                                  </object>
+                                </child>
+                              </object>
+                            </child>
+                            <child>
+                              <object class="GtkMenuButton">
+                                <property name="menu_model">exportMenu</property>
+                                <property name="tooltip_text">Salvar a transcrição em um arquivo</property>
+                                <child>
+                                  <object class="AdwButtonContent">
+                                    <property name="icon_name">document-save-symbolic</property>
+                                    <property name="label">Exportar</property>
+                                  </object>
+                                </child>
+                              </object>
+                            </child>
+                            <child>
+                              <object class="GtkButton" id="regenerateButton">
+                                <property name="action_name">transcript.regenerate</property>
+                                <property name="tooltip_text">Transcrever esta gravação de novo (cobra de novo)</property>
+                                <child>
+                                  <object class="GtkStack" id="regenerateStack">
+                                    <child>
+                                      <object class="GtkStackPage">
+                                        <property name="name">idle</property>
+                                        <property name="child">
+                                          <object class="AdwButtonContent">
+                                            <property name="icon_name">view-refresh-symbolic</property>
+                                            <property name="label">Gerar novamente</property>
+                                          </object>
+                                        </property>
+                                      </object>
+                                    </child>
+                                    <child>
+                                      <object class="GtkStackPage">
+                                        <property name="name">running</property>
+                                        <property name="child">
+                                          <object class="GtkBox">
+                                            <property name="spacing">6</property>
+                                            <child>
+                                              <object class="GtkSpinner" id="regenerateSpinner"/>
+                                            </child>
+                                            <child>
+                                              <object class="GtkLabel">
+                                                <property name="label">Transcrevendo…</property>
+                                              </object>
+                                            </child>
+                                          </object>
+                                        </property>
+                                      </object>
+                                    </child>
+                                  </object>
+                                </child>
                               </object>
                             </child>
                           </object>
@@ -112,6 +169,20 @@
         <attribute name="label">Só o texto</attribute>
         <attribute name="action">transcript.copy-all</attribute>
         <attribute name="target" type="b">false</attribute>
+      </item>
+    </section>
+  </menu>
+  <menu id="exportMenu">
+    <section>
+      <item>
+        <attribute name="label">Markdown (.md)</attribute>
+        <attribute name="action">transcript.export</attribute>
+        <attribute name="target">md</attribute>
+      </item>
+      <item>
+        <attribute name="label">Texto (.txt)</attribute>
+        <attribute name="action">transcript.export</attribute>
+        <attribute name="target">txt</attribute>
       </item>
     </section>
   </menu>
