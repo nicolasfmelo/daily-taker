@@ -1,7 +1,7 @@
 /* exported Playback */
 // Player único do app: envolve um GstPlayer.Player e expõe posição/duração em
 // segundos, velocidade e volume. Não depende de imports.application.
-const { GLib, GObject, Gst, GstPlayer } = imports.gi;
+const { GObject, Gst, GstPlayer } = imports.gi;
 
 const { RATES, clampVolume } = imports.playerModel;
 
@@ -30,13 +30,15 @@ var Playback = GObject.registerClass({
         'duration-changed': { param_types: [GObject.TYPE_DOUBLE] },
         'ended': {},
         'rate-failed': {},
+        'error': { param_types: [GObject.TYPE_STRING] },
     },
 }, class Playback extends GObject.Object {
 
-    // `audioSink` (opcional) é um Gst.Element que substitui a saída de áudio;
-    // existe para testes sem som. Em produção fica indefinido (sink padrão).
-    _init({ audioSink, ...params } = {}) {
+    // `audioSinkFactory` (opcional) devolve um Gst.Element novo de saída de áudio para
+    // cada player; existe para testes sem som. Em produção fica indefinido (sink padrão).
+    _init({ audioSinkFactory, ...params } = {}) {
         super._init(params);
+        this._audioSinkFactory = audioSinkFactory ?? null;
         this._uri = null;
         this._playing = false;
         this._desired = false; // intenção do usuário (play/pause), para toggle()
@@ -44,18 +46,9 @@ var Playback = GObject.registerClass({
         this._volume = 1;
         this._position = 0;
         this._duration = 0;
-        this._gen = 0;
-        this._accepting = true;
-
-        const dispatcher = GstPlayer.PlayerGMainContextSignalDispatcher.new(null);
-        this._player = GstPlayer.Player.new(null, dispatcher);
-        if (audioSink)
-            this._player.get_pipeline().set_property('audio-sink', audioSink);
-
-        this._player.connect('state-changed', (_p, state) => this._onState(state));
-        this._player.connect('position-updated', (_p, ns) => this._onPosition(toSeconds(ns)));
-        this._player.connect('duration-changed', (_p, ns) => this._onDuration(toSeconds(ns)));
-        this._player.connect('end-of-stream', () => this._onEnd());
+        // Um GstPlayer por mídia carregada (ver _attachPlayer); null sem uri.
+        this._player = null;
+        this._handlerIds = [];
     }
 
     get uri() {
@@ -96,30 +89,25 @@ var Playback = GObject.registerClass({
             return;
 
         this._desired = false;
-        this._player.stop();
-        this._barrier();
+        this._detachPlayer();
         this._setPlaying(false);
         this._uri = next;
         this.notify('uri');
         this._setPosition(0);
         this._setDuration(0, true);
-        if (next === null)
-            return;
-
-        this._player.set_uri(next);
-        // Pré-carrega (pausado, sem som) para conhecer a duração.
-        this._player.pause();
+        if (next !== null)
+            this._attachPlayer();
     }
 
     play() {
-        if (this._uri === null)
+        if (this._player === null)
             return;
         this._desired = true;
         this._player.play();
     }
 
     pause() {
-        if (this._uri === null)
+        if (this._player === null)
             return;
         this._desired = false;
         this._player.pause();
@@ -133,7 +121,7 @@ var Playback = GObject.registerClass({
     }
 
     seek(seconds) {
-        if (this._uri === null || !isNumber(seconds))
+        if (this._player === null || !isNumber(seconds))
             return;
         let target = Math.max(0, seconds);
         if (this._duration > 0)
@@ -144,17 +132,34 @@ var Playback = GObject.registerClass({
 
     stop() {
         this._desired = false;
-        this._player.stop();
-        this._barrier();
         this._setPlaying(false);
         this._setPosition(0);
+        this._reset();
+    }
+
+    // Desmonta o player atual (o que impede eventos atrasados dele de chegarem) e,
+    // se há uri, prepara um novo, pausado e na posição 0.
+    _reset() {
+        if (this._uri === null)
+            return;
+        this._detachPlayer();
+        this._attachPlayer();
     }
 
     setRate(rate) {
         if (!RATES.includes(rate))
             return;
+        if (this._player !== null && !this._applyRate(rate))
+            return;
+        this._rate = rate;
+        this.notify('rate');
+    }
+
+    // set_rate no player atual; em falha volta a 1 e avisa. Devolve se aplicou.
+    _applyRate(rate) {
         try {
             this._player.set_rate(rate);
+            return true;
         } catch (e) {
             this._rate = 1;
             this.notify('rate');
@@ -164,16 +169,61 @@ var Playback = GObject.registerClass({
                 // nada a fazer: o rate já está registrado como 1
             }
             this.emit('rate-failed');
-            return;
+            return false;
         }
-        this._rate = rate;
-        this.notify('rate');
     }
 
     setVolume(volume) {
         this._volume = clampVolume(volume);
-        this._player.set_volume(this._volume);
+        this._player?.set_volume(this._volume);
         this.notify('volume');
+    }
+
+    // Cria um GstPlayer novo para a uri atual. Os sinais do GstPlayer chegam por
+    // uma fila do main loop e um stop() é assíncrono, então eventos da mídia antiga
+    // podem chegar depois da troca; por isso cada mídia tem seu player e tudo o que
+    // vier de um player descartado é ignorado (closures comparam com this._player).
+    _attachPlayer() {
+        const dispatcher = GstPlayer.PlayerGMainContextSignalDispatcher.new(null);
+        const player = GstPlayer.Player.new(null, dispatcher);
+        this._player = player;
+        if (this._audioSinkFactory)
+            player.get_pipeline().set_property('audio-sink', this._audioSinkFactory());
+
+        const current = fn => (p, ...args) => {
+            if (p === this._player)
+                fn(...args);
+        };
+        this._handlerIds = [
+            player.connect('state-changed', current(state => this._onState(state))),
+            player.connect('position-updated', current(ns => this._setPosition(toSeconds(ns)))),
+            player.connect('duration-changed', current(ns => this._setDuration(toSeconds(ns)))),
+            player.connect('end-of-stream', current(() => this._onEnd())),
+            player.connect('error', current(() => this._onError())),
+        ];
+
+        player.set_volume(this._volume);
+        player.set_uri(this._uri);
+        if (this._rate !== 1)
+            this._applyRate(this._rate);
+        // Pré-carrega (pausado, sem som) para conhecer a duração.
+        player.pause();
+    }
+
+    _detachPlayer() {
+        const player = this._player;
+        if (player === null)
+            return;
+        this._player = null;
+        for (const id of this._handlerIds)
+            player.disconnect(id);
+        this._handlerIds = [];
+        player.stop();
+        try {
+            player.get_pipeline().set_state(Gst.State.NULL);
+        } catch (e) {
+            // o stop() acima já derruba o pipeline
+        }
     }
 
     _setPlaying(playing) {
@@ -201,23 +251,7 @@ var Playback = GObject.registerClass({
         this.emit('duration-changed', seconds);
     }
 
-    // Os sinais do GstPlayer chegam por uma fila do main loop e podem ser anteriores
-    // a um stop()/load() (posição, estado ou duração da mídia antiga). A fila é FIFO
-    // na mesma prioridade: um idle colocado agora roda depois de tudo que já estava
-    // enfileirado, então só então voltamos a aceitar eventos.
-    _barrier() {
-        const gen = ++this._gen;
-        this._accepting = false;
-        GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
-            if (gen === this._gen)
-                this._accepting = true;
-            return GLib.SOURCE_REMOVE;
-        });
-    }
-
     _onState(state) {
-        if (this._uri === null || !this._accepting)
-            return;
         if (state === GstPlayer.PlayerState.PLAYING)
             this._setPlaying(true);
         else if (state === GstPlayer.PlayerState.STOPPED ||
@@ -226,24 +260,23 @@ var Playback = GObject.registerClass({
         // BUFFERING (e PAUSED transitório com play pedido): mantém o estado.
     }
 
-    _onPosition(seconds) {
-        if (this._uri !== null && this._accepting)
-            this._setPosition(seconds);
-    }
-
-    _onDuration(seconds) {
-        if (this._uri !== null && this._accepting)
-            this._setDuration(seconds);
-    }
-
     _onEnd() {
-        if (this._uri === null || !this._accepting)
-            return;
         this._desired = false;
-        this._player.stop();
-        this._barrier();
         this._setPlaying(false);
         this._setPosition(0);
+        this._reset();
         this.emit('ended');
+    }
+
+    // Arquivo ausente/corrompido: não deixa o toggle() preso em "pausar".
+    _onError() {
+        this._desired = false;
+        this._setPlaying(false);
+        this.emit('error', 'falha ao reproduzir');
+    }
+
+    // Solta o player e os handlers; o objeto continua utilizável (load de novo).
+    destroy() {
+        this.load(null);
     }
 });

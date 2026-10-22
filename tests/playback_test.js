@@ -1,6 +1,6 @@
 // Playback com GstPlayer real, mas saída de áudio = fakesink (sync=true, tempo real) e volume 0:
 // nenhum teste emite som nem abre o microfone.
-const { Gio, GLib, Gst } = imports.gi;
+const { Gio, GLib, GObject, Gst } = imports.gi;
 const { test, testAsync, assert, finish } = imports.harness;
 const { Playback } = imports.playback;
 
@@ -20,13 +20,24 @@ const makeMedia = (path, seconds) => {
 };
 makeMedia(media, 3);
 makeMedia(other, 2);
+const links = [];
+for (let i = 0; i < 20; i++) {
+    const link = GLib.build_filenamev([tmp, `link${i}.ogg`]);
+    Gio.File.new_for_path(link).make_symbolic_link(media, null);
+    links.push(link);
+}
+const missingUri = Gio.File.new_for_path(GLib.build_filenamev([tmp, 'nao-existe.ogg'])).get_uri();
 const uri = Gio.File.new_for_path(media).get_uri();
 const otherUri = Gio.File.new_for_path(other).get_uri();
 
 const newPlayback = () => {
-    const sink = Gst.ElementFactory.make('fakesink', null);
-    sink.sync = true; // consome em tempo real, como um sink de áudio
-    const playback = new Playback({ audioSink: sink });
+    const playback = new Playback({
+        audioSinkFactory: () => {
+            const sink = Gst.ElementFactory.make('fakesink', null);
+            sink.sync = true; // consome em tempo real, como um sink de áudio
+            return sink;
+        },
+    });
     playback.setVolume(0);
     return playback;
 };
@@ -117,6 +128,7 @@ test('rate: só aceita valores de RATES', () => {
 
 test('rate: falha do GstPlayer volta a 1 e emite rate-failed', () => {
     const p = newPlayback();
+    p.load(uri);
     p.setRate(1.5);
     let failed = 0;
     p.connect('rate-failed', () => failed++);
@@ -126,6 +138,7 @@ test('rate: falha do GstPlayer volta a 1 e emite rate-failed', () => {
     p.setRate(2);
     assert.equal(p.rate, 1);
     assert.equal(failed, 1);
+    p.load(null);
 });
 
 testAsync('load → duration-changed ≈ 3 e uri', async () => {
@@ -293,9 +306,113 @@ testAsync('stop zera a posição e não deixa tocando', async () => {
     p.load(null);
 });
 
+testAsync('troca perto do fim da mídia antiga: sem ended espúrio e com duração/posição da nova', async () => {
+    const p = newPlayback();
+    p.load(otherUri); // 2 s
+    await waitFor(p, 'duration-changed', d => d > 0);
+    p.play();
+    await waitFor(p, 'position-updated', pos => pos >= 1.85, 5000);
+    const ended = record(p, 'ended');
+    const positions = record(p, 'position-updated');
+    p.load(uri); // 3 s; o EOS da antiga (≈2 s) estaria a caminho
+    await waitFor(p, 'duration-changed', d => d > 0);
+    await sleep(900);
+    assert.equal(ended.length, 0);
+    assert.equal(p.uri, uri);
+    assert.equal(near(p.duration, 3, 0.3), true);
+    assert.equal(p.position, 0);
+    assert.equal(p.playing, false);
+    assert.equal(positions.every(v => v === 0), true);
+    p.load(null);
+}, 15000);
+
+testAsync('rate e volume escolhidos antes do load valem no player novo (≈2x)', async () => {
+    const p = newPlayback();
+    p.setRate(2);
+    p.load(uri);
+    await waitFor(p, 'duration-changed', d => d > 0);
+    assert.equal(p.rate, 2);
+    p.play();
+    let first = null;
+    let last = null;
+    p.connect('position-updated', (_p, pos) => {
+        const sample = { pos, t: GLib.get_monotonic_time() / 1e6 };
+        if (first === null && pos > 0.3)
+            first = sample;
+        if (first !== null)
+            last = sample;
+    });
+    await waitFor(p, 'position-updated', pos => pos > 0.3);
+    await sleep(600);
+    const speed = (last.pos - first.pos) / (last.t - first.t);
+    assert.equal(speed > 1.5 && speed < 2.6, true);
+    assert.equal(p.rate, 2);
+    p.load(null);
+}, 15000);
+
+testAsync('arquivo inexistente → error, playing false e o toggle seguinte chama play', async () => {
+    const p = newPlayback();
+    const errors = record(p, 'error');
+    const failed = waitFor(p, 'error');
+    p.load(missingUri);
+    await failed;
+    assert.equal(errors.length >= 1, true);
+    assert.equal(errors[0], 'falha ao reproduzir');
+    assert.equal(p.playing, false);
+    let calls = [];
+    const play = p.play.bind(p);
+    const pause = p.pause.bind(p);
+    p.play = () => {
+        calls.push('play');
+        play();
+    };
+    p.pause = () => {
+        calls.push('pause');
+        pause();
+    };
+    p.toggle();
+    assert.deepEqual(calls, ['play']);
+    // o play pedido também falha; o toggle seguinte continua tentando tocar
+    await sleep(500);
+    calls = [];
+    p.toggle();
+    assert.deepEqual(calls, ['play']);
+    p.load(null);
+});
+
+testAsync('20 loads seguidos descartam os players antigos (handlers desconectados)', async () => {
+    const p = newPlayback();
+    let previous = null;
+    let previousIds = [];
+    for (let i = 0; i < 20; i++) {
+        p.load(Gio.File.new_for_path(links[i]).get_uri());
+        if (previous) {
+            assert.equal(previous !== p._player, true);
+            for (const id of previousIds)
+                assert.equal(GObject.signal_handler_is_connected(previous, id), false);
+        }
+        previous = p._player;
+        previousIds = p._handlerIds.slice();
+        assert.equal(previousIds.length >= 5, true);
+        if (i % 5 === 0)
+            p.play();
+        await sleep(30);
+    }
+    if (!(p.duration > 0))
+        await waitFor(p, 'duration-changed', d => d > 0);
+    assert.equal(near(p.duration, 3, 0.3), true);
+    p.load(null);
+    assert.equal(p._player, null);
+    await sleep(200);
+    assert.equal(p.playing, false);
+    assert.equal(p.position, 0);
+}, 15000);
+
 testAsync('limpeza do diretório temporário', async () => {
     for (const name of ['sine.ogg', 'other.ogg'])
         Gio.File.new_for_path(GLib.build_filenamev([tmp, name])).delete(null);
+    for (const link of links)
+        Gio.File.new_for_path(link).delete(null);
     Gio.File.new_for_path(tmp).delete(null);
 });
 
