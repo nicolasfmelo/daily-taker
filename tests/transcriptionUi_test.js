@@ -226,4 +226,12 @@ test('failureMessage: no retry só de salvar, avisa que nada será cobrado de no
     assert.equal(U.failureMessage(new Error('caminho /home/x'), 'transcribe'), new TranscribeError('unknown').message);
 });
 
+test('recordingNameProblem: recusa nome que termina em .transcript.json', () => {
+    assert.equal(U.recordingNameProblem('Daily.transcript.json'),
+        'O nome da gravação não pode terminar em ".transcript.json".');
+    assert.equal(U.recordingNameProblem('Daily'), null);
+    assert.equal(U.recordingNameProblem('notas.json'), null);
+    assert.equal(U.recordingNameProblem('Reunião P&D <revisão>'), null);
+});
+
 finish();

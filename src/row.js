@@ -3,7 +3,7 @@ const { Gdk, Gio, GObject, Gtk } = imports.gi;
 const { displayDateTime, formatTime } = imports.utils;
 const { WaveForm, WaveType } = imports.waveform;
 const { loadTranscript } = imports.transcriptStore;
-const { rowActions, rowStatus, statusInfo } = imports.transcriptionUi;
+const { recordingNameProblem, rowActions, rowStatus, statusInfo } = imports.transcriptionUi;
 
 var RowState = {
     PLAYING: 0,
@@ -180,6 +180,12 @@ var Row = GObject.registerClass({
     }
 
     onRenameRecording() {
+        const problem = recordingNameProblem(this._entry.text);
+        if (problem) {
+            this._entry.add_css_class('error');
+            this.get_root()?.addToast?.(problem);
+            return;
+        }
         try {
             if (this._name.label !== this._entry.text)
                 this._recording.name = this._entry.text;

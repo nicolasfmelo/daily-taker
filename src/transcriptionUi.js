@@ -1,7 +1,8 @@
 /* exported rowStatus, formatUsd, formatDuration, confirmMessage, hasNamedSpeakers, hasKey,
-   statusInfo, guardedSave, canRetry, rowActions, retryPlan, failureMessage */
+   statusInfo, guardedSave, canRetry, rowActions, retryPlan, failureMessage, recordingNameProblem */
 // Decisões da interface de "Gerar transcrição", sem GTK: testáveis isoladamente.
 const { TranscribeError, estimateCostUsd } = imports.transcriber;
+const { isTranscriptFileName } = imports.transcriptStore;
 
 // Ordem: execução em andamento > última execução falhou > transcrição salva > nada.
 // O serviço só informa 'error' se a ÚLTIMA execução falhou (um novo run limpa o erro),
@@ -117,3 +118,9 @@ var failureMessage = (error, plan) => {
         ? error.message : new TranscribeError('unknown').message;
     return plan === 'save' ? `${message} Tentar de novo só salva, sem nova cobrança.` : message;
 };
+
+// Um nome terminado em .transcript.json esconderia o áudio da lista (seria lido como
+// transcrição) na próxima abertura.
+var recordingNameProblem = name => isTranscriptFileName(name)
+    ? 'O nome da gravação não pode terminar em ".transcript.json".'
+    : null;
