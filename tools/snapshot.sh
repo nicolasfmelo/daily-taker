@@ -4,6 +4,7 @@
 #
 #   bash tools/snapshot.sh OUT.png [--component window|playerbar|transcriptview|detailpane|sidebar]
 #                          [--select N] [--tab transcricao|resumo] [--at SEG] [--size LxA]
+#                          [--state recorder]
 #   bash tools/snapshot.sh --probe-audio   # prova, no mesmo ambiente, que o áudio vai para o nada
 set -euo pipefail
 
@@ -18,7 +19,7 @@ die() {
 }
 
 usage() {
-    sed -n '5,6p' "$0" | sed 's/^# \{0,1\}//' >&2
+    sed -n '5,7p' "$0" | sed 's/^# \{0,1\}//' >&2
     exit 2
 }
 
@@ -32,7 +33,7 @@ case "$1" in -*) usage ;; esac
 out="$(realpath -m -- "$1")"
 shift
 
-component='window' select='' tab='' at='' size='1536x1024'
+component='window' select='' tab='' at='' size='1536x1024' state=''
 while [ $# -gt 0 ]; do
     [ $# -ge 2 ] || die "falta o valor de $1"
     case "$1" in
@@ -41,6 +42,7 @@ while [ $# -gt 0 ]; do
         --tab) tab="$2" ;;
         --at) at="$2" ;;
         --size) size="$2" ;;
+        --state) state="$2" ;;
         *) die "opção desconhecida: $1" ;;
     esac
     shift 2
@@ -50,6 +52,7 @@ done
 [ -z "$select" ] || [[ "$select" =~ ^[1-9][0-9]*$ ]] || die "--select espera um número a partir de 1"
 [ -z "$tab" ] || [[ "$tab" =~ ^(transcricao|resumo)$ ]] || die "--tab espera transcricao ou resumo"
 [ -z "$at" ] || [[ "$at" =~ ^[0-9]+(\.[0-9]+)?$ ]] || die "--at espera segundos"
+[ -z "$state" ] || [[ "$state" =~ ^recorder$ ]] || die "--state espera recorder"
 [[ "$size" =~ ^([1-9][0-9]*)x([1-9][0-9]*)$ ]] || die "--size espera LxA, por exemplo 1536x1024"
 [ -d "$(dirname -- "$out")" ] || die "diretório de saída não existe: $(dirname -- "$out")"
 [ -f "$build/build.ninja" ] || die "configure antes: meson setup build --prefix \$HOME/.local"
@@ -148,6 +151,7 @@ env -i \
     DAILY_TAKER_SNAPSHOT_TAB="$tab" \
     DAILY_TAKER_SNAPSHOT_AT="$at" \
     DAILY_TAKER_SNAPSHOT_SIZE="$size" \
+    DAILY_TAKER_SNAPSHOT_STATE="$state" \
     setsid --wait timeout --kill-after=5 "$timeout_s" \
         dbus-run-session -- "${command[@]}" \
         >"$work/run.log" 2>&1 &

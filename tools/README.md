@@ -40,6 +40,7 @@ Cria `DIR/daily-taker/` (o `XDG_DATA_HOME` do app aponta para `DIR`):
 ```sh
 bash tools/snapshot.sh OUT.png [--component window|playerbar|transcriptview|detailpane|sidebar]
                        [--select N] [--tab transcricao|resumo] [--at SEG] [--size LxA]
+                       [--state recorder]
 ```
 
 - `--component` (padrão `window`): `window` é a janela principal real. Os
@@ -50,6 +51,10 @@ bash tools/snapshot.sh OUT.png [--component window|playerbar|transcriptview|deta
   do player): já são lidos e repassados a `maybeSnapshot` (`params.select`,
   `params.tab`, `params.at`), mas a janela atual ainda os ignora (imprime uma
   nota); passam a valer quando a janela nova existir.
+- `--state recorder` (só com `--component window`): mostra a tela de gravação no
+  lugar da lista, para conferir o tema nela. Só troca a página da janela; nenhuma
+  gravação começa e nenhum dispositivo de áudio é aberto (`WINDOW_STATES` em
+  `src/devSnapshot.js`).
 - `--size LxA` (padrão `1536x1024`, o tamanho da mockup): tamanho do monitor
   virtual e da janela.
 - Leva ~4 s. Saída ≠ 0 se nenhum PNG for gerado; `SNAPSHOT_VERBOSE=1` mostra o
@@ -113,11 +118,10 @@ bash tools/snapshot.sh OUT.png [--component window|playerbar|transcriptview|deta
 
 ### Diferenças em relação à tela real
 
-- Fontes e esquema de cores padrão do sistema: a configuração do usuário
-  (`~/.config/gtk-4.0`, dconf, portal de configurações) não é lida. Por isso a
-  UI atual (que segue o sistema) sai **clara**, embora na sessão do usuário ela
-  apareça escura; quando o app forçar o tema escuro (`FORCE_DARK`, tarefa do
-  tema), a captura sai escura como a mockup.
+- Fontes padrão do sistema: a configuração do usuário (`~/.config/gtk-4.0`,
+  dconf, portal de configurações) não é lida. O esquema de cores não depende
+  disso: o app força o tema escuro (`src/appTheme.js`), então a captura sai
+  escura como na sessão do usuário.
 - O registro do GStreamer fica em cache em `build/snapshot-cache/`.
 - O log do mutter traz avisos esperados (portais sem implementação, PipeWire
   indisponível); o script só mostra as linhas do app.

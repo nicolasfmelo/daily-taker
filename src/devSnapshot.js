@@ -1,4 +1,4 @@
-/* exported COMPONENTS maybeSnapshot silencePlayback snapshotParams */
+/* exported COMPONENTS WINDOW_STATES maybeSnapshot silencePlayback snapshotParams stateError */
 // Captura de tela para conferência visual (tools/snapshot.sh). Inerte sem a variável
 // DAILY_TAKER_SNAPSHOT: com ela, mostra a janela (ou um componente numa janela simples),
 // espera assentar, grava um PNG no caminho indicado e encerra o app.
@@ -11,6 +11,25 @@ const SETTLE_MS = 1500;
 // pedido. As próximas tarefas acrescentam playerbar, transcriptview, detailpane e sidebar.
 var COMPONENTS = {
     window: (_params, ctx) => ctx.window,
+};
+
+// --state (só com --component window): página mostrada no lugar da lista. Só troca a
+// página; nenhuma gravação começa e nenhum dispositivo de áudio é aberto.
+var WINDOW_STATES = {
+    recorder: window => {
+        window.state = imports.window.WindowState.RECORDER;
+    },
+};
+
+// Mensagem de erro para um --state inválido, ou null.
+var stateError = params => {
+    if (!params.state)
+        return null;
+    if (params.component !== 'window')
+        return `--state só vale com --component window (recebido "${params.component}")`;
+    if (!(params.state in WINDOW_STATES))
+        return `estado desconhecido: "${params.state}" (disponíveis: ${Object.keys(WINDOW_STATES).join(', ')})`;
+    return null;
 };
 
 const env = name => GLib.getenv(name) || null;
@@ -34,6 +53,7 @@ var snapshotParams = () => {
         select: intOrNull(env('DAILY_TAKER_SNAPSHOT_SELECT')),
         tab: env('DAILY_TAKER_SNAPSHOT_TAB'),
         at: intOrNull(env('DAILY_TAKER_SNAPSHOT_AT')),
+        state: env('DAILY_TAKER_SNAPSHOT_STATE'),
         width,
         height,
     };
@@ -85,7 +105,14 @@ var maybeSnapshot = (window, params = snapshotParams()) => {
             `(disponíveis: ${Object.keys(COMPONENTS).join(', ')})`);
         return true;
     }
+    const badState = stateError(params);
+    if (badState) {
+        fail(badState);
+        return true;
+    }
     silencePlayback(window.player);
+    if (params.state)
+        WINDOW_STATES[params.state](window);
     if (params.component === 'window' && (params.select !== null || params.tab || params.at !== null))
         print('devSnapshot: nota: --select/--tab/--at ainda são ignorados pela janela atual');
 

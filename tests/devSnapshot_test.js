@@ -2,7 +2,7 @@ imports.gi.versions.Gtk = '4.0';
 imports.gi.versions.Adw = '1';
 const { GLib } = imports.gi;
 const { test, assert, finish } = imports.harness;
-const { silencePlayback, snapshotParams } = imports.devSnapshot;
+const { silencePlayback, snapshotParams, stateError } = imports.devSnapshot;
 
 const player = () => ({ volume: 1, mute: false });
 
@@ -25,6 +25,23 @@ test('com DAILY_TAKER_SNAPSHOT: silencePlayback zera volume e silencia', () => {
         assert.equal(snapshotParams().component, 'window');
         assert.equal(snapshotParams().width, 1536);
     } finally {
+        GLib.unsetenv('DAILY_TAKER_SNAPSHOT');
+    }
+});
+
+test('--state: lido de DAILY_TAKER_SNAPSHOT_STATE; só "recorder" e só com a janela', () => {
+    GLib.setenv('DAILY_TAKER_SNAPSHOT', '/nonexistent/out.png', true);
+    try {
+        GLib.unsetenv('DAILY_TAKER_SNAPSHOT_STATE');
+        assert.equal(snapshotParams().state, null);
+        assert.equal(stateError(snapshotParams()), null);
+        GLib.setenv('DAILY_TAKER_SNAPSHOT_STATE', 'recorder', true);
+        assert.equal(snapshotParams().state, 'recorder');
+        assert.equal(stateError(snapshotParams()), null);
+        assert.equal(typeof stateError({ component: 'window', state: 'gravando' }), 'string');
+        assert.equal(typeof stateError({ component: 'playerbar', state: 'recorder' }), 'string');
+    } finally {
+        GLib.unsetenv('DAILY_TAKER_SNAPSHOT_STATE');
         GLib.unsetenv('DAILY_TAKER_SNAPSHOT');
     }
 });
