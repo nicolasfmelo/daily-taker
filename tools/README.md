@@ -86,6 +86,19 @@ bash tools/snapshot.sh OUT.png [--component window|playerbar|transcriptview|deta
    - `XDG_RUNTIME_DIR` temporário: o socket Wayland fica nele e os servidores
      PipeWire/Pulse reais (em `/run/user/…`) ficam inalcançáveis — nenhum som
      sai e o microfone não é aberto (o `Recorder` só é construído).
+   - Mesmo que algo toque (`--at`), nenhum dispositivo de som real é aberto:
+     `ALSA_CONFIG_PATH` aponta para uma configuração gerada em que o único PCM é
+     `default`/`null` do tipo `null` (sem `hw`/cartões; CTL fica indefinido,
+     porque o alsa-lib não tem CTL nulo) e `GST_PLUGIN_FEATURE_RANK` zera os
+     sinks/fontes reais (alsa, pulse, pipewire, jack, openal, oss) e põe
+     `fakeaudiosink` no topo, então `autoaudiosink`/playbin/GstPlayer tocam
+     no nada e `autoaudiosrc` não acha fonte. `silencePlayback(player)` em
+     `src/devSnapshot.js` (volume 0 + mudo, só durante captura) é aplicado ao
+     player da janela e fica disponível para os componentes.
+     Prova: `bash tools/snapshot.sh --probe-audio` roda playbin, autoaudiosink,
+     autoaudiosrc, alsasink/alsasrc explícitos, o `pulsesrc` do gravador e um
+     GstPlayer nesse mesmo ambiente, mostra o sink escolhido e confere em
+     `/proc/<pid>/fd` que ninguém abriu `/dev/snd` (saída ≠ 0 se abrir).
    - `GSETTINGS_BACKEND=memory`: nada é escrito no dconf do usuário.
    - O mutter sai quando o app sai; o `dbus-run-session` encerra o barramento.
    - O `setsid` põe tudo num grupo de processos próprio; ao sair (inclusive por

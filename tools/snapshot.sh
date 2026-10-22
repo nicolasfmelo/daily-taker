@@ -4,6 +4,7 @@
 #
 #   bash tools/snapshot.sh OUT.png [--component window|playerbar|transcriptview|detailpane|sidebar]
 #                          [--select N] [--tab transcricao|resumo] [--at SEG] [--size LxA]
+#   bash tools/snapshot.sh --probe-audio   # prova, no mesmo ambiente, que o áudio vai para o nada
 set -euo pipefail
 
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -22,6 +23,11 @@ usage() {
 }
 
 [ $# -ge 1 ] || usage
+probe_audio=''
+if [ "$1" = '--probe-audio' ]; then
+    probe_audio=1
+    set -- "${TMPDIR:-/tmp}/daily-taker-probe-unused.png"
+fi
 case "$1" in -*) usage ;; esac
 out="$(realpath -m -- "$1")"
 shift
@@ -84,11 +90,31 @@ chmod 700 "$work/runtime"
 cp -a "$build/snapshot-fixtures/daily-taker" "$work/data/"
 mkdir -p "$build/snapshot-cache"
 
+# Áudio sem saída nem entrada reais, mesmo se algo tocar (--at, tarefas futuras):
+# - ALSA só conhece um "default" nulo (sem pcm.hw/card*: o /dev/snd não é aberto; CTL não
+#   tem tipo nulo no alsa-lib, então fica indefinido e abrir um falha);
+# - autoaudiosink/autoaudiosrc só acham o fakeaudiosink (sinks e fontes reais com rank 0).
+cat > "$work/alsa.conf" <<'ALSA'
+pcm.!default { type null }
+pcm.null { type null }
+ALSA
+gst_ranks='fakeaudiosink:MAX'
+for e in alsasink alsasrc pulsesink pulsesrc pipewiresink pipewiresrc jackaudiosink jackaudiosrc \
+    openalsink openalsrc oss4sink oss4src osssink osssrc; do
+    gst_ranks+=",$e:NONE"
+done
+
 # 3. mutter headless num barramento D-Bus próprio; o app roda como filho do mutter e o
 # mutter sai quando o app sai. Ambiente limpo: sem DISPLAY/WAYLAND_DISPLAY/DBus do usuário,
 # sem chave da API, GSettings em memória e sem servidor de áudio alcançável.
 rm -f -- "$out"
 gjs_bin="$(sed -n '1s/^#!//p' "$work/launcher")"
+if [ -n "$probe_audio" ]; then
+    command=(bash "$repo/tools/probe-audio.sh" "$work/data/daily-taker/Ideias para o app")
+else
+    command=(mutter --headless --wayland --no-x11 --wayland-display snapshot-wayland
+        --virtual-monitor "$size" -- "$gjs_bin" "$work/launcher")
+fi
 optional=()
 for v in TZ GSK_RENDERER; do
     [ -z "${!v:-}" ] || optional+=("$v=${!v}")
@@ -113,6 +139,8 @@ env -i \
     GTK_A11Y=none \
     PULSE_SERVER="unix:$work/runtime/no-pulse" \
     PIPEWIRE_REMOTE="$work/runtime/no-pipewire" \
+    ALSA_CONFIG_PATH="$work/alsa.conf" \
+    GST_PLUGIN_FEATURE_RANK="$gst_ranks" \
     GST_REGISTRY="$build/snapshot-cache/gstreamer-registry.bin" \
     DAILY_TAKER_SNAPSHOT="$out" \
     DAILY_TAKER_SNAPSHOT_COMPONENT="$component" \
@@ -121,14 +149,17 @@ env -i \
     DAILY_TAKER_SNAPSHOT_AT="$at" \
     DAILY_TAKER_SNAPSHOT_SIZE="$size" \
     setsid --wait timeout --kill-after=5 "$timeout_s" \
-        dbus-run-session -- \
-        mutter --headless --wayland --no-x11 --wayland-display snapshot-wayland \
-        --virtual-monitor "$size" -- "$gjs_bin" "$work/launcher" \
+        dbus-run-session -- "${command[@]}" \
         >"$work/run.log" 2>&1 &
 pgid=$!
 wait "$pgid"
 status=$?
 set -e
+
+if [ -n "$probe_audio" ]; then
+    cat "$work/run.log"
+    exit "$status"
+fi
 
 app_lines='^(devSnapshot|Gjs-|\(gjs|\(launcher|JS )'
 if [ ! -s "$out" ]; then

@@ -1,4 +1,4 @@
-/* exported COMPONENTS maybeSnapshot snapshotParams */
+/* exported COMPONENTS maybeSnapshot silencePlayback snapshotParams */
 // Captura de tela para conferência visual (tools/snapshot.sh). Inerte sem a variável
 // DAILY_TAKER_SNAPSHOT: com ela, mostra a janela (ou um componente numa janela simples),
 // espera assentar, grava um PNG no caminho indicado e encerra o app.
@@ -61,6 +61,18 @@ const savePng = (target, path) => {
     print(`devSnapshot: ${path} (${width}x${height})`);
 };
 
+// Defesa extra para quem tocar áudio durante uma captura (ex.: --at): zera o volume e
+// silencia o player/playbin. Sem DAILY_TAKER_SNAPSHOT não faz nada.
+var silencePlayback = playback => {
+    if (!env('DAILY_TAKER_SNAPSHOT') || !playback)
+        return;
+    // GstPlayer e playbin expõem as propriedades volume e mute (os setters diferem).
+    if ('volume' in playback)
+        playback.volume = 0;
+    if ('mute' in playback)
+        playback.mute = true;
+};
+
 // Devolve true se assumiu a exibição (o chamador não deve mostrar a janela).
 var maybeSnapshot = (window, params = snapshotParams()) => {
     if (!params)
@@ -73,6 +85,7 @@ var maybeSnapshot = (window, params = snapshotParams()) => {
             `(disponíveis: ${Object.keys(COMPONENTS).join(', ')})`);
         return true;
     }
+    silencePlayback(window.player);
     if (params.component === 'window' && (params.select !== null || params.tab || params.at !== null))
         print('devSnapshot: nota: --select/--tab/--at ainda são ignorados pela janela atual');
 
