@@ -33,8 +33,10 @@ test('icon dos dois lados: removido dos dois', () => {
     assert.equal(stripIconFromLayout('icon:close,icon'), ':close');
 });
 
-test('layout só com icon: vazio (o padrão do GTK vale)', () => {
-    assert.equal(stripIconFromLayout('icon'), '');
+test('layout só com icon: só o separador (sem botões; nunca o padrão do GTK, que traria o ícone)', () => {
+    assert.equal(stripIconFromLayout('icon'), ':');
+    assert.equal(stripIconFromLayout('icon,icon'), ':');
+    assert.equal(stripIconFromLayout(' icon '), ':');
     assert.equal(stripIconFromLayout('icon:'), ':');
     assert.equal(stripIconFromLayout(':icon'), ':');
 });
