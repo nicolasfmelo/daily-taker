@@ -26,6 +26,7 @@ var Settings = new Gio.Settings({ schema: pkg.name });
 
 const { Window } = imports.window;
 const { PreferencesWindow } = imports.preferences;
+const { maybeSnapshot } = imports.devSnapshot;
 
 var Application = GObject.registerClass(class Application extends Adw.Application {
     _init() {
@@ -105,7 +106,9 @@ var Application = GObject.registerClass(class Application extends Adw.Applicatio
         this.window = new Window({ application: this });
         if (pkg.name.endsWith('Devel'))
             this.window.add_css_class('devel');
-        this.window.show();
+        // Só com DAILY_TAKER_SNAPSHOT (tools/snapshot.sh); sem ela não faz nada.
+        if (!maybeSnapshot(this.window))
+            this.window.show();
     }
 
     _showPreferences() {

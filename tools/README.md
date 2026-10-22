@@ -1,0 +1,110 @@
+# Ferramentas de desenvolvimento
+
+Conferência visual da interface: renderizar a janela **real** do app (ou um
+componente) num PNG, com dados de exemplo, sem tocar a tela, os dados, a
+configuração, o chaveiro nem o áudio do usuário.
+
+## `make-fixtures.sh` — gravações de exemplo
+
+```sh
+bash tools/make-fixtures.sh DIR          # áudio na duração real (~5 s para gerar)
+FIXTURE_FAST=1 bash tools/make-fixtures.sh DIR   # áudio de 30 s (testes)
+```
+
+Cria `DIR/daily-taker/` (o `XDG_DATA_HOME` do app aponta para `DIR`):
+
+| Gravação                | Data (mtime e `recorded_at`) | Duração        | Transcrição |
+|-------------------------|------------------------------|----------------|-------------|
+| `Daily · Projeto Atlas` | hoje 09:30                   | 1148 s (19:08) | sim         |
+| `Ideias para o app`     | hoje 08:12                   | 272 s (04:32)  | sim         |
+| `Notas da reunião`      | ontem 16:45                  | 760 s (12:40)  | sim         |
+| `Sem transcrição`       | há 3 dias 14:05              | 95 s (01:35)   | não         |
+
+- Áudio Ogg/Opus mono 32 kb/s, sem extensão (como as gravações do app), um tom
+  com volume variando para a forma de onda não sair chapada.
+- `<nome>.transcript.json` no formato v1 (`src/transcript.js`), 2 locutores:
+  `0` renomeado "Nicolas" e `1` com o nome padrão "Locutor 2". Blocos da mockup
+  em 00:00, 00:18, 00:34 e 00:47, seguidos de mais 7 blocos (até ~2:40) para a
+  lista rolar. Gerados por `tools/fixtureData.js`.
+- A duração exibida pelo app vem do arquivo (GstPbutils.Discoverer); o campo
+  `duration` da transcrição tem o mesmo valor nominal. Com `FIXTURE_FAST=1` o
+  áudio tem 30 s, então a lista mostra 00:30 — use o modo normal para capturas.
+- As datas são relativas a hoje: rodar de novo atualiza datas e transcrições e
+  reaproveita o áudio (se o modo for o mesmo).
+- Segurança: recusa `DIR` dentro de `~/.local/share`, `~/.config` ou `~/.cache`
+  (do home real, mesmo com `HOME` trocado) e recusa `DIR/daily-taker` que tenha
+  arquivos não criados por ele (marca: `DIR/.daily-taker-fixtures`).
+
+## `snapshot.sh` — captura da janela
+
+```sh
+bash tools/snapshot.sh OUT.png [--component window|playerbar|transcriptview|detailpane|sidebar]
+                       [--select N] [--tab transcricao|resumo] [--at SEG] [--size LxA]
+```
+
+- `--component` (padrão `window`): `window` é a janela principal real. Os
+  demais são renderizados sozinhos numa janela simples, com dados de fixture;
+  são registrados em `COMPONENTS` em `src/devSnapshot.js` pelas próximas
+  tarefas. Um nome não registrado falha com mensagem clara e sem PNG.
+- `--select N` (item N da lista, a partir de 1), `--tab`, `--at SEG` (posição
+  do player): já são lidos e repassados a `maybeSnapshot` (`params.select`,
+  `params.tab`, `params.at`), mas a janela atual ainda os ignora (imprime uma
+  nota); passam a valer quando a janela nova existir.
+- `--size LxA` (padrão `1536x1024`, o tamanho da mockup): tamanho do monitor
+  virtual e da janela.
+- Leva ~4 s. Saída ≠ 0 se nenhum PNG for gerado; `SNAPSHOT_VERBOSE=1` mostra o
+  log completo do mutter/app; `SNAPSHOT_TIMEOUT` (padrão 60 s) limita a execução.
+
+### Como funciona (receita do compositor headless)
+
+1. `meson install -C build --destdir $tmp/stage` compila a árvore atual e a
+   instala numa raiz temporária; o lançador é copiado com o prefixo trocado.
+   **A instalação em `~/.local` não é tocada** (não precisa reinstalar para
+   capturar).
+2. Fixtures geradas (com cache) em `build/snapshot-fixtures/` e copiadas para
+   `$tmp/data/daily-taker/` a cada execução, pois o app pode alterá-las.
+3. O app roda como filho de um mutter headless num barramento D-Bus próprio,
+   com ambiente limpo (`env -i`):
+
+   ```sh
+   env -i PATH=… LANG=… HOME=$tmp/home \
+       XDG_DATA_HOME=$tmp/data XDG_CONFIG_HOME=$tmp/config \
+       XDG_CACHE_HOME=$tmp/cache XDG_RUNTIME_DIR=$tmp/runtime \
+       GSETTINGS_BACKEND=memory GSETTINGS_SCHEMA_DIR=$stage/…/glib-2.0/schemas \
+       GDK_BACKEND=wayland GDK_DEBUG=no-portals GIO_USE_VFS=local \
+       NO_AT_BRIDGE=1 GTK_A11Y=none \
+       PULSE_SERVER=unix:$tmp/runtime/no-pulse PIPEWIRE_REMOTE=$tmp/runtime/no-pipewire \
+       DAILY_TAKER_SNAPSHOT=OUT.png DAILY_TAKER_SNAPSHOT_SIZE=1536x1024 … \
+     setsid --wait timeout 60 dbus-run-session -- \
+       mutter --headless --wayland --no-x11 --wayland-display snapshot-wayland \
+              --virtual-monitor 1536x1024 -- gjs-console $tmp/launcher
+   ```
+
+   - Sem `DISPLAY`/`WAYLAND_DISPLAY`/`DBUS_SESSION_BUS_ADDRESS` do usuário:
+     nada aparece na tela e o app não fala com a sessão real (nem com o
+     chaveiro; `DAILY_TAKER_OP_KEY` também não passa).
+   - `XDG_RUNTIME_DIR` temporário: o socket Wayland fica nele e os servidores
+     PipeWire/Pulse reais (em `/run/user/…`) ficam inalcançáveis — nenhum som
+     sai e o microfone não é aberto (o `Recorder` só é construído).
+   - `GSETTINGS_BACKEND=memory`: nada é escrito no dconf do usuário.
+   - O mutter sai quando o app sai; o `dbus-run-session` encerra o barramento.
+   - O `setsid` põe tudo num grupo de processos próprio; ao sair (inclusive por
+     erro ou Ctrl+C) o script mata só esse grupo e apaga `$tmp`. O mutter e o
+     gnome-shell do usuário nunca são tocados (confira com `pgrep -a mutter`).
+4. `src/devSnapshot.js` (`maybeSnapshot`, chamado em `Application.vfunc_activate`,
+   inerte sem `DAILY_TAKER_SNAPSHOT`) mostra a janela no tamanho pedido, espera
+   1,5 s depois do `map` e grava o PNG: `Gtk.WidgetPaintable` → `Gtk.Snapshot`
+   → `GskRenderNode` → `renderer.render_texture(node, 0,0,L,A)` →
+   `texture.save_to_png`. A área é a da janela, sem a sombra da decoração.
+   Depois fecha a janela (o app sai normalmente).
+
+### Diferenças em relação à tela real
+
+- Fontes e esquema de cores padrão do sistema: a configuração do usuário
+  (`~/.config/gtk-4.0`, dconf, portal de configurações) não é lida. Por isso a
+  UI atual (que segue o sistema) sai **clara**, embora na sessão do usuário ela
+  apareça escura; quando o app forçar o tema escuro (`FORCE_DARK`, tarefa do
+  tema), a captura sai escura como a mockup.
+- O registro do GStreamer fica em cache em `build/snapshot-cache/`.
+- O log do mutter traz avisos esperados (portais sem implementação, PipeWire
+  indisponível); o script só mostra as linhas do app.

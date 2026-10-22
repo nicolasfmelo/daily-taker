@@ -2,6 +2,7 @@
 <gresources>
   <gresource prefix="/dev/nicolas/DailyTaker@profile@/js">
     <file>application.js</file>
+    <file>devSnapshot.js</file>
     <file>main.js</file>
     <file>preferences.js</file>
     <file>preferencesLogic.js</file>
