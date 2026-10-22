@@ -137,10 +137,10 @@ test('confirmMessage: duração desconhecida não promete custo', () => {
     assert.deepEqual(U.confirmMessage(Infinity), expected);
 });
 
-test('confirmMessage regenerate: avisa que cobra de novo, com a estimativa', () => {
+test('confirmMessage regenerate: avisa que cobra de novo, com duração e estimativa', () => {
     assert.deepEqual(U.confirmMessage(2700, { regenerate: true }), {
         heading: 'Gerar novamente?',
-        body: 'Isto cobra de novo (US$ 0,08).',
+        body: 'Isto cobra de novo: 45 min, custo estimado US$ 0,08.',
     });
 });
 
@@ -151,6 +151,30 @@ test('confirmMessage regenerate: duração desconhecida não promete custo', () 
     };
     assert.deepEqual(U.confirmMessage(0, { regenerate: true }), expected);
     assert.deepEqual(U.confirmMessage(NaN, { regenerate: true }), expected);
+});
+
+test('confirmMessage regenerate: avisa que os nomes dos locutores serão perdidos', () => {
+    assert.deepEqual(U.confirmMessage(2700, { regenerate: true, namedSpeakers: true }), {
+        heading: 'Gerar novamente?',
+        body: 'Isto cobra de novo: 45 min, custo estimado US$ 0,08. Os nomes dados aos locutores serão perdidos.',
+    });
+    assert.deepEqual(U.confirmMessage(0, { regenerate: true, namedSpeakers: true }), {
+        heading: 'Gerar novamente?',
+        body: 'Isto cobra de novo. A duração ainda não é conhecida, então não é possível estimar o custo. Os nomes dados aos locutores serão perdidos.',
+    });
+});
+
+test('confirmMessage regenerate: sem nomes dados, sem aviso de perda', () => {
+    const body = U.confirmMessage(2700, { regenerate: true, namedSpeakers: false }).body;
+    assert.equal(body.includes('locutores'), false);
+});
+
+test('hasNamedSpeakers: só nomes não vazios contam', () => {
+    assert.equal(U.hasNamedSpeakers({ speakers: { 1: 'Ana' } }), true);
+    assert.equal(U.hasNamedSpeakers({ speakers: { 1: '' } }), false);
+    assert.equal(U.hasNamedSpeakers({ speakers: {} }), false);
+    assert.equal(U.hasNamedSpeakers({}), false);
+    assert.equal(U.hasNamedSpeakers(null), false);
 });
 
 test('rowActions: transcrever exige duração conhecida e nada em andamento', () => {

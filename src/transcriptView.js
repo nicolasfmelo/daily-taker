@@ -37,6 +37,7 @@ var TranscriptView = GObject.registerClass({
         this._playerStateId = 0;
         this._highlightSourceId = 0;
         this._currentIndex = -1;
+        this._running = false;
 
         const actions = new Gio.SimpleActionGroup();
         const copyAll = new Gio.SimpleAction({
@@ -68,6 +69,10 @@ var TranscriptView = GObject.registerClass({
 
     get recordingFile() {
         return this._recordingFile;
+    }
+
+    get transcript() {
+        return this._transcript;
     }
 
     // O destaque acompanha o player só quando ele toca ESTA gravação.
@@ -110,7 +115,13 @@ var TranscriptView = GObject.registerClass({
         this._stopHighlightTimer();
     }
 
+    // Durante uma nova transcrição renomear fica bloqueado: o resultado sobrescreveria o nome.
     set running(running) {
+        this._running = running;
+        for (const row of this._blockRows) {
+            if (row.speakerButton)
+                row.speakerButton.sensitive = !running;
+        }
         this._regenerateAction.enabled = !running;
         this._regenerateStack.visible_child_name = running ? 'running' : 'idle';
         this._regenerateSpinner.spinning = running;
@@ -200,6 +211,7 @@ var TranscriptView = GObject.registerClass({
                     css_classes: ['heading'],
                 }),
                 tooltip_text: 'Renomear locutor',
+                sensitive: !this._running,
                 valign: Gtk.Align.CENTER,
                 css_classes: ['flat', 'speaker-button'],
             });
@@ -332,7 +344,7 @@ var TranscriptView = GObject.registerClass({
         const transcript = this._transcript;
         const recordingFile = this._recordingFile;
         dialog.connect('response', (_dialog, response) => {
-            if (response === 'rename' && transcript === this._transcript)
+            if (response === 'rename' && transcript === this._transcript && !this._running)
                 this._applySpeakerName(recordingFile, speaker, entry.text);
         });
         dialog.present();

@@ -1,5 +1,5 @@
-/* exported rowStatus, formatUsd, formatDuration, confirmMessage, hasKey, statusInfo,
-   guardedSave, canRetry, rowActions */
+/* exported rowStatus, formatUsd, formatDuration, confirmMessage, hasNamedSpeakers, hasKey,
+   statusInfo, guardedSave, canRetry, rowActions */
 // Decisões da interface de "Gerar transcrição", sem GTK: testáveis isoladamente.
 const { TranscribeError, estimateCostUsd } = imports.transcriber;
 
@@ -37,16 +37,18 @@ var formatDuration = seconds => {
 };
 
 // regenerate: a gravação já tem transcrição e o usuário pede outra (cobrada de novo).
-var confirmMessage = (seconds, { regenerate = false } = {}) => {
+// namedSpeakers: a transcrição atual tem nomes dados pelo usuário, que a nova não terá
+// (os ids de uma nova diarização não correspondem necessariamente às mesmas pessoas).
+var confirmMessage = (seconds, { regenerate = false, namedSpeakers = false } = {}) => {
     // Sem duração conhecida não há estimativa honesta: não mostra "0 s / US$ 0,00".
     const known = Number.isFinite(seconds) && seconds > 0;
     if (regenerate) {
-        return {
-            heading: 'Gerar novamente?',
-            body: known
-                ? `Isto cobra de novo (${formatUsd(estimateCostUsd(seconds))}).`
-                : `Isto cobra de novo. ${UNKNOWN_DURATION}`,
-        };
+        const parts = [known
+            ? `Isto cobra de novo: ${formatDuration(seconds)}, custo estimado ${formatUsd(estimateCostUsd(seconds))}.`
+            : `Isto cobra de novo. ${UNKNOWN_DURATION}`];
+        if (namedSpeakers)
+            parts.push('Os nomes dados aos locutores serão perdidos.');
+        return { heading: 'Gerar novamente?', body: parts.join(' ') };
     }
     if (!known)
         return { heading: 'Transcrever esta gravação?', body: UNKNOWN_DURATION };
@@ -64,6 +66,8 @@ var rowActions = ({ status, seconds, editMode }) => ({
     rename: !editMode && status !== 'running',
     open: !editMode && status === 'ready',
 });
+
+var hasNamedSpeakers = t => Object.values(t?.speakers ?? {}).some(Boolean);
 
 var hasKey = entry => Boolean(entry && entry.key);
 

@@ -31,7 +31,7 @@ const { saveTranscript } = imports.transcriptStore;
 const { TranscriptionService } = imports.transcriptionService;
 const { TranscriptView } = imports.transcriptView;
 const { viewHeader } = imports.transcriptViewModel;
-const { canRetry, confirmMessage, guardedSave, hasKey } = imports.transcriptionUi;
+const { canRetry, confirmMessage, guardedSave, hasKey, hasNamedSpeakers } = imports.transcriptionUi;
 
 var WindowState = {
     EMPTY: 0,
@@ -144,7 +144,10 @@ var Window = GObject.registerClass({
         view.connect('regenerate-requested', () => {
             const recording = this._findRecording(view.recordingFile);
             if (recording)
-                this._requestTranscription(recording, { regenerate: true });
+                this._requestTranscription(recording, {
+                    regenerate: true,
+                    namedSpeakers: hasNamedSpeakers(view.transcript),
+                });
             else
                 this.addToast('A gravação não está mais disponível');
         });
@@ -233,7 +236,8 @@ var Window = GObject.registerClass({
     }
 
     // regenerate: "Gerar novamente" na visão de transcrição (mesmas guardas, outro texto).
-    _requestTranscription(recording, { regenerate = false } = {}) {
+    _requestTranscription(recording, options = {}) {
+        const { regenerate = false } = options;
         // A chave é verificada antes de tocar no serviço: sem chave a linha não entra em erro.
         let key = null;
         try {
@@ -249,7 +253,7 @@ var Window = GObject.registerClass({
         if (this.transcriptionService.status(recording.file) === 'running')
             return;
 
-        const { heading, body } = confirmMessage(recording.duration / 1e9, { regenerate });
+        const { heading, body } = confirmMessage(recording.duration / 1e9, options);
         const dialog = new Adw.MessageDialog({
             transient_for: this,
             modal: true,
@@ -263,7 +267,7 @@ var Window = GObject.registerClass({
         dialog.close_response = 'cancel';
         dialog.connect('response', (_dialog, response) => {
             if (response === 'transcribe' && !this._closed)
-                this._runTranscription(recording, { regenerate });
+                this._runTranscription(recording, options);
         });
         dialog.present();
     }
