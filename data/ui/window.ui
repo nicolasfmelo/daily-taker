@@ -40,24 +40,36 @@
                         </child>
                         <child type="start">
                           <object class="GtkBox">
-                            <property name="spacing">10</property>
+                            <property name="spacing">14</property>
                             <style>
                               <class name="app-title-box"/>
                             </style>
                             <child>
                               <object class="GtkImage" id="appIcon">
-                                <property name="pixel_size">28</property>
+                                <property name="pixel_size">42</property>
                                 <property name="accessible_role">presentation</property>
                               </object>
                             </child>
                             <child>
                               <object class="GtkLabel">
                                 <property name="label">Daily Taker</property>
+                                <!-- Janela estreita: o título encolhe antes dos botões. -->
+                                <property name="ellipsize">end</property>
                                 <style>
                                   <class name="app-title"/>
                                 </style>
                               </object>
                             </child>
+                          </object>
+                        </child>
+                        <!-- Divisor entre os botões do app e os da janela (mockup). -->
+                        <child type="end">
+                          <object class="GtkBox">
+                            <property name="valign">fill</property>
+                            <property name="accessible_role">presentation</property>
+                            <style>
+                              <class name="header-separator"/>
+                            </style>
                           </object>
                         </child>
                         <child type="end">
@@ -66,16 +78,22 @@
                             <property name="icon_name">open-menu-symbolic</property>
                             <property name="menu_model">primaryMenu</property>
                             <property name="tooltip_text">Menu principal</property>
+                            <style>
+                              <class name="header-icon"/>
+                            </style>
                           </object>
                         </child>
                         <child type="end">
                           <object class="GtkButton" id="preferencesButton">
-                            <property name="icon_name">emblem-system-symbolic</property>
+                            <property name="icon_name">settings-outline-symbolic</property>
                             <property name="action_name">app.preferences</property>
                             <property name="tooltip_text">Preferências</property>
                             <accessibility>
                               <property name="label">Preferências</property>
                             </accessibility>
+                            <style>
+                              <class name="header-icon"/>
+                            </style>
                           </object>
                         </child>
                         <child type="end">
@@ -98,9 +116,11 @@
                     </child>
                     <property name="content">
                       <object class="AdwNavigationSplitView" id="splitView">
-                        <property name="min_sidebar_width">300</property>
-                        <property name="max_sidebar_width">340</property>
-                        <property name="sidebar_width_fraction">0.25</property>
+                        <!-- Sidebar de largura fixa (336 px, a proporção da mockup); na janela
+                             média 300 px (o selo mostra só o ponto). -->
+                        <property name="min_sidebar_width">336</property>
+                        <property name="max_sidebar_width">336</property>
+                        <property name="sidebar_width_fraction">0.3</property>
                         <property name="sidebar">
                           <object class="AdwNavigationPage" id="sidebarPage">
                             <property name="title">Gravações</property>
@@ -128,12 +148,13 @@
         </property>
       </object>
     </property>
-    <!-- Janela média: sidebar mais estreita; o painel e o player (setters no window.js)
-         ficam compactos para caberem ao lado dela. -->
+    <!-- Janela média: sidebar de 300 px (nunca menos) com o selo só no ponto; o painel e o
+         player (setters no window.js) ficam compactos para caberem ao lado dela. -->
     <child>
       <object class="AdwBreakpoint" id="mediumBreakpoint">
         <condition>max-width: 1000sp</condition>
-        <setter object="splitView" property="min_sidebar_width">280</setter>
+        <setter object="splitView" property="min_sidebar_width">300</setter>
+        <setter object="splitView" property="max_sidebar_width">300</setter>
       </object>
     </child>
     <!-- Abaixo de 720 sp a sidebar recolhe sobre o painel (lista → detalhe). Vem depois

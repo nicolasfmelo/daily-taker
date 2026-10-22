@@ -30,10 +30,10 @@ const SidebarItem = GObject.registerClass(class SidebarItem extends Gtk.ListBoxR
         this.recording = recording;
         this.badgeKind = 'none';
 
-        const box = new Gtk.Box({ spacing: 14 });
+        const box = new Gtk.Box({ spacing: 18 });
         this._icon = new Gtk.Image({
             icon_name: 'audio-waveform-symbolic',
-            pixel_size: 24,
+            pixel_size: 26,
             valign: Gtk.Align.CENTER,
             accessible_role: Gtk.AccessibleRole.PRESENTATION,
             css_classes: ['item-icon'],
@@ -56,7 +56,8 @@ const SidebarItem = GObject.registerClass(class SidebarItem extends Gtk.ListBoxR
         text.append(this._title);
 
         const line = new Gtk.Box({ spacing: 8 });
-        // Curto (hora/data e duração): nunca cortado; quem encolhe é o rótulo do selo.
+        // Curto (hora/data e duração): nunca cortado. O rótulo do selo também não: na
+        // sidebar estreita (compact) só o ponto fica, com o texto na dica.
         this._subtitle = new Gtk.Label({
             xalign: 0,
             hexpand: true,
@@ -68,7 +69,7 @@ const SidebarItem = GObject.registerClass(class SidebarItem extends Gtk.ListBoxR
         this._badge = new Gtk.Box({ spacing: 6, valign: Gtk.Align.CENTER, visible: false, css_classes: ['status-badge'] });
         this._dot = new Gtk.Box({ valign: Gtk.Align.CENTER, css_classes: ['status-dot'] });
         this._spinner = new Gtk.Spinner({ valign: Gtk.Align.CENTER, css_classes: ['status-spinner'] });
-        this._badgeLabel = new Gtk.Label({ use_markup: false, ellipsize: Pango.EllipsizeMode.END });
+        this._badgeLabel = new Gtk.Label({ use_markup: false });
         this._badge.append(this._dot);
         this._badge.append(this._spinner);
         this._badge.append(this._badgeLabel);
@@ -86,6 +87,11 @@ const SidebarItem = GObject.registerClass(class SidebarItem extends Gtk.ListBoxR
         this.child = box;
     }
 
+    // Sidebar estreita: o selo mostra só o ponto (ou o spinner); o texto fica na dica.
+    setCompact(compact) {
+        this._badgeLabel.visible = !compact;
+    }
+
     setTitle(name) {
         this._title.label = name ?? '';
         this._title.tooltip_text = this._title.label;
@@ -101,6 +107,7 @@ const SidebarItem = GObject.registerClass(class SidebarItem extends Gtk.ListBoxR
         this._badgeLabel.label = label;
         // Numa sidebar estreita o rótulo pode ser cortado: o texto inteiro fica na dica.
         this._badge.tooltip_text = label || null;
+        this._badge.update_property([Gtk.AccessibleProperty.LABEL], [label ?? '']);
         this._dot.visible = kind === 'ok' || kind === 'error';
         this._spinner.visible = kind === 'running';
         this._spinner.spinning = kind === 'running';
@@ -130,6 +137,11 @@ var Sidebar = GObject.registerClass({
         // O aquecimento do cache da busca chegou ao fim da lista (verificação).
         'search-warmed': {},
     },
+    Properties: {
+        // Janela média (sidebar de 300 px): selos só com o ponto, sem o texto.
+        'compact': GObject.ParamSpec.boolean('compact', 'compact', 'Narrow layout',
+            GObject.ParamFlags.READWRITE, false),
+    },
 }, class Sidebar extends Gtk.Box {
     // `warmSearch` (padrão true): depois do primeiro `map`, lê em segundo plano as
     // transcrições da lista para a primeira busca não travar (ver warmSearchCache).
@@ -150,6 +162,7 @@ var Sidebar = GObject.registerClass({
         this._warmSourceId = 0;
         this._warmStarted = false;
         this._warmAgain = false;
+        this._compact = false;
 
         this._filter = Gtk.CustomFilter.new(item => this._matches(item));
         this._model = new Gtk.FilterListModel({ model: recordingList, filter: this._filter, incremental: false });
@@ -214,6 +227,22 @@ var Sidebar = GObject.registerClass({
 
     get selected() {
         return this._selected;
+    }
+
+    get compact() {
+        return this._compact;
+    }
+
+    set compact(value) {
+        const next = Boolean(value);
+        if (next === this._compact)
+            return;
+        this._compact = next;
+        for (let row = this._list.get_first_child(); row; row = row.get_next_sibling()) {
+            if (row instanceof SidebarItem)
+                row.setCompact(next);
+        }
+        this.notify('compact');
     }
 
     // Seleção programática. Uma gravação escondida pela busca limpa a busca antes; uma que
@@ -410,6 +439,7 @@ var Sidebar = GObject.registerClass({
 
     _createRow(recording) {
         const row = new SidebarItem(recording);
+        row.setCompact(this._compact);
         row.setTitle(recording.name);
         row.setSubtitle(this._subtitleOf(recording, new Date()));
         row.setBadge(statusBadge(this._statusOf(recording)));

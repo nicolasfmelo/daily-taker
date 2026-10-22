@@ -19,6 +19,7 @@
   <gresource prefix="/dev/nicolas/DailyTaker/icons/16x16/actions/">
     <file compressed="true" preprocess="xml-stripblanks" alias="audio-waveform-symbolic.svg">icons/audio-waveform-symbolic.svg</file>
     <file compressed="true" preprocess="xml-stripblanks" alias="export-audio-symbolic.svg">icons/export-audio-symbolic.svg</file>
+    <file compressed="true" preprocess="xml-stripblanks" alias="settings-outline-symbolic.svg">icons/settings-outline-symbolic.svg</file>
     <file compressed="true" preprocess="xml-stripblanks" alias="skip-back-symbolic.svg">icons/skip-back-symbolic.svg</file>
     <file compressed="true" preprocess="xml-stripblanks" alias="skip-forward-symbolic.svg">icons/skip-forward-symbolic.svg</file>
   </gresource>

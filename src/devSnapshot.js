@@ -759,6 +759,10 @@ const windowComponent = (params, { window }) => {
             window._sidebar.setQuery(params.query);
         if (n > 0) {
             await durationKnown(window.playback);
+            // A onda do player desenhada (picos gerados ou lidos do cache), como na mockup.
+            const selected = window._sidebar.selected;
+            if (selected && selected.peaks.length === 0)
+                await within(nextSignal(selected, 'peaks-updated'), 20000);
             // Volume de exemplo, como na mockup (60 %), pelo slider da barra. Só com as
             // configurações em memória (o snapshot.sh): nada vai para o dconf do usuário.
             if (GLib.getenv('GSETTINGS_BACKEND') === 'memory')
@@ -1457,6 +1461,9 @@ const windowCheckComponent = (params, { window }) => {
             'PlayerBar nova lê de volta 1,5x, 40 % e Acompanhar áudio desligado');
             reopened.bind(null);
             other.destroy();
+            // Solta o bind das configurações antes de desfazer a barra (senão a próxima
+            // mudança de follow-audio iria para um objeto já desfeito).
+            Gio.Settings.unbind(reopened, 'follow-audio');
             reopened.run_dispose();
             bar._rateAction.activate(new GLib.Variant('d', 1));
             bar._volumeScale.set_value(100);

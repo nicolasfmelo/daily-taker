@@ -101,7 +101,7 @@ var PlayerBar = GObject.registerClass({
         this._compact = next;
         this._volumeScale.visible = !next;
         this._followLabel.visible = !next;
-        this.spacing = next ? 10 : 20;
+        this.spacing = next ? 10 : 24;
         this.notify('compact');
     }
 

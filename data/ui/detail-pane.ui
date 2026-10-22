@@ -85,6 +85,7 @@
                             <style>
                               <class name="flat"/>
                               <class name="circular"/>
+                              <class name="detail-more"/>
                             </style>
                           </object>
                         </child>
@@ -103,7 +104,7 @@
                     </child>
                     <child>
                       <object class="GtkBox" id="tabsRow">
-                        <property name="spacing">8</property>
+                        <property name="spacing">10</property>
                         <style>
                           <class name="detail-tabs-row"/>
                         </style>
@@ -117,7 +118,9 @@
                             </style>
                             <property name="child">
                               <object class="GtkBox">
-                                <property name="spacing">10</property>
+                                <style>
+                                  <class name="detail-tab-content"/>
+                                </style>
                                 <child>
                                   <object class="GtkImage">
                                     <property name="icon_name">x-office-document-symbolic</property>
@@ -142,7 +145,9 @@
                             </style>
                             <property name="child">
                               <object class="GtkBox">
-                                <property name="spacing">10</property>
+                                <style>
+                                  <class name="detail-tab-content"/>
+                                </style>
                                 <child>
                                   <object class="GtkImage">
                                     <property name="icon_name">view-list-bullet-symbolic</property>
@@ -163,9 +168,12 @@
                           </object>
                         </child>
                         <child>
+                          <!-- Espaço entre os botões no CSS (border-spacing): menor na janela média. -->
                           <object class="GtkBox">
-                            <property name="spacing">10</property>
                             <property name="valign">center</property>
+                            <style>
+                              <class name="detail-toolbar"/>
+                            </style>
                             <child>
                               <object class="GtkToggleButton" id="searchButton">
                                 <property name="icon_name">system-search-symbolic</property>

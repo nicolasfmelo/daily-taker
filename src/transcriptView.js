@@ -10,6 +10,9 @@ const { currentBlockIndex, findMatches, nextIndex, shouldSeekOnClick, speakerEnt
 
 // Blocos criados por iteração ociosa: milhares de blocos não travam a interface.
 const CHUNK_SIZE = 100;
+// Largura máxima do texto do bloco, em "caracteres" do GTK (a largura média de um dígito,
+// ~12,4 px a 20 px): 44 ≈ 540 px, a medida de leitura da mockup.
+const TEXT_MAX_CHARS = 44;
 // Rolagem suave até o bloco atual / resultado da busca.
 const SCROLL_DURATION_MS = 250;
 
@@ -371,12 +374,12 @@ var TranscriptView = GObject.registerClass({
     }
 
     // Layout da mockup: horário | ponto do locutor | nome (renomear) sobre o texto.
-    // Grade: linha 0 = horário, ponto, nome (ou o texto, sem locutor), menu; linha 1 = texto.
+    // Grade: linha 0 = horário, ponto, nome (ou o texto, sem locutor), espaço, menu; linha 1 = texto.
     _createBlock(index) {
         const block = this._blocks[index];
         const box = new Gtk.Grid({
             column_spacing: 14,
-            row_spacing: 6,
+            row_spacing: 4,
             css_classes: ['transcript-block'],
         });
 
@@ -419,14 +422,17 @@ var TranscriptView = GObject.registerClass({
             box.attach(speakerButton, 2, 0, 1, 1);
         }
 
+        // O texto quebra numa largura de leitura (~540 px, como na mockup) mesmo com o
+        // painel largo; o bloco (fundo do atual, clique) continua na largura toda. Sem
+        // hexpand: a coluna vazia ao lado é que cresce.
         const text = new Gtk.Label({
             label: block.text,
             use_markup: false,
             selectable: true,
             wrap: true,
             wrap_mode: Pango.WrapMode.WORD_CHAR,
+            max_width_chars: TEXT_MAX_CHARS,
             xalign: 0,
-            hexpand: true,
             valign: Gtk.Align.BASELINE_FILL,
             css_classes: ['transcript-text'],
         });
@@ -450,7 +456,9 @@ var TranscriptView = GObject.registerClass({
             menu.append_item(item);
             button.menu_model = menu;
         });
-        box.attach(menuButton, 3, 0, 1, hasName ? 2 : 1);
+        // Coluna vazia que expande: o texto fica na largura de leitura e o menu na borda.
+        box.attach(new Gtk.Box({ hexpand: true }), 3, 0, 1, 1);
+        box.attach(menuButton, 4, 0, 1, hasName ? 2 : 1);
 
         this._addBlockSeek(box, text, block.start);
         return { box, speakerButton };

@@ -1,5 +1,5 @@
 /* exported SeekWaveform */
-// Forma de onda clicável do player: barras de 3 px (2 px de intervalo) da gravação
+// Forma de onda clicável do player: barras de 2 px (2 px de intervalo) da gravação
 // inteira, parte já tocada em laranja, resto no cinza secundário translúcido, e um
 // marcador redondo na posição. Clique e arraste emitem `seek-requested(fração)`.
 const { GObject, Gtk } = imports.gi;
@@ -7,7 +7,7 @@ const Cairo = imports.cairo;
 
 const { BarsCache, fractionFromX } = imports.playerModel;
 
-const BAR_WIDTH = 3;
+const BAR_WIDTH = 2;
 const BAR_GAP = 2;
 const MIN_BAR_HEIGHT = 2;
 const MARKER_RADIUS = 5;
@@ -32,7 +32,7 @@ var SeekWaveform = GObject.registerClass({
         this._position = 0;
         this._dragging = false;
         this._dragStartX = 0;
-        super._init({ height_request: 44, hexpand: true, ...params });
+        super._init({ height_request: 34, hexpand: true, ...params });
         this.add_css_class('seek-waveform');
         this.set_cursor_from_name('pointer');
         this.set_draw_func((_area, cr, width, height) => this._draw(cr, width, height));

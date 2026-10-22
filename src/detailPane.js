@@ -63,8 +63,9 @@ var DetailPane = GObject.registerClass({
         this._errorMessage = '';
         this._state = 'no-selection';
 
-        // Margens laterais: os blocos alinham com o divisor sob as abas (como na mockup).
-        this._view = new TranscriptView({ vexpand: true, margin_start: 22, margin_end: 22 });
+        // Margens laterais (+ 8 px dos blocos): a borda do bloco alinha com o título e o
+        // divisor à esquerda e fica mais perto da borda à direita (como na mockup).
+        this._view = new TranscriptView({ vexpand: true, margin_start: 16, margin_end: 8 });
         this._stateStack.add_named(this._view, 'ready');
         // Renomear um locutor troca a transcrição dentro da visão.
         this._view.connect('transcript-changed', (_view, t) => {
@@ -121,8 +122,8 @@ var DetailPane = GObject.registerClass({
             this.add_css_class('compact');
         else
             this.remove_css_class('compact');
-        this._view.margin_start = next ? 8 : 22;
-        this._view.margin_end = next ? 8 : 22;
+        this._view.margin_start = next ? 8 : 16;
+        this._view.margin_end = 8;
         this.notify('compact');
     }
 

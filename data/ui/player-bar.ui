@@ -2,7 +2,7 @@
 <interface>
   <template class="Gjs_PlayerBar" parent="GtkBox">
     <property name="orientation">horizontal</property>
-    <property name="spacing">20</property>
+    <property name="spacing">24</property>
     <style>
       <class name="player-bar"/>
     </style>
@@ -72,7 +72,7 @@
         <child>
           <object class="GtkScale" id="volumeScale">
             <property name="valign">center</property>
-            <property name="width_request">110</property>
+            <property name="width_request">96</property>
             <property name="draw_value">False</property>
             <property name="tooltip_text">Volume</property>
             <property name="adjustment">
@@ -99,6 +99,9 @@
           <object class="GtkLabel" id="followLabel">
             <property name="label">Acompanhar áudio</property>
             <property name="mnemonic_widget">followSwitch</property>
+            <style>
+              <class name="follow-label"/>
+            </style>
           </object>
         </child>
         <child>

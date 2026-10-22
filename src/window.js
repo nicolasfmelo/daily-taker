@@ -141,6 +141,8 @@ var Window = GObject.registerClass({
             breakpoint.add_setter(this._playerBar, 'compact', true);
             breakpoint.add_setter(this._detailPane, 'compact', true);
         }
+        // Só na média: recolhida, a sidebar ocupa a janela e mostra os selos inteiros.
+        this._mediumBreakpoint.add_setter(this._sidebar, 'compact', true);
         this._playerBar.bind(this.playback);
         this._detailPane.bindPlayback(this.playback);
         this._playerBar.bind_property('follow-audio', this._detailPane.view, 'follow-audio',
