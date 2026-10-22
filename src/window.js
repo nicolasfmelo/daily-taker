@@ -352,7 +352,8 @@ var Window = GObject.registerClass({
     }
 
     sendNotification(message, recording, index) {
-        const toast = Adw.Toast.new(message);
+        // Sem markup: o nome da gravação pode ter & ou < (ex.: "Reunião P&D").
+        const toast = new Adw.Toast({ title: message, use_markup: false });
         toast.connect('dismissed', () => {
             if (!this.toastUndo)
                 recording.delete();

@@ -403,7 +403,7 @@ var TranscriptView = GObject.registerClass({
 
     _copy(text) {
         this.get_clipboard().set(text);
-        this._toastOverlay.add_toast(new Adw.Toast({ title: 'Copiado', timeout: 2 }));
+        this._toastOverlay.add_toast(new Adw.Toast({ title: 'Copiado', timeout: 2, use_markup: false }));
     }
 
     _toast(title) {

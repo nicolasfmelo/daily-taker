@@ -75,7 +75,7 @@ var PreferencesWindow = GObject.registerClass({
     }
 
     _toast(message) {
-        this.add_toast(new Adw.Toast({ title: message }));
+        this.add_toast(new Adw.Toast({ title: message, use_markup: false }));
     }
 
     _onSave() {
