@@ -1,4 +1,4 @@
-/* exported Window */
+/* exported Window WindowState */
 /*
 * Copyright 2013 Meg Ford
 * This library is free software; you can redistribute it and/or
@@ -18,73 +18,64 @@
 *
 */
 
-const { Adw, Gio, GLib, GObject, Gst, GstPlayer, Gtk } = imports.gi;
+// Janela mestre-detalhe: cabeçalho (ícone, título, Nova gravação, Preferências, menu),
+// sidebar com as gravações e, à direita, o painel de detalhe com o player único embaixo.
+// A seleção da sidebar é a fonte da verdade: a janela leva a gravação selecionada ao
+// painel, à barra do player e ao Playback. A tela de gravação cobre a janela inteira.
+const { Adw, Gio, GLib, GObject, Gtk } = imports.gi;
 
 const { Recorder } = imports.recorder;
 const { RecordingList } = imports.recordingList;
-const { RecordingsListWidget } = imports.recordingListWidget;
 const { RecorderWidget } = imports.recorderWidget;
 const { NOTHING_RECORDED_MESSAGE } = imports.recorderPipeline;
-const { RecordingsDir, Settings } = imports.application;
+const { Settings } = imports.application;
+const { Playback } = imports.playback;
+const { PlayerBar } = imports.playerBar;
+const { Sidebar } = imports.sidebar;
+const { DetailPane } = imports.detailPane;
+const { msUntilNextDay } = imports.recordingGroups;
 const { defaultKeyStore } = imports.secrets;
 const { transcribeFile } = imports.transcriber;
-const { saveTranscript } = imports.transcriptStore;
+const { exportFileName } = imports.transcriptFormat;
+const { loadTranscript, saveTranscript, transcriptFileFor } = imports.transcriptStore;
+const { exportContent, exportExtension } = imports.transcriptViewModel;
 const { TranscriptionService } = imports.transcriptionService;
-const { TranscriptView } = imports.transcriptView;
-const { TranscriptsPage } = imports.transcriptsPage;
-const { viewHeader } = imports.transcriptViewModel;
-const { confirmMessage, failureMessage, guardedSave, hasKey, hasNamedSpeakers, retryPlan } = imports.transcriptionUi;
+const { TranscriptionController } = imports.transcriptionController;
+const { confirmMessage, guardedSave, hasNamedSpeakers, recordingNameProblem, rowStatus } =
+    imports.transcriptionUi;
+const { playbackOptions } = imports.devSnapshot;
 
 var WindowState = {
-    EMPTY: 0,
-    LIST: 1,
-    RECORDER: 2,
-    TRANSCRIPT: 3,
+    BROWSE: 0,
+    RECORDER: 1,
 };
+
+// Diálogo de arquivo fechado pelo usuário: nada a avisar.
+const dismissed = e => e.matches?.(Gtk.DialogError, Gtk.DialogError.DISMISSED) ?? false;
 
 var Window = GObject.registerClass({
     Template: 'resource:///dev/nicolas/DailyTaker/ui/window.ui',
     InternalChildren: [
-        'mainStack', 'emptyPage', 'column', 'headerRevealer', 'toastOverlay',
-        'windowTitle', 'backButton', 'recordButton',
-        'viewStack', 'recordingsStack', 'titleStack', 'switcherBar', 'narrowBreakpoint',
+        'toastOverlay', 'mainStack', 'backButton', 'appIcon', 'splitView', 'sidebarPage',
+        'contentView', 'mediumBreakpoint', 'narrowBreakpoint',
     ],
 }, class Window extends Adw.ApplicationWindow {
-
     _init(params) {
-        super._init(Object.assign({
-            icon_name: pkg.name,
-        }, params));
-        // Título restaurado ao sair da transcrição.
-        this._defaultTitle = this._windowTitle.title;
+        super._init({ icon_name: pkg.name, ...params });
+        this._appIcon.icon_name = pkg.name;
+        this._closed = false;
+        this._selected = null;          // gravação mostrada no painel e carregada no player
+        this._selectedUri = null;       // URI dela quando foi carregada (renomear muda a URI)
+        this._selectedIds = [];
+        this._pendingSeek = null;       // { id } do seek que espera a mídia recarregada
+        this._midnightId = 0;
 
         this.recorder = new Recorder();
         this.recorderWidget = new RecorderWidget(this.recorder);
         this._mainStack.add_named(this.recorderWidget, 'recorder');
-
-        const dispatcher = GstPlayer.PlayerGMainContextSignalDispatcher.new(null);
-        this.player = GstPlayer.Player.new(null, dispatcher);
-        this.player.connect('end-of-stream', _p => this.player.stop());
-        this._playerState = GstPlayer.PlayerState.STOPPED;
-        this.player.connect('state-changed', (_p, state) => {
-            this._playerState = state;
-        });
-
+        this.insert_action_group('recorder', this.recorderWidget.actionsGroup);
 
         this._recordingList = new RecordingList();
-        this.itemsSignalId = this._recordingList.connect('items-changed', _ => {
-            // Gravando ou lendo uma transcrição: a página atual não muda.
-            if (this.state !== WindowState.RECORDER && this.state !== WindowState.TRANSCRIPT) {
-                if (this._recordingList.get_n_items() === 0)
-                    this.state = WindowState.EMPTY;
-                else
-                    this.state = WindowState.LIST;
-            }
-            // Gravação nova, excluída (ou desfeita) ou lista recarregada.
-            this._transcriptsPage?.invalidate();
-        });
-
-        this._closed = false;
         this.transcriptionService = new TranscriptionService({
             getKey: () => defaultKeyStore().get(),
             transcribe: transcribeFile,
@@ -92,356 +83,488 @@ var Window = GObject.registerClass({
             language: () => Settings.get_string('language'),
             now: () => new Date(),
         });
-
-        this._recordingListWidget = new RecordingsListWidget(this._recordingList, this.player, this.transcriptionService);
-        this._recordingListWidget.connect('transcribe-requested', (_widget, recording) => {
-            this._requestTranscription(recording);
-        });
-        this.transcriptionService.connectChange((uri, status) => {
-            const file = this._transcriptView?.recordingFile;
-            if (file && file.get_uri() === uri)
-                this._transcriptView.running = this.transcriptionService.status(file) === 'running';
-            // Terminou (salva ou falhou): a aba Transcrições reflete o disco.
-            if (status !== 'running')
-                this._transcriptsPage.invalidate();
+        this._transcription = new TranscriptionController({
+            parent: this,
+            service: this.transcriptionService,
+            showToast: toast => this._toastOverlay.add_toast(toast),
+            openPreferences: () => this.application.activate_action('preferences', null),
+            hasRecording: recording => this._indexOf(recording) >= 0,
+            onDone: file => this._onTranscriptionDone(file),
+            onFailed: (recording, message) => this._onTranscriptionFailed(recording, message),
         });
 
-        // Só aparece na aba gravações que ainda estão na lista: exclui órfãs e as
-        // excluídas aguardando o "Desfazer".
-        this._transcriptsPage = new TranscriptsPage({
-            dir: RecordingsDir,
-            existsFn: file => this._findRecording(file) !== null && file.query_exists(null),
+        // Player único: criado uma vez; velocidade e volume salvos são aplicados pelo bind.
+        this.playback = new Playback(playbackOptions());
+        this._sidebar = new Sidebar({
+            recordingList: this._recordingList,
+            transcriptionService: this.transcriptionService,
         });
-        this._transcriptsPage.connect('transcript-activated', (_page, file, transcript) => {
-            this.showTranscript(file, transcript);
-        });
-        this._viewStack.add_titled_with_icon(this._transcriptsPage, 'transcripts',
-            'Transcrições', 'text-x-generic-symbolic');
+        this._sidebarPage.child = this._sidebar;
+        this._detailPane = new DetailPane();
+        this._playerBar = new PlayerBar({ settings: Settings });
+        this._contentView.content = this._detailPane;
+        this._contentView.add_bottom_bar(this._playerBar);
+        for (const breakpoint of [this._mediumBreakpoint, this._narrowBreakpoint]) {
+            breakpoint.add_setter(this._playerBar, 'compact', true);
+            breakpoint.add_setter(this._detailPane, 'compact', true);
+        }
+        this._playerBar.bind(this.playback);
+        this._detailPane.bindPlayback(this.playback);
+        this._playerBar.bind_property('follow-audio', this._detailPane.view, 'follow-audio',
+            GObject.BindingFlags.SYNC_CREATE);
 
-        this._narrow = false;
-        this._narrowBreakpoint.connect('apply', () => this._setNarrow(true));
-        this._narrowBreakpoint.connect('unapply', () => this._setNarrow(false));
-
-        this._recordingListWidget.connect('row-deleted', (_listBox, recording, index) => {
-            this._recordingList.remove(index);
-            this.sendNotification(_('"%s" excluída').format(recording.name), recording, index);
-        });
+        this._connectSidebar();
+        this._connectPane();
+        this._connectRecorder();
+        this._connectNavigation();
+        // Depois da sidebar: quando este ouvinte roda, ela já reconciliou a seleção.
+        this._recordingList.connect('items-changed', () => this._onLibraryChanged());
+        this._recordingList.connect('notify::loaded', () => this._syncLibrary());
+        // Um único ouvinte do serviço na janela (a sidebar cuida dos próprios selos).
+        this.transcriptionService.connectChange((uri, status) => this._onTranscriptionChanged(uri, status));
+        this._setupDates();
 
         const builder = Gtk.Builder.new_from_resource('/dev/nicolas/DailyTaker/gtk/help-overlay.ui');
-        const dialog = builder.get_object('help_overlay');
-        this.set_help_overlay(dialog);
+        this.set_help_overlay(builder.get_object('help_overlay'));
 
-        this.toastUndo = false;
-        this.undoSignalID = null;
-        this.undoAction = new Gio.SimpleAction({ name: 'undo' });
-        this.add_action(this.undoAction);
-
-        let openMenuAction = new Gio.SimpleAction({ name: 'open-primary-menu', state: new GLib.Variant('b', true) });
-        openMenuAction.connect('activate', action => {
-            const state = action.get_state().get_boolean();
-            action.state = new GLib.Variant('b', !state);
-        });
-        this.add_action(openMenuAction);
-        this._column.set_child(this._recordingListWidget);
-
-        this.recorderWidget.connect('started', this.onRecorderStarted.bind(this));
-        this.recorderWidget.connect('canceled', this.onRecorderCanceled.bind(this));
-        this.recorderWidget.connect('stopped', this.onRecorderStopped.bind(this));
-        this.recorderWidget.connect('failed', (_widget, message) => this.addToast(message));
-        this.insert_action_group('recorder', this.recorderWidget.actionsGroup);
-        this._emptyPage.icon_name = `${pkg.name}-symbolic`;
-
-        this._transcriptView = null;
-        this._backButton.connect('clicked', () => this.closeTranscript());
+        this._onRecordingSelected(null);
+        this._syncLibrary();
+        this.state = WindowState.BROWSE;
     }
 
-    _createTranscriptView() {
-        const view = new TranscriptView();
-        view.attachPlayer(this.player, this._playerState);
-        view.connect('seek-requested', (_view, seconds) => {
-            const recording = this._findRecording(view.recordingFile);
-            if (!recording || !this._recordingListWidget.playRecordingAt(recording, Math.round(seconds * Gst.SECOND)))
-                this.addToast('A gravação não está mais disponível');
-        });
-        view.connect('transcript-changed', (_view, t) => {
-            this._windowTitle.title = viewHeader(t).title;
-        });
-        view.connect('regenerate-requested', () => {
-            const recording = this._findRecording(view.recordingFile);
-            if (recording)
-                this._requestTranscription(recording, {
-                    regenerate: true,
-                    namedSpeakers: hasNamedSpeakers(view.transcript),
-                });
-            else
-                this.addToast('A gravação não está mais disponível');
-        });
-        this._mainStack.add_named(view, 'transcript');
-        return view;
-    }
-
-    showTranscript(recordingFile, t) {
-        if (!this._transcriptView)
-            this._transcriptView = this._createTranscriptView();
-        this._transcriptView.setTranscript(t, recordingFile);
-        this._transcriptView.running = this.transcriptionService.status(recordingFile) === 'running';
-        this._windowTitle.title = viewHeader(t).title;
-        if (this.state !== WindowState.TRANSCRIPT)
-            this._stateBeforeTranscript = this.state;
-        this.state = WindowState.TRANSCRIPT;
-    }
-
-    closeTranscript() {
-        if (this.state !== WindowState.TRANSCRIPT)
-            return;
-        // Volta para a página anterior; lista e vazio são recalculados porque a lista
-        // pode ter mudado enquanto a transcrição estava aberta.
-        this._transcriptView.release();
-        const previous = this._stateBeforeTranscript;
-        if (previous === WindowState.LIST || previous === WindowState.EMPTY || previous === undefined)
-            this.state = this._recordingList.get_n_items() === 0 ? WindowState.EMPTY : WindowState.LIST;
-        else
-            this.state = previous;
+    // Seleciona `recording` (ou nenhuma) pela sidebar; false se ela não está na lista.
+    selectRecording(recording) {
+        return this._sidebar.select(recording ?? null);
     }
 
     addToast(title) {
+        // Sem markup: nomes de gravação podem ter & ou < (ex.: "Reunião P&D").
         this._toastOverlay.add_toast(new Adw.Toast({ title, use_markup: false }));
-    }
-
-    vfunc_close_request() {
-        // Uma transcrição em andamento não segura o fechamento: é simplesmente abandonada.
-        this._closed = true;
-        this._recordingList.cancellable.cancel();
-        if (this.itemsSignalId)
-            this._recordingList.disconnect(this.itemsSignalId);
-
-        for (let i = 0; i < this._recordingList.get_n_items(); i++) {
-            const recording = this._recordingList.get_item(i);
-            if (recording.pipeline)
-                recording.pipeline.set_state(Gst.State.NULL);
-        }
-
-        this.recorder.stop();
-        this.application.quit();
-    }
-
-    onRecorderStarted() {
-        this.player.stop();
-
-        const activeRow = this._recordingListWidget.activeRow;
-        if (activeRow && activeRow.editMode)
-            activeRow.editMode = false;
-
-        this.state = WindowState.RECORDER;
-    }
-
-    onRecorderCanceled() {
-        if (this._recordingList.get_n_items() === 0)
-            this.state = WindowState.EMPTY;
-        else
-            this.state = WindowState.LIST;
-    }
-
-    onRecorderStopped(widget, recording) {
-        if (!recording) {
-            this.addToast(NOTHING_RECORDED_MESSAGE);
-            this.onRecorderCanceled();
-            return;
-        }
-        // A gravação nova entra em modo de renomear na aba Gravações.
-        this._viewStack.visible_child_name = 'recordings';
-        this._recordingList.insert(0, recording);
-        this._recordingListWidget.list.get_row_at_index(0).editMode = true;
-        this.state = WindowState.LIST;
-    }
-
-    _findRecording(file) {
-        if (!file)
-            return null;
-        const uri = file.get_uri();
-        for (let i = 0; i < this._recordingList.get_n_items(); i++) {
-            const recording = this._recordingList.get_item(i);
-            if (recording.uri === uri)
-                return recording;
-        }
-        return null;
-    }
-
-    // regenerate: "Gerar novamente" na visão de transcrição (mesmas guardas, outro texto).
-    _requestTranscription(recording, options = {}) {
-        const { regenerate = false } = options;
-        // A chave é verificada antes de tocar no serviço: sem chave a linha não entra em erro.
-        let key = null;
-        try {
-            key = defaultKeyStore().get();
-        } catch (e) {
-            key = null;
-        }
-        if (!hasKey(key)) {
-            this.application.activate_action('preferences', null);
-            return;
-        }
-
-        if (this.transcriptionService.status(recording.file) === 'running')
-            return;
-
-        const { heading, body } = confirmMessage(recording.duration / 1e9, options);
-        const dialog = new Adw.MessageDialog({
-            transient_for: this,
-            modal: true,
-            heading,
-            body,
-        });
-        dialog.add_response('cancel', 'Cancelar');
-        dialog.add_response('transcribe', regenerate ? 'Gerar novamente' : 'Transcrever');
-        dialog.set_response_appearance('transcribe', Adw.ResponseAppearance.SUGGESTED);
-        dialog.default_response = 'transcribe';
-        dialog.close_response = 'cancel';
-        dialog.connect('response', (_dialog, response) => {
-            if (response === 'transcribe' && !this._closed)
-                this._runTranscription(recording, options);
-        });
-        dialog.present();
-    }
-
-    _runTranscription(recording, options) {
-        const file = recording.file;
-        const created = recording.timeCreated;
-        const recordedAt = created && created.to_unix() > 0 ? created : recording.timeModified;
-        this.transcriptionService.run({
-            file,
-            title: recording.name,
-            recordedAt: recordedAt.format_iso8601(),
-        }).then(
-            transcript => this._onTranscriptionDone(file, transcript),
-            error => this._onTranscriptionFailed(recording, error, options));
-    }
-
-    // A visão aberta nesta gravação passa a mostrar a transcrição nova.
-    _onTranscriptionDone(file, transcript) {
-        if (this._closed || this.state !== WindowState.TRANSCRIPT)
-            return;
-        if (this._transcriptView.recordingFile?.equal(file))
-            this.showTranscript(file, transcript);
-    }
-
-    _onTranscriptionFailed(recording, error, options) {
-        if (this._closed)
-            return;
-
-        const file = recording.file;
-        const plan = retryPlan(error, {
-            recordingExists: this._hasRecording(recording) && file.query_exists(null),
-            hasUnsaved: this.transcriptionService.hasUnsaved(file),
-        });
-        // Sem como tentar de novo (gravação sumiu), a transcrição guardada só ocuparia memória.
-        if (plan === null)
-            this.transcriptionService.discardUnsaved(file);
-        const toast = new Adw.Toast({ title: failureMessage(error, plan), use_markup: false, timeout: 10 });
-        if (plan) {
-            toast.button_label = 'Tentar de novo';
-            toast.connect('button-clicked', () => {
-                if (this._closed)
-                    return;
-                if (plan === 'save')
-                    this._retrySave(recording, file, options);
-                else
-                    this._requestTranscription(recording, options);
-            });
-        }
-        this._toastOverlay.add_toast(toast);
-    }
-
-    // A transcrição já foi paga: só salva de novo, sem diálogo de custo nem chamada à API.
-    _retrySave(recording, file, options) {
-        this.transcriptionService.retrySave(file).then(
-            transcript => this._onTranscriptionDone(file, transcript),
-            error => this._onTranscriptionFailed(recording, error, options));
-    }
-
-    _hasRecording(recording) {
-        for (let i = 0; i < this._recordingList.get_n_items(); i++) {
-            if (this._recordingList.get_item(i) === recording)
-                return true;
-        }
-        return false;
-    }
-
-    sendNotification(message, recording, index) {
-        // Sem markup: o nome da gravação pode ter & ou < (ex.: "Reunião P&D").
-        const toast = new Adw.Toast({ title: message, use_markup: false });
-        toast.connect('dismissed', () => {
-            if (!this.toastUndo)
-                recording.delete();
-
-            this.toastUndo = false;
-        });
-
-        if (this.undoSignalID !== null)
-            this.undoAction.disconnect(this.undoSignalID);
-
-        this.undoSignalID = this.undoAction.connect('activate', () => {
-            this._recordingList.insert(index, recording);
-            this.toastUndo = true;
-        });
-
-        toast.set_action_name('win.undo');
-        toast.set_button_label(_('Desfazer'));
-        this._toastOverlay.add_toast(toast);
-    }
-
-    set state(state) {
-        let visibleChild;
-        let isHeaderVisible;
-
-        switch (state) {
-        case WindowState.RECORDER:
-            visibleChild = 'recorder';
-            isHeaderVisible = false;
-            break;
-        case WindowState.LIST:
-            visibleChild = 'views';
-            this._recordingsStack.visible_child_name = 'recordings';
-            isHeaderVisible = true;
-            break;
-        case WindowState.EMPTY:
-            visibleChild = 'views';
-            this._recordingsStack.visible_child_name = 'empty';
-            isHeaderVisible = true;
-            break;
-        case WindowState.TRANSCRIPT:
-            visibleChild = 'transcript';
-            isHeaderVisible = true;
-            break;
-        }
-
-        const inTranscript = state === WindowState.TRANSCRIPT;
-        this._backButton.visible = inTranscript;
-        this._recordButton.visible = !inTranscript;
-        if (!inTranscript)
-            this._windowTitle.title = this._defaultTitle;
-
-        this._mainStack.visible_child_name = visibleChild;
-        this._headerRevealer.reveal_child = isHeaderVisible;
-        this._state = state;
-        this._syncViewSwitcher();
-    }
-
-    _setNarrow(narrow) {
-        this._narrow = narrow;
-        this._syncViewSwitcher();
-    }
-
-    // Abas Gravações/Transcrições: no topo em telas largas, embaixo em estreitas; somem
-    // gravando (cabeçalho oculto) e na visão de transcrição (título + Voltar).
-    _syncViewSwitcher() {
-        // Antes do primeiro estado (lista ainda carregando) a janela já mostra as abas.
-        const inViews = this._state !== WindowState.RECORDER && this._state !== WindowState.TRANSCRIPT;
-        this._titleStack.visible_child_name = inViews && !this._narrow ? 'switcher' : 'title';
-        this._switcherBar.reveal = inViews && this._narrow;
     }
 
     get state() {
         return this._state;
+    }
+
+    set state(state) {
+        this._state = state;
+        this._mainStack.visible_child_name = state === WindowState.RECORDER ? 'recorder' : 'browse';
+    }
+
+    vfunc_close_request() {
+        this.shutdown();
+        return false;
+    }
+
+    // Encerra o app: solta player, gravador e temporizadores, desmonta os widgets e sai.
+    // Chamado ao fechar a janela (e pelo devSnapshot, que pode nunca mostrá-la).
+    shutdown() {
+        if (this._closed)
+            return;
+        // Uma transcrição em andamento não segura o fechamento: é simplesmente abandonada.
+        this._closed = true;
+        this._transcription.close();
+        if (this._midnightId) {
+            GLib.source_remove(this._midnightId);
+            this._midnightId = 0;
+        }
+        this._cancelPendingSeek();
+        this._recordingList.cancellable.cancel();
+        this.playback.destroy();
+        this.recorder.stop();
+        // Desmonta os widgets com o JS ainda vivo e só então sai: sem isso a árvore (com
+        // vfuncs e funções JS, como o cabeçalho da lista) só seria desfeita na coleta de
+        // lixo do encerramento, onde o GJS bloqueia essas chamadas.
+        const app = this.application;
+        GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
+            this._sidebarPage.child = null;
+            this._sidebar.run_dispose();
+            this.run_dispose();
+            app.quit();
+            return GLib.SOURCE_REMOVE;
+        });
+    }
+
+    // --- Ligações ---
+
+    _connectSidebar() {
+        const sidebar = this._sidebar;
+        sidebar.connect('recording-selected', (_s, recording) => this._onRecordingSelected(recording));
+        sidebar.connect('transcribe-requested', (_s, recording, regenerate) => {
+            this._transcription.request(recording, {
+                regenerate,
+                namedSpeakers: regenerate && hasNamedSpeakers(loadTranscript(recording.file)),
+            });
+        });
+        sidebar.connect('rename-requested', (_s, recording) => this._showRenameDialog(recording));
+        sidebar.connect('delete-requested', (_s, recording) => this._deleteRecording(recording));
+        sidebar.connect('export-audio-requested', (_s, recording) => this._exportAudio(recording));
+    }
+
+    _connectPane() {
+        const pane = this._detailPane;
+        pane.connect('generate-requested', (_p, regenerate) => {
+            if (this._selected)
+                this._transcription.request(this._selected, this._generateOptions(regenerate));
+        });
+        pane.connect('retry-requested', () => {
+            if (this._selected)
+                this._transcription.retry(this._selected, this._generateOptions(pane.view.transcript !== null));
+        });
+        pane.connect('export-requested', (_p, ext) => this._exportTranscript(ext));
+        pane.connect('new-recording-requested', () => this.recorderWidget.actionsGroup.activate_action('start', null));
+        pane.view.connect('seek-requested', (_v, seconds) => this._seekAndPlay(seconds));
+    }
+
+    _connectRecorder() {
+        const widget = this.recorderWidget;
+        widget.connect('started', () => this.onRecorderStarted());
+        widget.connect('canceled', () => this.onRecorderCanceled());
+        widget.connect('stopped', (_w, recording) => this.onRecorderStopped(recording));
+        widget.connect('failed', (_w, message) => this.onRecorderFailed(message));
+    }
+
+    // Janela estreita (< 720 sp): escolher uma gravação abre o painel; Voltar retorna à
+    // lista sem mexer na seleção.
+    _connectNavigation() {
+        const split = this._splitView;
+        this._sidebar.connect('recording-activated', () => {
+            if (split.collapsed)
+                split.show_content = true;
+        });
+        this._backButton.connect('clicked', () => {
+            split.show_content = false;
+        });
+        const syncBack = () => {
+            this._backButton.visible = split.collapsed && split.show_content;
+        };
+        split.connect('notify::collapsed', syncBack);
+        split.connect('notify::show-content', syncBack);
+        syncBack();
+    }
+
+    // "Hoje"/"Ontem" mudam à meia-noite e enquanto a janela fica em segundo plano.
+    _setupDates() {
+        this.connect('notify::is-active', () => {
+            if (this.is_active)
+                this._sidebar.refreshDates();
+        });
+        const schedule = () => {
+            this._midnightId = GLib.timeout_add(GLib.PRIORITY_LOW, msUntilNextDay(new Date()) + 1000, () => {
+                this._midnightId = 0;
+                this._sidebar.refreshDates();
+                schedule();
+                return GLib.SOURCE_REMOVE;
+            });
+        };
+        schedule();
+    }
+
+    // --- Seleção e player ---
+
+    _onRecordingSelected(recording) {
+        if (this._closed)
+            return;
+        const next = recording ?? null;
+        this._trackSelected(next);
+        const pane = this._detailPane;
+        // Ordem do painel: setRecording → setTranscript → setState.
+        pane.setRecording(next);
+        pane.setTranscript(next ? loadTranscript(next.file) : null);
+        pane.setErrorMessage(next ? this._transcription.failureMessage(next) : '');
+        pane.setState(next ? this._statusOf(next) : 'none');
+        this._syncCost();
+        this._playerBar.setRecording(next);
+        // Troca de mídia para o áudio anterior; nada começa a tocar sozinho.
+        this._cancelPendingSeek();
+        this.playback.load(next?.uri ?? null);
+        if (!next && this._splitView.collapsed)
+            this._splitView.show_content = false;
+    }
+
+    _trackSelected(recording) {
+        for (const id of this._selectedIds)
+            this._selected.disconnect(id);
+        this._selected = recording;
+        this._selectedUri = recording?.uri ?? null;
+        this._selectedIds = recording ? [
+            recording.connect('notify::name', () => this._onSelectedRenamed(recording)),
+            recording.connect('notify::duration', () => this._syncCost()),
+        ] : [];
+    }
+
+    // Renomear troca o arquivo (e a URI): o Playback, que guarda a URI antiga, é
+    // recarregado no arquivo novo, pausado na mesma posição. O painel e a sidebar se
+    // atualizam sozinhos (notify::name).
+    _onSelectedRenamed(recording) {
+        const oldUri = this._selectedUri;
+        this._selectedUri = recording.uri;
+        if (oldUri === recording.uri || this.playback.uri !== oldUri)
+            return;
+        const position = this.playback.position;
+        this._cancelPendingSeek();
+        this.playback.load(recording.uri);
+        if (position > 0)
+            this._seekWhenLoaded(recording.uri, position);
+    }
+
+    // Posiciona (pausado) assim que a mídia `uri` tiver duração conhecida.
+    _seekWhenLoaded(uri, position) {
+        const pending = {};
+        pending.id = this.playback.connect('duration-changed', (_p, seconds) => {
+            if (seconds <= 0 || this.playback.uri !== uri)
+                return;
+            this._cancelPendingSeek();
+            this.playback.seek(position);
+        });
+        this._pendingSeek = pending;
+    }
+
+    _cancelPendingSeek() {
+        if (this._pendingSeek) {
+            this.playback.disconnect(this._pendingSeek.id);
+            this._pendingSeek = null;
+        }
+    }
+
+    // Clique num bloco da transcrição: pula para o trecho e toca.
+    _seekAndPlay(seconds) {
+        const recording = this._selected;
+        if (!recording)
+            return;
+        if (this.playback.uri !== recording.uri)
+            this.playback.load(recording.uri);
+        this.playback.seek(seconds);
+        this.playback.play();
+    }
+
+    _statusOf(recording) {
+        return rowStatus({
+            hasTranscript: transcriptFileFor(recording.file).query_exists(null),
+            serviceStatus: this.transcriptionService.status(recording.file),
+        });
+    }
+
+    _generateOptions(regenerate) {
+        return {
+            regenerate: Boolean(regenerate),
+            namedSpeakers: Boolean(regenerate) && hasNamedSpeakers(this._detailPane.view.transcript),
+        };
+    }
+
+    // Custo estimado no cartão "ainda não foi transcrita" (o mesmo texto do diálogo).
+    _syncCost() {
+        const recording = this._selected;
+        this._detailPane.setCostText(recording ? confirmMessage(recording.duration / 1e9).body : '');
+    }
+
+    // --- Biblioteca ---
+
+    _indexOf(recording) {
+        for (let i = 0; i < this._recordingList.get_n_items(); i++) {
+            if (this._recordingList.get_item(i) === recording)
+                return i;
+        }
+        return -1;
+    }
+
+    _syncLibrary() {
+        // Enquanto a pasta é lida a biblioteca não é dada como vazia.
+        const n = this._recordingList.get_n_items();
+        this._detailPane.setHasRecordings(n > 0 || !this._recordingList.loaded);
+    }
+
+    _onLibraryChanged() {
+        this._syncLibrary();
+        // A sidebar já trocou a seleção para a vizinha (ou nenhuma) se a selecionada saiu da
+        // lista. Se mesmo assim a gravação carregada sumiu, o áudio não pode continuar.
+        if (this._selected && this._indexOf(this._selected) < 0) {
+            const next = this._sidebar.selected;
+            this._onRecordingSelected(next && this._indexOf(next) >= 0 ? next : null);
+        }
+    }
+
+    // --- Gravador ---
+
+    onRecorderStarted() {
+        this.playback.stop();
+        this.state = WindowState.RECORDER;
+    }
+
+    onRecorderCanceled() {
+        // A seleção anterior continua.
+        this.state = WindowState.BROWSE;
+    }
+
+    // A gravação nova entra na lista primeiro e então vira a selecionada (o player troca
+    // para ela, parado).
+    onRecorderStopped(recording) {
+        if (!recording) {
+            this.addToast(NOTHING_RECORDED_MESSAGE);
+            this.state = WindowState.BROWSE;
+            return;
+        }
+        if (this._recordingList.getIndex(recording.file) < 0)
+            this._recordingList.sortedInsert(recording);
+        this.playback.stop();
+        this.selectRecording(recording);
+        this.state = WindowState.BROWSE;
+    }
+
+    // Depois de 'stopped'/'canceled': só o aviso, e a janela volta à lista.
+    onRecorderFailed(message) {
+        this.addToast(message);
+        this.state = WindowState.BROWSE;
+    }
+
+    // --- Transcrição ---
+
+    _onTranscriptionChanged(uri, status) {
+        const recording = this._selected;
+        if (this._closed || !recording || recording.uri !== uri)
+            return;
+        if (status === 'running') {
+            this._detailPane.setState('running');
+        } else if (status === 'error') {
+            this._detailPane.setErrorMessage(this._transcription.failureMessage(recording));
+            this._detailPane.setState('error');
+        }
+        // 'none' depois de salvar: _onTranscriptionDone relê a transcrição do disco.
+    }
+
+    _onTranscriptionDone(file) {
+        const recording = this._selected;
+        if (!recording || !recording.file.equal(file))
+            return;
+        this._detailPane.setTranscript(loadTranscript(recording.file));
+        this._detailPane.setState(this._statusOf(recording));
+    }
+
+    _onTranscriptionFailed(recording, message) {
+        if (recording === this._selected)
+            this._detailPane.setErrorMessage(message);
+    }
+
+    // --- Exportar, renomear, excluir ---
+
+    _exportTranscript(ext) {
+        const transcript = this._detailPane.view.transcript;
+        if (!transcript)
+            return;
+        const dialog = new Gtk.FileDialog({
+            title: 'Exportar transcrição',
+            initial_name: exportFileName(transcript, ext),
+            modal: true,
+        });
+        dialog.save(this, null, (_dialog, result) => {
+            let file;
+            try {
+                file = dialog.save_finish(result);
+            } catch (e) {
+                if (!dismissed(e))
+                    this.addToast('Não foi possível exportar a transcrição');
+                return;
+            }
+            try {
+                const content = exportContent(transcript, exportExtension(file.get_basename(), ext));
+                file.replace_contents(new TextEncoder().encode(content), null, false,
+                    Gio.FileCreateFlags.REPLACE_DESTINATION, null);
+                this.addToast('Transcrição exportada');
+            } catch (e) {
+                this.addToast('Não foi possível exportar a transcrição');
+            }
+        });
+    }
+
+    _exportAudio(recording) {
+        const target = recording ?? this._selected;
+        if (!target)
+            return;
+        const dialog = new Gtk.FileDialog({
+            title: 'Exportar áudio',
+            initial_name: target.extension ? `${target.name}.${target.extension}` : target.name,
+            modal: true,
+        });
+        dialog.save(this, null, (_dialog, result) => {
+            let dest;
+            try {
+                dest = dialog.save_finish(result);
+            } catch (e) {
+                if (!dismissed(e))
+                    this.addToast('Não foi possível exportar o áudio');
+                return;
+            }
+            target.save(dest, ok => this.addToast(ok ? 'Áudio exportado' : 'Não foi possível exportar o áudio'));
+        });
+    }
+
+    // Renomear simples (a Task 11 refina): diálogo com o nome atual, validado.
+    _showRenameDialog(recording) {
+        if (this.transcriptionService.status(recording.file) === 'running')
+            return;
+        const entry = new Gtk.Entry({ text: recording.name, activates_default: true });
+        const dialog = new Adw.MessageDialog({
+            transient_for: this,
+            modal: true,
+            heading: 'Renomear gravação',
+            extra_child: entry,
+        });
+        dialog.add_response('cancel', 'Cancelar');
+        dialog.add_response('rename', 'Renomear');
+        dialog.set_response_appearance('rename', Adw.ResponseAppearance.SUGGESTED);
+        dialog.default_response = 'rename';
+        dialog.close_response = 'cancel';
+        const validate = () => {
+            const problem = recordingNameProblem(entry.text);
+            dialog.body = problem ?? '';
+            dialog.set_response_enabled('rename', !problem && entry.text.trim() !== '');
+            if (problem)
+                entry.add_css_class('error');
+            else
+                entry.remove_css_class('error');
+        };
+        entry.connect('changed', validate);
+        validate();
+        dialog.connect('response', (_dialog, response) => {
+            if (response === 'rename' && !this._closed)
+                this._renameRecording(recording, entry.text);
+        });
+        dialog.present();
+        entry.grab_focus();
+    }
+
+    // Devolve true se renomeou. O player e o painel seguem a gravação (notify::name).
+    _renameRecording(recording, text) {
+        const name = text.trim();
+        if (!name || name === recording.name)
+            return false;
+        const problem = recordingNameProblem(name);
+        if (problem) {
+            this.addToast(problem);
+            return false;
+        }
+        // O serviço grava ao lado do arquivo antigo: renomear durante a transcrição a perderia.
+        if (this.transcriptionService.status(recording.file) === 'running')
+            return false;
+        try {
+            recording.name = name;
+        } catch (e) {
+            this.addToast('Não foi possível renomear a gravação');
+            return false;
+        }
+        return true;
+    }
+
+    // Task 11: troca por uma fila com "Desfazer" (DeleteQueue). Por ora a gravação vai
+    // direto para a lixeira do sistema (recuperável por lá). Sai da lista antes: a sidebar
+    // seleciona a vizinha e o player solta o arquivo antes de ele ir para a lixeira.
+    _deleteRecording(recording) {
+        const index = this._indexOf(recording);
+        if (index < 0)
+            return;
+        const name = recording.name;
+        this._recordingList.remove(index);
+        recording.delete();
+        this.addToast(`"${name}" foi para a lixeira`);
     }
 });

@@ -96,7 +96,7 @@
         <property name="spacing">12</property>
         <property name="valign">center</property>
         <child>
-          <object class="GtkLabel">
+          <object class="GtkLabel" id="followLabel">
             <property name="label">Acompanhar áudio</property>
             <property name="mnemonic_widget">followSwitch</property>
           </object>

@@ -1,4 +1,4 @@
-/* exported displayDateTime formatTime */
+/* exported formatTime */
 /*
  * Copyright 2013 Meg Ford
  * This library is free software; you can redistribute it and/or
@@ -17,8 +17,7 @@
  * Author: Meg Ford <megford@gnome.org>
  *
  */
-const Gettext = imports.gettext;
-const { GLib, Gst } = imports.gi;
+const { Gst } = imports.gi;
 
 var formatTime = nanoSeconds => {
     const time = new Date(0, 0, 0, 0, 0, 0, parseInt(nanoSeconds / Gst.MSECOND));
@@ -30,34 +29,4 @@ var formatTime = nanoSeconds => {
 
     // eslint-disable-next-line no-irregular-whitespace
     return `${hours} ∶ ${minutes} ∶ ${seconds} . <small>${miliseconds}</small>`;
-};
-
-var displayDateTime = time => {
-    const DAY = 86400000000;
-    const now = GLib.DateTime.new_now_local();
-    const difference = now.difference(time);
-
-    const days = Math.floor(difference / DAY);
-    const weeks = Math.floor(difference / (7 * DAY));
-    const months = Math.floor(difference / (30 * DAY));
-    const years = Math.floor(difference / (365 * DAY));
-
-    if (difference < DAY)
-        return time.format('%X');
-    else if (difference < 2 * DAY)
-        return _('Ontem');
-    else if (difference < 7 * DAY)
-        return Gettext.ngettext('há %d dia', 'há %d dias', days).format(days);
-    else if (difference < 14 * DAY)
-        return _('Semana passada');
-    else if (difference < 28 * DAY)
-        return Gettext.ngettext('há %d semana', 'há %d semanas',  weeks).format(weeks);
-    else if (difference < 60 * DAY)
-        return _('Mês passado');
-    else if (difference < 360 * DAY)
-        return Gettext.ngettext('há %d mês', 'há %d meses', months).format(months);
-    else if (difference < 730 * DAY)
-        return _('Ano passado');
-
-    return Gettext.ngettext('há %d ano', 'há %d anos', years).format(years);
 };

@@ -37,6 +37,10 @@ var DetailPane = GObject.registerClass({
     Properties: {
         'tab': GObject.ParamSpec.string('tab', 'tab', 'Visible tab (transcricao or resumo)',
             GObject.ParamFlags.READWRITE, 'transcricao'),
+        // Janela média/estreita: margens menores (classe CSS .compact) para caber ao lado
+        // da sidebar.
+        'compact': GObject.ParamSpec.boolean('compact', 'compact', 'Narrow layout',
+            GObject.ParamFlags.READWRITE, false),
     },
     Signals: {
         'generate-requested': { param_types: [GObject.TYPE_BOOLEAN] },
@@ -60,7 +64,7 @@ var DetailPane = GObject.registerClass({
         this._state = 'no-selection';
 
         // Margens laterais: os blocos alinham com o divisor sob as abas (como na mockup).
-        this._view = new TranscriptView({ embedded: true, vexpand: true, margin_start: 22, margin_end: 22 });
+        this._view = new TranscriptView({ vexpand: true, margin_start: 22, margin_end: 22 });
         this._stateStack.add_named(this._view, 'ready');
         // Renomear um locutor troca a transcrição dentro da visão.
         this._view.connect('transcript-changed', (_view, t) => {
@@ -103,6 +107,23 @@ var DetailPane = GObject.registerClass({
         if (this._initialized)
             this._syncTabs();
         this.notify('tab');
+    }
+
+    get compact() {
+        return this.has_css_class('compact');
+    }
+
+    set compact(value) {
+        const next = Boolean(value);
+        if (next === this.compact)
+            return;
+        if (next)
+            this.add_css_class('compact');
+        else
+            this.remove_css_class('compact');
+        this._view.margin_start = next ? 8 : 22;
+        this._view.margin_end = next ? 8 : 22;
+        this.notify('compact');
     }
 
     bindPlayback(playback) {

@@ -499,7 +499,7 @@ var Sidebar = GObject.registerClass({
     }
 
     _onRowSelected(row) {
-        if (this._syncingRow)
+        if (this._syncingRow || this._disposed)
             return;
         if (!row) {
             // Linha removida pelo modelo: _onModelChanged decide. Senão, o usuário desmarcou.
@@ -574,6 +574,10 @@ var Sidebar = GObject.registerClass({
             return;
         this._disposed = true;
         this._store.disconnect(this._storeChangedId);
+        // Solta a lista agora (com o JS vivo): desfeita só na coleta de lixo do encerramento,
+        // ela chamaria a função de cabeçalho quando o GJS já não aceita chamadas.
+        this._list.set_header_func(null);
+        this._list.bind_model(null, null);
         for (const [recording, { ids }] of this._tracked) {
             for (const id of ids)
                 recording.disconnect(id);

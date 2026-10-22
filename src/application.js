@@ -68,21 +68,15 @@ var Application = GObject.registerClass(class Application extends Adw.Applicatio
 
         this.set_accels_for_action('app.quit', ['<Primary>q']);
         this.set_accels_for_action('app.preferences', ['<Primary>comma']);
-        this.set_accels_for_action('win.open-primary-menu', ['F10']);
         this.set_accels_for_action('win.show-help-overlay', ['<Primary>question']);
+        // Gravador: Ctrl+R começa; os demais só valem com a gravação em andamento (as ações
+        // ficam desligadas fora dela).
+        // Os atalhos da janela (win.*) chegam na Task 11.
         this.set_accels_for_action('recorder.start', ['<Primary>r']);
         this.set_accels_for_action('recorder.pause', ['space']);
         this.set_accels_for_action('recorder.resume', ['space']);
         this.set_accels_for_action('recorder.cancel', ['Delete']);
         this.set_accels_for_action('recorder.stop', ['s']);
-        /* TODO: Fix recording.* keybindings */
-        this.set_accels_for_action('recording.play', ['space']);
-        this.set_accels_for_action('recording.pause', ['space']);
-        this.set_accels_for_action('recording.seek-backward', ['b']);
-        this.set_accels_for_action('recording.seek-forward', ['n']);
-        this.set_accels_for_action('recording.rename', ['F2']);
-        this.set_accels_for_action('recording.delete', ['Delete']);
-        this.set_accels_for_action('recording.export', ['<Primary>s']);
     }
 
     vfunc_startup() {

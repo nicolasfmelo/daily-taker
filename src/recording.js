@@ -126,11 +126,18 @@ var Recording = new GObject.registerClass({
         this.waveformCache.trash_async(GLib.PRIORITY_DEFAULT, null, null);
     }
 
-    save(dest) {
+    // Copia o áudio para `dest` (substitui: o diálogo de salvar já confirmou). `onDone(ok)`
+    // é chamado ao terminar, se dado.
+    save(dest, onDone = null) {
         this.file.copy_async(dest,
-            Gio.FileCreateFlags.NONE, GLib.PRIORITY_DEFAULT, null, null, (obj, res) => {
-                if (obj.copy_finish(res))
-                    log('Exporting file: done');
+            Gio.FileCopyFlags.OVERWRITE, GLib.PRIORITY_DEFAULT, null, null, (obj, res) => {
+                let ok = false;
+                try {
+                    ok = obj.copy_finish(res);
+                } catch (e) {
+                    log(`Failed to export ${this.name}: ${e.message}`);
+                }
+                onDone?.(ok);
             });
     }
 

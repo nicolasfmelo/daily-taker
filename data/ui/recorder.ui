@@ -1,6 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <interface>
   <template class="Gjs_RecorderWidget" parent="GtkBox">
+    <!-- Cobre a janela inteira durante a gravação, no fundo do tema. -->
+    <style>
+      <class name="bg-window"/>
+      <class name="recorder-page"/>
+    </style>
     <child>
       <object class="GtkWindowHandle">
         <property name="hexpand">True</property>

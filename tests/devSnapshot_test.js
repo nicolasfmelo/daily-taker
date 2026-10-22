@@ -2,7 +2,8 @@ imports.gi.versions.Gtk = '4.0';
 imports.gi.versions.Adw = '1';
 const { GLib } = imports.gi;
 const { test, assert, finish } = imports.harness;
-const { COMPONENTS, MUTATING_COMPONENTS, isSandboxed, silencePlayback, snapshotParams, stateError } = imports.devSnapshot;
+const { COMPONENTS, MUTATING_COMPONENTS, isSandboxed, playbackOptions, silencePlayback, snapshotParams, stateError } =
+    imports.devSnapshot;
 
 const player = () => ({ volume: 1, mute: false });
 
@@ -46,24 +47,33 @@ test('--state: lido de DAILY_TAKER_SNAPSHOT_STATE; só "recorder" e só com a ja
     }
 });
 
+test('componentes window e windowcheck registrados; playbackOptions só com captura', () => {
+    assert.equal(typeof COMPONENTS.window, 'function');
+    assert.equal(typeof COMPONENTS.windowcheck, 'function');
+    GLib.unsetenv('DAILY_TAKER_SNAPSHOT');
+    assert.deepEqual(playbackOptions(), {});
+    GLib.setenv('DAILY_TAKER_SNAPSHOT', '/nonexistent/out.png', true);
+    try {
+        assert.equal(typeof playbackOptions().audioSinkFactory, 'function');
+    } finally {
+        GLib.unsetenv('DAILY_TAKER_SNAPSHOT');
+    }
+});
+
 test('componente playerbar registrado', () => {
     assert.equal(typeof COMPONENTS.playerbar, 'function');
 });
 
-test('componente transcriptview registrado; --embedded e --find lidos do ambiente', () => {
+test('componente transcriptview registrado; --find lido do ambiente', () => {
     assert.equal(typeof COMPONENTS.transcriptview, 'function');
     GLib.setenv('DAILY_TAKER_SNAPSHOT', '/nonexistent/out.png', true);
     try {
-        GLib.unsetenv('DAILY_TAKER_SNAPSHOT_EMBEDDED');
         GLib.unsetenv('DAILY_TAKER_SNAPSHOT_FIND');
-        assert.equal(snapshotParams().embedded, null);
         assert.equal(snapshotParams().find, null);
-        GLib.setenv('DAILY_TAKER_SNAPSHOT_EMBEDDED', '0', true);
         GLib.setenv('DAILY_TAKER_SNAPSHOT_FIND', 'reunião', true);
-        assert.equal(snapshotParams().embedded, 0);
         assert.equal(snapshotParams().find, 'reunião');
+        assert.equal('embedded' in snapshotParams(), false);
     } finally {
-        GLib.unsetenv('DAILY_TAKER_SNAPSHOT_EMBEDDED');
         GLib.unsetenv('DAILY_TAKER_SNAPSHOT_FIND');
         GLib.unsetenv('DAILY_TAKER_SNAPSHOT');
     }
@@ -131,6 +141,8 @@ test('isSandboxed: só com a marca do snapshot.sh e a pasta de dados dentro da r
 test('componentes que alteram dados são marcados e registrados', () => {
     assert.equal(MUTATING_COMPONENTS.includes('detailpanecheck'), true);
     assert.equal(MUTATING_COMPONENTS.includes('sidebarcheck'), true);
+    assert.equal(MUTATING_COMPONENTS.includes('windowcheck'), true);
+    assert.equal(MUTATING_COMPONENTS.includes('window'), false);
     assert.equal(MUTATING_COMPONENTS.includes('sidebar'), false);
     for (const name of MUTATING_COMPONENTS)
         assert.equal(typeof COMPONENTS[name], 'function');

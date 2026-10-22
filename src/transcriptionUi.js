@@ -1,5 +1,5 @@
 /* exported rowStatus, formatUsd, formatDuration, confirmMessage, hasNamedSpeakers, hasKey,
-   statusInfo, guardedSave, canRetry, rowActions, retryPlan, failureMessage, recordingNameProblem */
+   guardedSave, canRetry, rowActions, retryPlan, failureMessage, recordingNameProblem */
 // Decisões da interface de "Gerar transcrição", sem GTK: testáveis isoladamente.
 const { TranscribeError, estimateCostUsd } = imports.transcriber;
 const { isTranscriptFileName } = imports.transcriptStore;
@@ -72,15 +72,6 @@ var rowActions = ({ status, seconds, editMode, hasTranscript = false }) => ({
 var hasNamedSpeakers = t => Object.values(t?.speakers ?? {}).some(Boolean);
 
 var hasKey = entry => Boolean(entry && entry.key);
-
-const STATUS_INFO = {
-    none: { icon: null, tooltip: '' },
-    running: { icon: null, tooltip: 'Transcrevendo…' },
-    ready: { icon: 'emblem-ok-symbolic', tooltip: 'Transcrição pronta' },
-    error: { icon: 'dialog-warning-symbolic', tooltip: 'A última transcrição falhou' },
-};
-
-var statusInfo = status => STATUS_INFO[status] ?? STATUS_INFO.none;
 
 // Envolve o save do serviço: o serviço transforma qualquer erro não-TranscribeError em
 // 'unknown'; aqui damos uma mensagem clara (sem detalhes do erro original) e não

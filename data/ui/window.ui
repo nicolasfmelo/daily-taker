@@ -1,186 +1,159 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <interface>
   <template class="Gjs_Window" parent="AdwApplicationWindow">
-    <property name="width_request">350</property>
+    <!-- Largura mínima do painel de detalhe (abas + Buscar/Copiar/Exportar) com o player compacto. -->
+    <property name="width_request">520</property>
     <property name="height_request">480</property>
-    <property name="hexpand">True</property>
-    <property name="vexpand">True</property>
-    <property name="default_width">780</property>
-    <property name="default_height">480</property>
-    <property name="title" translatable="yes">Daily Taker</property>
-    <child>
-      <object class="GtkBox">
-        <property name="orientation">vertical</property>
-        <child>
-          <object class="GtkRevealer" id="headerRevealer">
-            <property name="reveal_child">True</property>
+    <property name="default_width">1180</property>
+    <property name="default_height">780</property>
+    <property name="title">Daily Taker</property>
+    <property name="content">
+      <!-- Os toasts aparecem também sobre a tela de gravação. -->
+      <object class="AdwToastOverlay" id="toastOverlay">
+        <property name="child">
+          <object class="GtkStack" id="mainStack">
+            <property name="hexpand">True</property>
+            <property name="vexpand">True</property>
+            <property name="transition_type">crossfade</property>
+            <!-- BROWSE: cabeçalho + sidebar | painel com o player embaixo. -->
             <child>
-              <object class="AdwHeaderBar">
-                <property name="title_widget">
-                  <object class="GtkStack" id="titleStack">
-                    <property name="hhomogeneous">False</property>
-                    <child>
-                      <object class="GtkStackPage">
-                        <property name="name">switcher</property>
-                        <property name="child">
-                          <object class="AdwViewSwitcher">
-                            <property name="stack">viewStack</property>
-                            <property name="policy">wide</property>
+              <object class="GtkStackPage">
+                <property name="name">browse</property>
+                <property name="child">
+                  <object class="AdwToolbarView">
+                    <child type="top">
+                      <object class="AdwHeaderBar" id="headerBar">
+                        <property name="show_title">False</property>
+                        <style>
+                          <class name="app-header"/>
+                        </style>
+                        <child type="start">
+                          <!-- Janela estreita, painel aberto: volta à lista. -->
+                          <object class="GtkButton" id="backButton">
+                            <property name="visible">False</property>
+                            <property name="icon_name">go-previous-symbolic</property>
+                            <property name="tooltip_text">Voltar à lista</property>
+                            <accessibility>
+                              <property name="label">Voltar à lista</property>
+                            </accessibility>
                           </object>
-                        </property>
-                      </object>
-                    </child>
-                    <child>
-                      <object class="GtkStackPage">
-                        <property name="name">title</property>
-                        <property name="child">
-                          <object class="AdwWindowTitle" id="windowTitle">
-                            <property name="title" translatable="yes">Daily Taker</property>
+                        </child>
+                        <child type="start">
+                          <object class="GtkBox">
+                            <property name="spacing">10</property>
+                            <style>
+                              <class name="app-title-box"/>
+                            </style>
+                            <child>
+                              <object class="GtkImage" id="appIcon">
+                                <property name="pixel_size">28</property>
+                                <property name="accessible_role">presentation</property>
+                              </object>
+                            </child>
+                            <child>
+                              <object class="GtkLabel">
+                                <property name="label">Daily Taker</property>
+                                <style>
+                                  <class name="app-title"/>
+                                </style>
+                              </object>
+                            </child>
                           </object>
-                        </property>
-                      </object>
-                    </child>
-                  </object>
-                </property>
-                <child>
-                  <object class="GtkButton" id="backButton">
-                    <property name="visible">False</property>
-                    <property name="valign">center</property>
-                    <property name="tooltip_text">Voltar</property>
-                    <child>
-                      <object class="AdwButtonContent">
-                        <property name="icon_name">go-previous-symbolic</property>
-                        <property name="label">Voltar</property>
-                      </object>
-                    </child>
-                  </object>
-                </child>
-                <child>
-                  <object class="GtkButton" id="recordButton">
-                    <property name="receives_default">False</property>
-                    <property name="halign">center</property>
-                    <property name="valign">center</property>
-                    <property name="action_name">recorder.start</property>
-                    <child>
-                      <object class="AdwButtonContent">
-                        <property name="icon_name">media-record-symbolic</property>
-                        <property name="label" translatable="yes">Gravar</property>
-                      </object>
-                    </child>
-                    <style>
-                      <class name="suggested-action"/>
-                    </style>
-                  </object>
-                </child>
-                <child type="end">
-                  <object class="GtkMenuButton">
-                    <property name="receives_default">False</property>
-                    <property name="menu_model">primaryMenu</property>
-                    <property name="icon_name">open-menu-symbolic</property>
-                    <style>
-                      <class name="image-button"/>
-                    </style>
-                  </object>
-                </child>
-              </object>
-            </child>
-          </object>
-        </child>
-        <child>
-          <object class="AdwToastOverlay" id="toastOverlay">
-            <property name="child">
-              <object class="GtkStack" id="mainStack">
-                <property name="hexpand">True</property>
-                <property name="vexpand">True</property>
-                <child>
-                  <object class="GtkStackPage">
-                    <property name="name">views</property>
-                    <property name="child">
-                      <object class="AdwViewStack" id="viewStack">
-                        <property name="hexpand">True</property>
-                        <property name="vexpand">True</property>
-                        <child>
-                          <object class="AdwViewStackPage">
-                            <property name="name">recordings</property>
-                            <property name="title">Gravações</property>
-                            <property name="icon_name">audio-x-generic-symbolic</property>
+                        </child>
+                        <child type="end">
+                          <object class="GtkMenuButton" id="menuButton">
+                            <property name="primary">True</property>
+                            <property name="icon_name">open-menu-symbolic</property>
+                            <property name="menu_model">primaryMenu</property>
+                            <property name="tooltip_text">Menu principal</property>
+                          </object>
+                        </child>
+                        <child type="end">
+                          <object class="GtkButton" id="preferencesButton">
+                            <property name="icon_name">emblem-system-symbolic</property>
+                            <property name="action_name">app.preferences</property>
+                            <property name="tooltip_text">Preferências</property>
+                            <accessibility>
+                              <property name="label">Preferências</property>
+                            </accessibility>
+                          </object>
+                        </child>
+                        <child type="end">
+                          <object class="GtkButton" id="recordButton">
+                            <property name="action_name">recorder.start</property>
+                            <property name="valign">center</property>
+                            <property name="tooltip_text">Começar uma gravação (Ctrl+R)</property>
                             <property name="child">
-                              <object class="GtkStack" id="recordingsStack">
-                                <property name="hexpand">True</property>
-                                <property name="vexpand">True</property>
-                                <child>
-                                  <object class="GtkStackPage">
-                                    <property name="name">empty</property>
-                                    <property name="child">
-                                      <object class="AdwStatusPage" id="emptyPage">
-                                        <property name="title" translatable="yes">Adicione gravações</property>
-                                        <property name="description" translatable="yes">Use o botão &lt;b&gt;Gravar&lt;/b&gt; para gravar sua voz e o som do computador</property>
-                                      </object>
-                                    </property>
-                                  </object>
-                                </child>
-                                <child>
-                                  <object class="GtkStackPage">
-                                    <property name="name">recordings</property>
-                                    <property name="child">
-                                      <object class="GtkScrolledWindow">
-                                        <property name="hexpand">True</property>
-                                        <property name="vexpand">True</property>
-                                        <property name="hscrollbar_policy">never</property>
-                                        <property name="child">
-                                          <object class="GtkViewport">
-                                            <property name="scroll_to_focus">True</property>
-                                            <property name="child">
-                                              <object class="AdwClamp" id="column">
-                                                <property name="maximum_size">650</property>
-                                              </object>
-                                            </property>
-                                          </object>
-                                        </property>
-                                      </object>
-                                    </property>
-                                  </object>
-                                </child>
+                              <object class="AdwButtonContent">
+                                <property name="icon_name">audio-input-microphone-symbolic</property>
+                                <property name="label">Nova gravação</property>
                               </object>
                             </property>
+                            <style>
+                              <class name="accent-pill"/>
+                            </style>
                           </object>
                         </child>
                       </object>
+                    </child>
+                    <property name="content">
+                      <object class="AdwNavigationSplitView" id="splitView">
+                        <property name="min_sidebar_width">300</property>
+                        <property name="max_sidebar_width">340</property>
+                        <property name="sidebar_width_fraction">0.25</property>
+                        <property name="sidebar">
+                          <object class="AdwNavigationPage" id="sidebarPage">
+                            <property name="title">Gravações</property>
+                            <property name="tag">sidebar</property>
+                          </object>
+                        </property>
+                        <property name="content">
+                          <object class="AdwNavigationPage" id="contentPage">
+                            <property name="title">Gravação</property>
+                            <property name="tag">content</property>
+                            <property name="child">
+                              <object class="AdwToolbarView" id="contentView">
+                                <property name="bottom_bar_style">flat</property>
+                              </object>
+                            </property>
+                          </object>
+                        </property>
+                      </object>
                     </property>
                   </object>
-                </child>
+                </property>
               </object>
-            </property>
+            </child>
           </object>
-        </child>
-        <child>
-          <object class="AdwViewSwitcherBar" id="switcherBar">
-            <property name="stack">viewStack</property>
-          </object>
-        </child>
+        </property>
+      </object>
+    </property>
+    <!-- Janela média: sidebar mais estreita; o painel e o player (setters no window.js)
+         ficam compactos para caberem ao lado dela. -->
+    <child>
+      <object class="AdwBreakpoint" id="mediumBreakpoint">
+        <condition>max-width: 1000sp</condition>
+        <setter object="splitView" property="min_sidebar_width">280</setter>
       </object>
     </child>
+    <!-- Abaixo de 720 sp a sidebar recolhe sobre o painel (lista → detalhe). Vem depois
+         da média: quando as duas valem, a última aplicável é a usada. -->
     <child>
       <object class="AdwBreakpoint" id="narrowBreakpoint">
-        <condition>max-width: 550sp</condition>
+        <condition>max-width: 720sp</condition>
+        <setter object="splitView" property="collapsed">True</setter>
       </object>
     </child>
   </template>
   <menu id="primaryMenu">
     <section>
       <item>
-        <attribute name="label">Preferências</attribute>
-        <attribute name="action">app.preferences</attribute>
-      </item>
-    </section>
-    <section>
-      <item>
-        <attribute name="label" translatable="yes">_Atalhos de teclado</attribute>
+        <attribute name="label">_Atalhos de teclado</attribute>
         <attribute name="action">win.show-help-overlay</attribute>
       </item>
       <item>
+        <attribute name="label">Sobre o Daily Taker</attribute>
         <attribute name="action">app.about</attribute>
-        <attribute name="label" translatable="yes">Sobre o Daily Taker</attribute>
       </item>
     </section>
   </menu>

@@ -5,8 +5,15 @@ const { RecordingsDir } = imports.application;
 const { Recording } = imports.recording;
 const { isTranscriptFileName } = imports.transcriptStore;
 
-var RecordingList = new GObject.registerClass(class RecordingList extends Gio.ListStore {
+var RecordingList = new GObject.registerClass({
+    Properties: {
+        // A primeira leitura da pasta terminou (com ou sem gravações).
+        'loaded': GObject.ParamSpec.boolean('loaded', 'loaded', 'Initial directory scan finished',
+            GObject.ParamFlags.READABLE, false),
+    },
+}, class RecordingList extends Gio.ListStore {
     _init() {
+        this._loaded = false;
         super._init({ });
 
         this.cancellable = new Gio.Cancellable();
@@ -99,10 +106,28 @@ var RecordingList = new GObject.registerClass(class RecordingList extends Gio.Li
         fileEnumerator.next_files_async(5, GLib.PRIORITY_LOW, this.cancellable, copyFiles);
     }
 
+    get loaded() {
+        return this._loaded;
+    }
+
+    _setLoaded() {
+        if (this._loaded)
+            return;
+        this._loaded = true;
+        this.notify('loaded');
+    }
+
     _enumerateDirectory(obj, res) {
-        this._enumerator = obj.enumerate_children_finish(res);
+        try {
+            this._enumerator = obj.enumerate_children_finish(res);
+        } catch (e) {
+            this._enumerator = null;
+            if (e.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED))
+                return;
+        }
         if (this._enumerator === null) {
             log('The contents of the Recordings directory were not indexed.');
+            this._setLoaded();
             return;
         }
         this._enumerator.next_files_async(5, GLib.PRIORITY_LOW, this.cancellable, this._onNextFiles.bind(this));
@@ -123,11 +148,13 @@ var RecordingList = new GObject.registerClass(class RecordingList extends Gio.Li
                 this._enumerator.next_files_async(5, GLib.PRIORITY_LOW, this.cancellable, this._onNextFiles.bind(this));
             } else {
                 this._enumerator.close(this.cancellable);
+                this._setLoaded();
             }
         } catch (e) {
-            if (!e.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED))
-                error(`Failed to load recordings ${e}`);
-
+            if (!e.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED)) {
+                log(`Failed to load recordings ${e}`);
+                this._setLoaded();
+            }
         }
     }
 

@@ -6,12 +6,15 @@
     <file>ui/player-bar.ui</file>
     <file>ui/preferences.ui</file>
     <file>ui/recorder.ui</file>
-    <file>ui/row.ui</file>
     <file>ui/sidebar.ui</file>
     <file>ui/transcript-view.ui</file>
-    <file>ui/transcripts-page.ui</file>
     <file>ui/window.ui</file>
     <file alias="gtk/help-overlay.ui">ui/help-overlay.ui</file>
+  </gresource>
+  <!-- Ícone do app no cabeçalho: também quando o tema de ícones do sistema não o tem
+       (ex.: tools/snapshot.sh, que instala numa raiz temporária). -->
+  <gresource prefix="/dev/nicolas/DailyTaker/icons/64x64/apps/">
+    <file alias="dev.nicolas.DailyTaker.png">icons/hicolor/64x64/apps/dev.nicolas.DailyTaker.png</file>
   </gresource>
   <gresource prefix="/dev/nicolas/DailyTaker/icons/16x16/actions/">
     <file compressed="true" preprocess="xml-stripblanks" alias="audio-waveform-symbolic.svg">icons/audio-waveform-symbolic.svg</file>

@@ -1,38 +1,9 @@
-/* exported languageName blockTitle viewHeader exportContent exportExtension speakerEntry
+/* exported exportContent exportExtension speakerEntry
    currentBlockIndex findMatches nextIndex findCounterText shouldSeekOnClick */
 // Textos da visão de transcrição, sem GTK: testáveis isoladamente.
-const { blockIndexAt, buildBlocks } = imports.transcript;
-const { copyText, formatClock, formatDateTime, toMarkdown } = imports.transcriptFormat;
+const { blockIndexAt } = imports.transcript;
+const { copyText, toMarkdown } = imports.transcriptFormat;
 const { normalize } = imports.transcriptSearch;
-
-const DEFAULT_TITLE = 'Transcrição';
-const PORTUGUESE = ['por', 'pt'];
-
-// A API devolve códigos como 'por'; só português tem nome amigável.
-var languageName = code => {
-    if (typeof code !== 'string' || !code)
-        return '';
-    const base = code.toLowerCase().split(/[-_]/)[0];
-    return PORTUGUESE.includes(base) ? 'Português' : code;
-};
-
-var blockTitle = block =>
-    block.label ? `${block.label} · ${formatClock(block.start)}` : formatClock(block.start);
-
-var viewHeader = t => {
-    const names = [];
-    for (const b of buildBlocks(t)) {
-        if (b.label && !names.includes(b.label))
-            names.push(b.label);
-    }
-    return {
-        title: (t.title ?? '').trim() || DEFAULT_TITLE,
-        dateTime: formatDateTime(t.recorded_at),
-        duration: formatClock(t.duration),
-        language: languageName(t.language),
-        speakers: names.join(', '),
-    };
-};
 
 const EXPORTERS = {
     md: t => toMarkdown(t),

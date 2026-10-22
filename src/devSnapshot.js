@@ -1,5 +1,5 @@
 /* exported COMPONENTS MUTATING_COMPONENTS PANE_STATES SIDEBAR_STATES WINDOW_STATES isSandboxed maybeSnapshot
-   silencePlayback snapshotParams stateError */
+   playbackOptions silencePlayback snapshotParams stateError */
 // Captura de tela para conferência visual (tools/snapshot.sh). Inerte sem a variável
 // DAILY_TAKER_SNAPSHOT: com ela, mostra a janela (ou um componente numa janela simples),
 // espera assentar, grava um PNG no caminho indicado e encerra o app.
@@ -21,7 +21,7 @@ const nextSignal = (obj, signal, pred = () => true) => new Promise(resolve => {
 
 // Componentes que alteram arquivos (renomeiam, reescrevem transcrições): só rodam no
 // ambiente isolado do tools/snapshot.sh, conferido ANTES de qualquer alteração.
-var MUTATING_COMPONENTS = ['detailpanecheck', 'sidebarcheck'];
+var MUTATING_COMPONENTS = ['detailpanecheck', 'sidebarcheck', 'windowcheck'];
 
 const hasDotSegment = path => path.split('/').some(part => part === '.' || part === '..');
 const trimSlashes = path => path.replace(/\/+$/, '');
@@ -122,7 +122,7 @@ const playerBarComponent = params => {
     };
 };
 
-// Visão da transcrição sozinha (modo embutido, salvo --embedded 0) com a transcrição da
+// Visão da transcrição sozinha (a do painel de detalhe) com a transcrição da
 // gravação --select N (padrão 1, a mais recente). --at SEG posiciona o Playback (pausado,
 // fakesink) e realça o bloco daquele instante; --find TEXTO aplica a busca interna.
 const transcriptViewComponent = params => {
@@ -138,10 +138,9 @@ const transcriptViewComponent = params => {
     if (!transcript)
         throw new Error(`a gravação ${n} não tem transcrição`);
 
-    const view = new TranscriptView({ embedded: params.embedded !== 0 });
+    const view = new TranscriptView();
     const playback = silentPlayback();
-    if (view.embedded)
-        view.bindPlayback(playback);
+    view.bindPlayback(playback);
     const built = nextSignal(view, 'blocks-built');
     view.setTranscript(transcript, file);
     const positioned = positionPlayback(playback, file.get_uri(), params.at ?? 0);
@@ -638,12 +637,296 @@ const sidebarCheckComponent = () => {
     return { widget: sidebar, ready };
 };
 
+// Biblioteca da janela pronta: a varredura da pasta terminou (RecordingList.loaded) e
+// cada gravação tem a duração conhecida. Resolve com os itens, na ordem da lista.
+const libraryReady = list => new Promise(resolve => {
+    const done = () => {
+        const items = [];
+        for (let i = 0; i < list.get_n_items(); i++)
+            items.push(list.get_item(i));
+        Promise.all(items.map(r => r.duration > 0
+            ? Promise.resolve()
+            : nextSignal(r, 'notify::duration'))).then(() => resolve(items));
+    };
+    if (list.loaded) {
+        done();
+        return;
+    }
+    const id = list.connect('notify::loaded', () => {
+        list.disconnect(id);
+        done();
+    });
+});
+
+// Resolve quando o Playback conhece a duração da mídia carregada.
+const durationKnown = playback => playback.duration > 0
+    ? Promise.resolve()
+    : nextSignal(playback, 'duration-changed', seconds => seconds > 0);
+
+const sleep = ms => new Promise(resolve => GLib.timeout_add(GLib.PRIORITY_DEFAULT, ms, () => {
+    resolve();
+    return GLib.SOURCE_REMOVE;
+}));
+
+// `promise` ou false depois de `ms` (uma verificação falha em vez de travar a captura).
+const within = (promise, ms) => Promise.race([promise.then(() => true), sleep(ms).then(() => false)]);
+
+const whenMapped = widget => widget.get_mapped() ? Promise.resolve() : nextSignal(widget, 'map');
+
+// Seleciona a gravação na janela real e espera os blocos da transcrição, se houver.
+const selectInWindow = (window, recording) => {
+    const { loadTranscript } = imports.transcriptStore;
+    const built = loadTranscript(recording.file)
+        ? nextSignal(window._detailPane.view, 'blocks-built')
+        : Promise.resolve();
+    window.selectRecording(recording);
+    return built;
+};
+
+// Janela principal real com a biblioteca das fixtures: --select N (gravação N da lista;
+// carrega painel, transcrição e player), --tab, --at SEG (posiciona o player pausado;
+// saída fakesink, nada toca), --query TEXTO (busca da sidebar), --empty 1 (esvazia só a
+// lista em memória: nenhum arquivo é tocado). --state recorder é aplicado antes.
+const windowComponent = (params, { window }) => {
+    const ready = libraryReady(window._recordingList).then(async items => {
+        if (params.empty)
+            window._recordingList.remove_all();
+        const n = params.empty ? 0 : params.select ?? 0;
+        if (n > 0) {
+            const recording = items[n - 1];
+            if (!recording)
+                throw new Error(`não há gravação ${n} nas fixtures (há ${items.length})`);
+            await selectInWindow(window, recording);
+        }
+        if (params.tab)
+            window._detailPane.tab = params.tab;
+        if (params.query !== null)
+            window._sidebar.setQuery(params.query);
+        if (n > 0) {
+            await durationKnown(window.playback);
+            if (params.at > 0) {
+                const positioned = nextSignal(window.playback, 'position-updated',
+                    pos => Math.abs(pos - params.at) < 0.5);
+                window.playback.seek(params.at);
+                await positioned;
+            }
+        }
+        // A captura mostra o estado em repouso (sem o anel de foco na busca).
+        await whenMapped(window);
+        window.set_focus(null);
+        const minWidth = w => w.measure(Gtk.Orientation.HORIZONTAL, -1)[0];
+        print(`devSnapshot: larguras mínimas: sidebar ${minWidth(window._sidebar)}, painel ` +
+            `${minWidth(window._detailPane)}, player ${minWidth(window._playerBar)}, janela ${minWidth(window)}; ` +
+            `breakpoint: ${window.current_breakpoint === window._narrowBreakpoint ? 'estreita'
+                : window.current_breakpoint === window._mediumBreakpoint ? 'média' : 'nenhum'}`);
+        print(`devSnapshot: janela: selecionada: ${window._sidebar.selected?.name ?? 'nenhuma'}; ` +
+            `painel: ${window._detailPane._state}; recolhida: ${window._splitView.collapsed}`);
+    });
+    return { widget: window, ready };
+};
+
+// Verificação da janela inteira na cópia das fixtures (renomeia, manda para a lixeira do
+// ambiente isolado e copia um arquivo: só isolada). Imprime PASS/FAIL por verificação;
+// uma falha = sem PNG e saída ≠ 0. O Playback da janela usa fakesink: tocar não faz som.
+// Nenhum microfone: a gravação "nova" é a cópia de uma fixture.
+const windowCheckComponent = (params, { window }) => {
+    assertSandboxed();
+    const { RecordingsDir } = imports.application;
+    const { Recording } = imports.recording;
+    const { NOTHING_RECORDED_MESSAGE } = imports.recorderPipeline;
+    const { WindowState } = imports.window;
+
+    const list = window._recordingList;
+    const sidebar = window._sidebar;
+    const pane = window._detailPane;
+    const bar = window._playerBar;
+    const playback = window.playback;
+    const split = window._splitView;
+    let failures = 0;
+    const check = (ok, what) => {
+        print(`${ok ? 'PASS' : 'FAIL'} windowcheck: ${what}`);
+        if (!ok)
+            failures++;
+    };
+    const toasts = [];
+    const addToast = window.addToast;
+    window.addToast = title => {
+        toasts.push(title);
+        addToast.call(window, title);
+    };
+    const sameFile = (a, b) => Boolean(a && b && a.equal(b));
+    const playing = () => within(nextSignal(playback, 'state-changed', p => p === true), 5000);
+    const rowOf = r => sidebar._rowFor(r);
+
+    const ready = libraryReady(list).then(async items => {
+        await whenMapped(window);
+        check(items.length === 4, `biblioteca com as 4 fixtures (${items.length})`);
+        const [daily, ideias, notas, sem] = items;
+
+        // 0. Partida: nada selecionado.
+        check(sidebar.selected === null && pane._state === 'no-selection' && playback.uri === null &&
+            !bar._playButton.sensitive, 'partida: sem seleção, painel "Selecione", player desligado');
+
+        // 1. Cada fixture mostra o estado certo, com o player carregado e parado.
+        for (const [recording, expected] of [[daily, 'ready'], [ideias, 'ready'], [notas, 'ready'],
+            [sem, 'not-transcribed']]) {
+            await selectInWindow(window, recording);
+            const viewFile = pane.view.recordingFile;
+            check(sidebar.selected === recording && pane._state === expected &&
+                playback.uri === recording.uri && !playback.playing && bar._recording === recording &&
+                bar._playButton.sensitive &&
+                (expected === 'ready' ? sameFile(viewFile, recording.file) : viewFile === null),
+            `selecionar "${recording.name}": painel ${expected}, player carregado e parado`);
+        }
+        check(pane._costLabel.visible && pane._costLabel.label.startsWith('Custo estimado'),
+            `sem transcrição: custo estimado no cartão ("${pane._costLabel.label}")`);
+
+        // 2. Trocar de gravação com outra tocando: o áudio anterior para.
+        await selectInWindow(window, daily);
+        await durationKnown(playback);
+        let started = playing();
+        playback.play();
+        check(await started, 'daily tocando (fakesink, sem som)');
+        await selectInWindow(window, ideias);
+        check(playback.uri === ideias.uri && !playback.playing, 'trocar de gravação: áudio anterior parado, a nova carregada parada');
+        await sleep(400);
+        check(playback.uri === ideias.uri && !playback.playing, 'depois de 400 ms continua parada (nada atrasado da mídia anterior)');
+
+        // 3. Clique num bloco da transcrição: pula e toca.
+        await selectInWindow(window, daily);
+        await durationKnown(playback);
+        // Recolhida, o painel só aparece (e realça) depois de aberto.
+        if (split.collapsed)
+            split.show_content = true;
+        started = playing();
+        pane.view.emit('seek-requested', 34);
+        check(await started, 'seek-requested da transcrição põe para tocar');
+        check(playback.uri === daily.uri && playback.position >= 33.5, `seek-requested pula para 00:34 (${playback.position.toFixed(1)} s)`);
+        playback.pause();
+        check(pane.view._currentIndex >= 0, `bloco atual realçado (${pane.view._currentIndex})`);
+        split.show_content = false;
+
+        // 4. Renomear a selecionada (com o player posicionado): segue a gravação.
+        await selectInWindow(window, ideias);
+        await durationKnown(playback);
+        playback.seek(3);
+        const oldUri = ideias.uri;
+        check(window._renameRecording(ideias, 'Ideias renomeadas') && ideias.name === 'Ideias renomeadas',
+            'renomear a selecionada');
+        check(ideias.uri !== oldUri && playback.uri === ideias.uri && sidebar.selected === ideias &&
+            sameFile(pane.view.recordingFile, ideias.file) && pane._titleLabel.label === 'Ideias renomeadas' &&
+            bar._recording === ideias && !playback.playing,
+        'renomear: player na URI nova, visão no arquivo novo, seleção e título mantidos, parado');
+        await durationKnown(playback);
+        await sleep(300);
+        check(Math.abs(playback.position - 3) < 0.6 && !playback.playing,
+            `renomear: posição mantida, pausado (${playback.position.toFixed(2)} s)`);
+        const before = toasts.length;
+        check(!window._renameRecording(ideias, 'x.transcript.json') && ideias.name === 'Ideias renomeadas' &&
+            toasts.length === before + 1, 'nome terminado em .transcript.json recusado com aviso');
+
+        // 5. A selecionada sai da lista (só em memória): a vizinha é selecionada e carregada.
+        await selectInWindow(window, notas);
+        started = playing();
+        playback.play();
+        await started;
+        const index = list.getIndex(notas.file);
+        list.remove(index);
+        check(sidebar.selected === sem && playback.uri === sem.uri && !playback.playing &&
+            pane._state === 'not-transcribed' && bar._recording === sem,
+        'remover a selecionada (tocando): vizinha selecionada, áudio anterior parado');
+        list.insert(index, notas);
+
+        // 6. Excluir (sidebar ⋮ → Excluir): sai da lista e vai para a lixeira isolada.
+        await selectInWindow(window, sem);
+        sidebar.emit('delete-requested', sem);
+        check(list.getIndex(sem.file) < 0 && sidebar.selected === notas && playback.uri === notas.uri &&
+            !playback.playing && toasts.some(t => t.includes('lixeira')),
+        'excluir a selecionada: vizinha selecionada, aviso da lixeira');
+        await sleep(500);
+        const trashed = Gio.File.new_for_path(GLib.build_filenamev([GLib.get_user_data_dir(), 'Trash',
+            'files', 'Sem transcrição']));
+        check(!sem.file.query_exists(null) && trashed.query_exists(null),
+            'arquivo excluído foi para a lixeira do ambiente isolado');
+
+        // 7. Gravador: começar para o player; parar insere, seleciona e deixa parado.
+        await selectInWindow(window, daily);
+        await durationKnown(playback);
+        started = playing();
+        playback.play();
+        await started;
+        window.onRecorderStarted();
+        check(window.state === WindowState.RECORDER && !playback.playing, 'começar a gravar para o player');
+        const copy = RecordingsDir.get_child('Gravação de teste');
+        daily.file.copy(copy, Gio.FileCopyFlags.NONE, null, null);
+        const fresh = new Recording(copy);
+        window.onRecorderStopped(fresh);
+        let count = 0;
+        for (let i = 0; i < list.get_n_items(); i++)
+            count += list.get_item(i).uri === fresh.uri ? 1 : 0;
+        check(window.state === WindowState.BROWSE && list.get_item(0) === fresh && count === 1 &&
+            sidebar.selected === fresh && playback.uri === fresh.uri && !playback.playing &&
+            pane._state === 'not-transcribed',
+        'parar: gravação nova no topo (uma vez), selecionada, player nela e parado');
+        window.onRecorderStarted();
+        window.onRecorderStopped(null);
+        check(window.state === WindowState.BROWSE && toasts.includes(NOTHING_RECORDED_MESSAGE) &&
+            sidebar.selected === fresh, 'parar sem nada gravado: aviso e volta à lista com a seleção');
+        window.onRecorderStarted();
+        window.recorderWidget.emit('canceled');
+        window.recorderWidget.emit('failed', 'Falha simulada do gravador');
+        check(window.state === WindowState.BROWSE && toasts.includes('Falha simulada do gravador') &&
+            sidebar.selected === fresh && playback.uri === fresh.uri,
+        'falha do gravador: aviso, volta à lista, seleção mantida');
+
+        // 8. Janela estreita: recolher/expandir mantém a seleção; escolher abre o painel.
+        const width = window.get_width();
+        check(split.collapsed === width < 720, `breakpoint: largura ${width} → recolhida ${split.collapsed}`);
+        const wasCollapsed = split.collapsed;
+        split.collapsed = true;
+        split.show_content = false;
+        check(sidebar.selected === fresh && !window._backButton.visible, 'recolhida: lista visível, seleção mantida, sem Voltar');
+        await selectInWindow(window, daily);
+        sidebar._list.emit('row-activated', rowOf(daily));
+        check(split.show_content && window._backButton.visible && pane._titleLabel.label === daily.name,
+            'recolhida: escolher abre o painel com Voltar');
+        window._backButton.emit('clicked');
+        check(!split.show_content && sidebar.selected === daily && pane._titleLabel.label === daily.name &&
+            playback.uri === daily.uri, 'Voltar: lista de novo, seleção e player mantidos');
+        split.collapsed = wasCollapsed;
+        check(sidebar.selected === daily && window._backButton.visible === false,
+            'voltar ao tamanho original mantém a seleção');
+
+        // 9. Biblioteca vazia (só em memória): painel "Nenhuma gravação ainda", player desligado.
+        const all = [];
+        for (let i = 0; i < list.get_n_items(); i++)
+            all.push(list.get_item(i));
+        list.remove_all();
+        check(pane._mainStack.visible_child_name === 'empty-library' && sidebar.selected === null &&
+            playback.uri === null && !bar._playButton.sensitive, 'lista vazia: painel da biblioteca vazia, player desligado');
+        list.splice(0, 0, all);
+        check(pane._mainStack.visible_child_name === 'no-selection', 'lista de volta: "Selecione uma gravação"');
+
+        // Captura: daily no 00:34.
+        await selectInWindow(window, daily);
+        await durationKnown(playback);
+        playback.seek(34);
+        await whenMapped(window);
+        window.set_focus(null);
+        print(`devSnapshot: windowcheck: ${failures === 0 ? 'todas as verificações OK' : `${failures} falha(s)`}`);
+        if (failures > 0)
+            throw new Error(`${failures} verificação(ões) falharam`);
+    });
+    return { widget: window, ready };
+};
+
 // nome → (params, { app, window }) → Gtk.Widget ou { widget, ready?, cleanup? }. Se o
 // widget for um Gtk.Window, ele é capturado como está; qualquer outro vai para uma janela
 // simples do tamanho pedido. `ready` (Promise) adia a captura até o componente terminar
 // de carregar (ex.: picos da onda); `cleanup` roda antes de sair.
 var COMPONENTS = {
-    window: (_params, ctx) => ctx.window,
+    window: windowComponent,
+    windowcheck: windowCheckComponent,
     playerbar: playerBarComponent,
     transcriptview: transcriptViewComponent,
     detailpane: detailPaneComponent,
@@ -704,7 +987,6 @@ var snapshotParams = () => {
         tab: env('DAILY_TAKER_SNAPSHOT_TAB'),
         at: intOrNull(env('DAILY_TAKER_SNAPSHOT_AT')),
         state: env('DAILY_TAKER_SNAPSHOT_STATE'),
-        embedded: intOrNull(env('DAILY_TAKER_SNAPSHOT_EMBEDDED')),
         find: env('DAILY_TAKER_SNAPSHOT_FIND'),
         query: env('DAILY_TAKER_SNAPSHOT_QUERY'),
         empty: env('DAILY_TAKER_SNAPSHOT_EMPTY') === '1',
@@ -734,6 +1016,12 @@ const savePng = (target, path) => {
         throw new Error(`não foi possível gravar ${path}`);
     print(`devSnapshot: ${path} (${width}x${height})`);
 };
+
+// Opções do Playback da janela: durante uma captura a saída é um fakesink (nunca abre um
+// dispositivo de som, além das defesas do snapshot.sh); fora dela, {} (saída padrão).
+var playbackOptions = () => env('DAILY_TAKER_SNAPSHOT')
+    ? { audioSinkFactory: () => Gst.ElementFactory.make('fakesink', null) }
+    : {};
 
 // Defesa extra para quem tocar áudio durante uma captura (ex.: --at): zera o volume e
 // silencia o player/playbin. Sem DAILY_TAKER_SNAPSHOT não faz nada.
@@ -772,11 +1060,8 @@ var maybeSnapshot = (window, params = snapshotParams()) => {
             return true;
         }
     }
-    silencePlayback(window.player);
     if (params.state && params.component === 'window')
         WINDOW_STATES[params.state](window);
-    if (params.component === 'window' && (params.select !== null || params.tab || params.at !== null))
-        print('devSnapshot: nota: --select/--tab/--at ainda são ignorados pela janela atual');
 
     let built;
     try {
@@ -813,10 +1098,15 @@ var maybeSnapshot = (window, params = snapshotParams()) => {
             cleanup();
             if (!ok)
                 imports.system.exit(3);
-            if (target === window)
+            // A janela principal fecha (e o app sai) pelo caminho normal, que desmonta os
+            // widgets antes de sair; um componente avulso fecha antes dela.
+            if (target !== window) {
+                target.destroy();
+                target.run_dispose();
+                window.shutdown();
+            } else {
                 window.close();
-            else
-                app.quit();
+            }
             return GLib.SOURCE_REMOVE;
         });
     }).catch(e => {

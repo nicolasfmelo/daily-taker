@@ -23,8 +23,8 @@ const CLASSES = [
     'bg-window', 'bg-detail', 'accent-pill', 'sidebar-item', 'badge-ok', 'badge-error',
     'speaker-dot', 'speaker-0', 'speaker-1', 'speaker-2', 'speaker-3', 'speaker-4', 'speaker-5',
     'speaker-none', 'transcript-block', 'player-bar', 'group-label',
-    // Ainda usadas pela UI atual.
-    'recorder-time-label', 'paused', 'recording-row', 'speaker-button',
+    // Tela de gravação, locutor e cabeçalho da janela.
+    'recorder-time-label', 'paused', 'speaker-button', 'app-title',
 ];
 
 // Seletor que termina na classe (ex.: ".sidebar-item {", ".speaker-0,") ou num composto.

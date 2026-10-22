@@ -68,15 +68,6 @@ test('hasKey: só com chave não vazia', () => {
     assert.equal(U.hasKey({ key: 'k', source: 'secret' }), true);
 });
 
-test('statusInfo: ícone e dica por estado', () => {
-    assert.equal(U.statusInfo('none').icon, null);
-    assert.equal(U.statusInfo('ready').icon, 'emblem-ok-symbolic');
-    assert.equal(U.statusInfo('ready').tooltip, 'Transcrição pronta');
-    assert.equal(U.statusInfo('error').icon, 'dialog-warning-symbolic');
-    assert.equal(U.statusInfo('error').tooltip, 'A última transcrição falhou');
-    assert.equal(U.statusInfo('running').tooltip, 'Transcrevendo…');
-});
-
 const fakeFile = exists => ({ query_exists: () => exists });
 
 test('guardedSave: repassa para save quando a gravação existe', () => {

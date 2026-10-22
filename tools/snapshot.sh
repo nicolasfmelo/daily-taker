@@ -2,9 +2,9 @@
 # Renderiza a janela real do Daily Taker (ou um componente) num PNG, sem usar a tela,
 # os dados, a configuração, o chaveiro nem o áudio do usuário. Ver tools/README.md.
 #
-#   bash tools/snapshot.sh OUT.png [--component window|playerbar|transcriptview|detailpane|sidebar|…]
+#   bash tools/snapshot.sh OUT.png [--component window|windowcheck|playerbar|transcriptview|detailpane|sidebar|…]
 #                          [--select N] [--tab transcricao|resumo] [--at SEG] [--size LxA] [--query TEXTO]
-#                          [--state recorder|none|running|error|ready] [--embedded 0|1] [--find TEXTO] [--empty 0|1]
+#                          [--state recorder|none|running|error|ready] [--find TEXTO] [--empty 0|1]
 #   bash tools/snapshot.sh --probe-audio   # prova, no mesmo ambiente, que o áudio vai para o nada
 set -euo pipefail
 
@@ -33,7 +33,7 @@ case "$1" in -*) usage ;; esac
 out="$(realpath -m -- "$1")"
 shift
 
-component='window' select='' tab='' at='' size='' state='' embedded='' find='' empty='' query=''
+component='window' select='' tab='' at='' size='' state='' find='' empty='' query=''
 while [ $# -gt 0 ]; do
     [ $# -ge 2 ] || die "falta o valor de $1"
     case "$1" in
@@ -43,7 +43,6 @@ while [ $# -gt 0 ]; do
         --at) at="$2" ;;
         --size) size="$2" ;;
         --state) state="$2" ;;
-        --embedded) embedded="$2" ;;
         --find) find="$2" ;;
         --empty) empty="$2" ;;
         --query) query="$2" ;;
@@ -68,7 +67,6 @@ fi
 [ -z "$at" ] || [[ "$at" =~ ^[0-9]+(\.[0-9]+)?$ ]] || die "--at espera segundos"
 [ -z "$state" ] || [[ "$state" =~ ^(recorder|none|running|error|ready)$ ]] ||
     die "--state espera recorder (window), none|running|error|ready (detailpane) ou running|error (sidebar)"
-[ -z "$embedded" ] || [[ "$embedded" =~ ^[01]$ ]] || die "--embedded espera 0 ou 1"
 [ -z "$empty" ] || [[ "$empty" =~ ^[01]$ ]] || die "--empty espera 0 ou 1"
 [[ "$size" =~ ^([1-9][0-9]*)x([1-9][0-9]*)$ ]] || die "--size espera LxA, por exemplo 1536x1024"
 [ -d "$(dirname -- "$out")" ] || die "diretório de saída não existe: $(dirname -- "$out")"
@@ -171,7 +169,6 @@ env -i \
     DAILY_TAKER_SNAPSHOT_AT="$at" \
     DAILY_TAKER_SNAPSHOT_SIZE="$size" \
     DAILY_TAKER_SNAPSHOT_STATE="$state" \
-    DAILY_TAKER_SNAPSHOT_EMBEDDED="$embedded" \
     DAILY_TAKER_SNAPSHOT_FIND="$find" \
     DAILY_TAKER_SNAPSHOT_EMPTY="$empty" \
     DAILY_TAKER_SNAPSHOT_QUERY="$query" \

@@ -19,18 +19,23 @@ var PlayerBar = GObject.registerClass({
     Template: 'resource:///dev/nicolas/DailyTaker/ui/player-bar.ui',
     InternalChildren: [
         'playButton', 'waveform', 'positionLabel', 'rateButton',
-        'volumeButton', 'volumeScale', 'followSwitch',
+        'volumeButton', 'volumeScale', 'followSwitch', 'followLabel',
     ],
     Properties: {
         'follow-audio': GObject.ParamSpec.boolean('follow-audio', 'follow-audio',
             'Scroll the transcript along with the audio',
             GObject.ParamFlags.READWRITE, true),
+        // Janela estreita: sem o slider de volume (o botão de mudo fica) e sem o rótulo
+        // "Acompanhar áudio" (o switch fica, com a dica), para caber na largura mínima.
+        'compact': GObject.ParamSpec.boolean('compact', 'compact', 'Narrow layout',
+            GObject.ParamFlags.READWRITE, false),
     },
 }, class PlayerBar extends Gtk.Box {
     // `settings`: Gio.Settings do schema do app (chaves playback-rate, playback-volume e
     // follow-audio). Sem ele usa o Settings do app (importado só aqui, sob demanda).
     _init({ settings, ...params } = {}) {
         this._followAudio = true;
+        this._compact = false;
         this._playback = null;
         this._playbackIds = [];
         this._recording = null;
@@ -83,6 +88,21 @@ var PlayerBar = GObject.registerClass({
             return;
         this._followAudio = next;
         this.notify('follow-audio');
+    }
+
+    get compact() {
+        return this._compact;
+    }
+
+    set compact(value) {
+        const next = Boolean(value);
+        if (next === this._compact)
+            return;
+        this._compact = next;
+        this._volumeScale.visible = !next;
+        this._followLabel.visible = !next;
+        this.spacing = next ? 10 : 20;
+        this.notify('compact');
     }
 
     // Liga a barra a um Playback (desliga o anterior). Aplica a velocidade e o volume
