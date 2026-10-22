@@ -62,45 +62,102 @@ test('sidebarModel: entradas ausentes ficam bem formadas', () => {
 });
 
 const PANE_STATES = ['empty-library', 'no-selection', 'not-transcribed', 'running', 'error', 'ready'];
+const STATUSES = ['none', 'running', 'error', 'ready'];
+const r = { name: 'Daily' };
 
-test('paneState: sem gravações → empty-library (seleção e status não importam)', () => {
-    assert.equal(M.paneState(null, false, 'none'), 'empty-library');
-    assert.equal(M.paneState({ name: 'x' }, false, 'ready'), 'empty-library');
-    assert.equal(M.paneState({ name: 'x' }, false, 'running'), 'empty-library');
+test('paneState: sem gravações → empty-library (seleção, status e transcrição não importam)', () => {
+    for (const status of STATUSES) {
+        for (const has of [true, false]) {
+            assert.equal(M.paneState(null, false, status, has), 'empty-library');
+            assert.equal(M.paneState(r, false, status, has), 'empty-library');
+        }
+    }
 });
 
 test('paneState: há gravações e nenhuma selecionada → no-selection', () => {
-    assert.equal(M.paneState(null, true, 'none'), 'no-selection');
-    assert.equal(M.paneState(null, true, 'ready'), 'no-selection');
-    assert.equal(M.paneState(undefined, true, 'error'), 'no-selection');
+    for (const status of STATUSES) {
+        assert.equal(M.paneState(null, true, status, true), 'no-selection');
+        assert.equal(M.paneState(undefined, true, status, false), 'no-selection');
+    }
 });
 
-test('paneState: gravação selecionada → pelo status', () => {
-    const r = { name: 'Daily' };
-    assert.equal(M.paneState(r, true, 'none'), 'not-transcribed');
-    assert.equal(M.paneState(r, true, 'running'), 'running');
-    assert.equal(M.paneState(r, true, 'error'), 'error');
-    assert.equal(M.paneState(r, true, 'ready'), 'ready');
+test('paneState: com transcrição a visão fica sempre (ready, error, running, none)', () => {
+    assert.equal(M.paneState(r, true, 'ready', true), 'ready');
+    assert.equal(M.paneState(r, true, 'error', true), 'ready');
+    assert.equal(M.paneState(r, true, 'running', true), 'ready');
+    assert.equal(M.paneState(r, true, 'none', true), 'ready');
 });
 
-test('paneState: status desconhecido ou ausente → not-transcribed (nunca painel vazio)', () => {
-    const r = { name: 'Daily' };
-    assert.equal(M.paneState(r, true, undefined), 'not-transcribed');
-    assert.equal(M.paneState(r, true, null), 'not-transcribed');
-    assert.equal(M.paneState(r, true, 'whatever'), 'not-transcribed');
-    assert.equal(M.paneState(r, true, 'toString'), 'not-transcribed');
+test('paneState: sem transcrição → cartão do status', () => {
+    assert.equal(M.paneState(r, true, 'none', false), 'not-transcribed');
+    assert.equal(M.paneState(r, true, 'running', false), 'running');
+    assert.equal(M.paneState(r, true, 'error', false), 'error');
+    // "Pronta" sem transcrição carregada: cartão de gerar (generateCard diz o motivo).
+    assert.equal(M.paneState(r, true, 'ready', false), 'not-transcribed');
+});
+
+test('paneState: status desconhecido ou ausente → not-transcribed / ready', () => {
+    for (const status of [undefined, null, 'whatever', 'toString']) {
+        assert.equal(M.paneState(r, true, status, false), 'not-transcribed');
+        assert.equal(M.paneState(r, true, status, true), 'ready');
+    }
+    assert.equal(M.paneState(r, true, 'ready'), 'not-transcribed');
 });
 
 test('paneState: toda combinação cai num estado com painel definido', () => {
     for (const recording of [null, undefined, {}, { name: 'a' }]) {
         for (const has of [true, false, undefined]) {
-            for (const status of ['none', 'running', 'error', 'ready', undefined, 'x']) {
-                const s = M.paneState(recording, has, status);
-                if (!PANE_STATES.includes(s))
-                    throw new Error(`estado sem painel: ${s}`);
+            for (const status of [...STATUSES, undefined, 'x']) {
+                for (const hasTranscript of [true, false, undefined]) {
+                    const s = M.paneState(recording, has, status, hasTranscript);
+                    if (!PANE_STATES.includes(s))
+                        throw new Error(`estado sem painel: ${s}`);
+                }
             }
         }
     }
+});
+
+test('paneBanner: só com transcrição e status running/error', () => {
+    assert.equal(M.paneBanner('running', true), 'running');
+    assert.equal(M.paneBanner('error', true), 'error');
+    assert.equal(M.paneBanner('ready', true), 'none');
+    assert.equal(M.paneBanner('none', true), 'none');
+    for (const status of STATUSES)
+        assert.equal(M.paneBanner(status, false), 'none');
+    assert.equal(M.paneBanner(undefined, true), 'none');
+    assert.equal(M.paneBanner('toString', true), 'none');
+    assert.equal(M.paneBanner('error'), 'none');
+});
+
+test('paneActions: tabela verdade', () => {
+    const off = { search: false, copy: false, export: false, regenerate: false };
+    for (const state of ['empty-library', 'no-selection', 'not-transcribed', 'running', 'error']) {
+        for (const status of STATUSES) {
+            for (const tab of ['transcricao', 'resumo'])
+                assert.deepEqual(M.paneActions({ state, status, tab }), off);
+        }
+    }
+    assert.deepEqual(M.paneActions({ state: 'ready', status: 'ready', tab: 'transcricao' }),
+        { search: true, copy: true, export: true, regenerate: true });
+    assert.deepEqual(M.paneActions({ state: 'ready', status: 'error', tab: 'transcricao' }),
+        { search: true, copy: true, export: true, regenerate: true });
+    assert.deepEqual(M.paneActions({ state: 'ready', status: 'running', tab: 'transcricao' }),
+        { search: true, copy: true, export: true, regenerate: false });
+    assert.deepEqual(M.paneActions({ state: 'ready', status: 'ready', tab: 'resumo' }),
+        { search: false, copy: true, export: true, regenerate: true });
+    assert.deepEqual(M.paneActions({ state: 'ready', status: 'running', tab: 'resumo' }),
+        { search: false, copy: true, export: true, regenerate: false });
+    assert.deepEqual(M.paneActions({}), off);
+    assert.deepEqual(M.paneActions(), off);
+});
+
+test('generateCard: "pronta" sem transcrição pede para gerar de novo (com confirmação)', () => {
+    assert.deepEqual(M.generateCard('ready'),
+        { title: 'Não foi possível carregar a transcrição', regenerate: true });
+    for (const status of ['none', 'running', 'error', undefined, 'x'])
+        assert.deepEqual(M.generateCard(status),
+            { title: 'Esta gravação ainda não foi transcrita', regenerate: false });
 });
 
 finish();

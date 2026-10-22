@@ -74,6 +74,11 @@ bash tools/snapshot.sh OUT.png [--component window|playerbar|transcriptview|deta
     busca do painel. Espera `blocks-built`, a posição e a duração da gravação.
     Tamanho padrão 1100x760.
     Ex.: `bash tools/snapshot.sh /tmp/d.png --component detailpane --select 4`
+  - `detailpanecheck`: verificação do `DetailPane` na cópia temporária das fixtures
+    (troca de gravação, ordem invertida setTranscript/setRecording, renomear a
+    gravação e salvar nome de locutor no arquivo novo, banner de erro/geração).
+    Falha numa verificação = sem PNG e saída ≠ 0; sucesso imprime
+    `detailpanecheck: N verificações OK` e captura o painel com o banner de erro.
 - `--select N` (item N da lista, a partir de 1; 0 só no `detailpane`), `--tab`, `--at SEG` (posição
   do player): já são lidos e repassados a `maybeSnapshot` (`params.select`,
   `params.tab`, `params.at`), mas a janela atual ainda os ignora (imprime uma

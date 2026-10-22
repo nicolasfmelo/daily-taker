@@ -180,6 +180,132 @@ const detailPaneComponent = params => {
     return { widget: pane, ready, cleanup };
 };
 
+// Verificação do DetailPane (só no ambiente isolado do snapshot.sh, com a cópia das
+// fixtures): troca de gravação, ordem invertida, renomear e banner. Falha = sem PNG e
+// saída ≠ 0; sucesso = imprime as verificações e captura o painel no fim (gravação 2
+// renomeada, transcrição com o banner de erro).
+const detailPaneCheckComponent = () => {
+    const { DetailPane } = imports.detailPane;
+    const { Recording } = imports.recording;
+    const { loadTranscript, transcriptFileFor } = imports.transcriptStore;
+
+    const files = recordingFiles();
+    if (files.length < 4)
+        throw new Error('fixtures incompletas');
+    let checks = 0;
+    const check = (ok, what) => {
+        if (!ok)
+            throw new Error(`verificação falhou: ${what}`);
+        checks++;
+    };
+    const sameFile = (a, b) => Boolean(a && b && a.equal(b));
+
+    const [fileA, fileB] = files;
+    const fileNone = files[3];
+    const tA = loadTranscript(fileA);
+    const tB = loadTranscript(fileB);
+    check(tA && tB && !loadTranscript(fileNone), 'fixtures 1 e 2 com transcrição, 4 sem');
+
+    const pane = new DetailPane();
+    const view = pane.view;
+    pane.setHasRecordings(true);
+    const recA = new Recording(fileA);
+    const recB = new Recording(fileB);
+    const recNone = new Recording(fileNone);
+
+    // 1. A com transcrição → B sem transcrição: nada de A fica.
+    pane.setRecording(recA);
+    pane.setTranscript(tA);
+    pane.setState('ready');
+    check(view.transcript === tA && sameFile(view.recordingFile, fileA), 'A carregada');
+    check(pane._stateStack.visible_child_name === 'ready', 'A mostra a visão');
+    pane.setRecording(recNone);
+    pane.setState('none');
+    check(view.transcript === null && view.recordingFile === null, 'trocar para B limpa a visão');
+    check(pane._stateStack.visible_child_name === 'not-transcribed', 'B mostra o cartão de gerar');
+    check(!pane._copyButton.sensitive && !pane._exportButton.sensitive, 'Copiar/Exportar desligados em B');
+
+    // 2. Nenhuma seleção também limpa.
+    pane.setRecording(recA);
+    pane.setTranscript(tA);
+    pane.setState('ready');
+    pane.setRecording(null);
+    check(view.transcript === null && view.recordingFile === null, 'sem seleção limpa a visão');
+    check(pane._mainStack.visible_child_name === 'no-selection', 'sem seleção mostra o aviso');
+
+    // 3. Ordem invertida (transcrição antes da gravação): liga ao arquivo de B.
+    pane.setTranscript(tB);
+    check(view.recordingFile === null, 'sem gravação a visão não tem arquivo');
+    pane.setRecording(recB);
+    pane.setState('ready');
+    check(view.transcript === tB && sameFile(view.recordingFile, fileB), 'ordem invertida usa o arquivo de B');
+    check(pane._stateStack.visible_child_name === 'ready', 'ordem invertida mostra a visão');
+
+    // 4. Transcrição de B dada com A selecionada e depois B: a de A nunca fica ligada a B.
+    pane.setRecording(recA);
+    pane.setTranscript(tA);
+    pane.setTranscript(tB);
+    pane.setRecording(recB);
+    check(view.transcript === null && view.recordingFile === null, 'troca de gravação descarta o que veio antes');
+    pane.setTranscript(tB);
+    pane.setState('ready');
+    check(sameFile(view.recordingFile, fileB), 'B religada ao próprio arquivo');
+
+    // 5. Renomear a gravação: a visão passa a usar o arquivo novo e salva nele.
+    const oldSidecar = transcriptFileFor(fileB);
+    recB.name = 'Ideias renomeadas';
+    const renamed = recB.file;
+    check(renamed.get_basename() === 'Ideias renomeadas', 'gravação renomeada');
+    check(sameFile(view.recordingFile, renamed), 'visão usa o arquivo renomeado');
+    check(pane._titleLabel.label === 'Ideias renomeadas', 'título atualizado');
+    view._applySpeakerName(view.recordingFile, 0, 'Ana Teste');
+    check(loadTranscript(renamed)?.speakers?.['0'] === 'Ana Teste', 'nome do locutor salvo na transcrição movida');
+    check(!oldSidecar.query_exists(null), 'nenhuma transcrição órfã no caminho antigo');
+
+    // 6. Banner sobre a transcrição (erro / gerando) sem escondê-la.
+    pane.setErrorMessage('Sem conexão com o serviço de transcrição.');
+    pane.setState('running');
+    check(pane._stateStack.visible_child_name === 'ready' && pane._banner.revealed, 'gerando: visão + banner');
+    check(pane._copyButton.sensitive && pane._exportButton.sensitive, 'gerando: Copiar/Exportar ligados');
+    check(!pane._moreButton.sensitive, 'gerando: Gerar novamente desligado');
+    pane.setState('ready');
+    check(!pane._banner.revealed && pane._moreButton.sensitive, 'pronta: sem banner');
+    pane.setState('error');
+    check(pane._stateStack.visible_child_name === 'ready' && pane._banner.revealed, 'erro: visão + banner');
+    check(pane._banner.button_label === 'Tentar de novo', 'erro: botão Tentar de novo');
+    check(pane._copyButton.sensitive && pane._moreButton.sensitive, 'erro: Copiar e Gerar novamente ligados');
+    let retried = 0;
+    const retryId = pane.connect('retry-requested', () => retried++);
+    pane._banner.emit('button-clicked');
+    pane.disconnect(retryId);
+    check(retried === 1, 'banner pede retry');
+
+    // 7. Erro sem transcrição: cartão de erro; "pronta" sem transcrição: gerar de novo.
+    pane.setRecording(recNone);
+    pane.setState('error');
+    check(pane._stateStack.visible_child_name === 'error' && !pane._banner.revealed, 'erro sem transcrição: cartão');
+    pane.setState('ready');
+    check(pane._stateStack.visible_child_name === 'not-transcribed', 'pronta sem transcrição: cartão');
+    check(pane._generateTitleLabel.label === 'Não foi possível carregar a transcrição', 'mensagem de falha ao carregar');
+    let regenerate = null;
+    const genId = pane.connect('generate-requested', (_p, again) => {
+        regenerate = again;
+    });
+    pane._generateButton.emit('clicked');
+    pane.disconnect(genId);
+    check(regenerate === true, 'gerar com confirmação de sobrescrever');
+
+    // Captura: B renomeada com o banner de erro.
+    pane.setRecording(recB);
+    const built = nextSignal(view, 'blocks-built');
+    pane.setTranscript(loadTranscript(renamed));
+    pane.setState('error');
+    // Os testes não devem gravar nada fora da cópia temporária: confere de novo o caminho.
+    check(renamed.get_path().startsWith(imports.application.RecordingsDir.get_path()), 'arquivos só na cópia das fixtures');
+    print(`devSnapshot: detailpanecheck: ${checks} verificações OK`);
+    return { widget: pane, ready: built };
+};
+
 // nome → (params, { app, window }) → Gtk.Widget ou { widget, ready?, cleanup? }. Se o
 // widget for um Gtk.Window, ele é capturado como está; qualquer outro vai para uma janela
 // simples do tamanho pedido. `ready` (Promise) adia a captura até o componente terminar
@@ -190,6 +316,7 @@ var COMPONENTS = {
     playerbar: playerBarComponent,
     transcriptview: transcriptViewComponent,
     detailpane: detailPaneComponent,
+    detailpanecheck: detailPaneCheckComponent,
 };
 
 // --state (só com --component window): página mostrada no lugar da lista. Só troca a

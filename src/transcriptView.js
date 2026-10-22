@@ -292,6 +292,30 @@ var TranscriptView = GObject.registerClass({
         this._syncHighlight();
     }
 
+    // Esvazia a visão (outra gravação selecionada): sem transcrição, sem arquivo, sem
+    // blocos, sem busca nem realce; nada pendente em segundo plano.
+    clear() {
+        this.release();
+        this._transcript = null;
+        this._recordingFile = null;
+        this._blocks = [];
+        this._currentIndex = -1;
+        this._findQuery = '';
+        this._findMatches = [];
+        this._findActive = -1;
+        for (let child; (child = this._blocksBox.get_first_child());)
+            this._blocksBox.remove(child);
+        this._blockRows = [];
+        this._scroller.vadjustment.value = 0;
+    }
+
+    // A gravação foi renomeada (o arquivo mudou): salvar nomes de locutor e o realce pelo
+    // URI passam a usar o arquivo novo. Não refaz os blocos.
+    setRecordingFile(file) {
+        this._recordingFile = file ?? null;
+        this._syncHighlight();
+    }
+
     // Copiar tudo (no modo embutido o botão fica no DetailPane).
     copyAll(withSpeakers) {
         if (this._transcript)

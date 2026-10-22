@@ -277,8 +277,22 @@
                       <object class="GtkStackPage">
                         <property name="name">transcricao</property>
                         <property name="child">
+                          <object class="GtkBox">
+                            <property name="orientation">vertical</property>
+                            <!-- Com transcrição: geração em curso ou que falhou, sobre a visão. -->
+                            <child>
+                              <object class="AdwBanner" id="banner">
+                                <property name="use_markup">False</property>
+                                <property name="revealed">False</property>
+                                <style>
+                                  <class name="detail-banner"/>
+                                </style>
+                              </object>
+                            </child>
+                            <child>
                           <!-- O TranscriptView (página "ready") é criado no código. -->
                           <object class="GtkStack" id="stateStack">
+                            <property name="vexpand">True</property>
                             <property name="hhomogeneous">False</property>
                             <property name="vhomogeneous">False</property>
                             <child>
@@ -303,7 +317,7 @@
                                       </object>
                                     </child>
                                     <child>
-                                      <object class="GtkLabel">
+                                      <object class="GtkLabel" id="generateTitleLabel">
                                         <property name="label">Esta gravação ainda não foi transcrita</property>
                                         <property name="wrap">True</property>
                                         <property name="justify">center</property>
@@ -434,6 +448,8 @@
                                   </object>
                                 </property>
                               </object>
+                            </child>
+                          </object>
                             </child>
                           </object>
                         </property>

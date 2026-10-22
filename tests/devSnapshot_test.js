@@ -71,6 +71,7 @@ test('componente transcriptview registrado; --embedded e --find lidos do ambient
 
 test('componente detailpane registrado; --state none|running|error|ready só com ele', () => {
     assert.equal(typeof COMPONENTS.detailpane, 'function');
+    assert.equal(typeof COMPONENTS.detailpanecheck, 'function');
     for (const state of ['none', 'running', 'error', 'ready'])
         assert.equal(stateError({ component: 'detailpane', state }), null);
     assert.equal(typeof stateError({ component: 'detailpane', state: 'recorder' }), 'string');

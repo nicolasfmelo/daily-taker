@@ -6,7 +6,7 @@
 const { Gdk, Gio, GLib, GObject, Gtk } = imports.gi;
 
 const { detailSubtitle } = imports.recordingGroups;
-const { paneState } = imports.sidebarModel;
+const { generateCard, paneActions, paneBanner, paneState } = imports.sidebarModel;
 const { buildBlocks } = imports.transcript;
 const { findCounterText } = imports.transcriptViewModel;
 const { TranscriptView } = imports.transcriptView;
@@ -36,7 +36,7 @@ var DetailPane = GObject.registerClass({
         'transcriptTab', 'summaryTab', 'searchButton', 'copyButton', 'exportButton',
         'searchRevealer', 'searchEntry', 'counterLabel', 'previousButton', 'nextButton',
         'closeSearchButton', 'tabStack', 'stateStack', 'costLabel', 'generateButton',
-        'spinner', 'errorLabel', 'retryButton', 'summaryStack',
+        'spinner', 'errorLabel', 'retryButton', 'summaryStack', 'banner', 'generateTitleLabel',
     ],
     Properties: {
         'tab': GObject.ParamSpec.string('tab', 'tab', 'Visible tab (transcricao or resumo)',
@@ -60,6 +60,8 @@ var DetailPane = GObject.registerClass({
         this._status = 'none';
         this._hasRecordings = true;
         this._syncingTabs = false;
+        this._errorMessage = '';
+        this._state = 'no-selection';
 
         // Margens laterais: os blocos alinham com o divisor sob as abas (como na mockup).
         this._view = new TranscriptView({ embedded: true, vexpand: true, margin_start: 22, margin_end: 22 });
@@ -73,8 +75,10 @@ var DetailPane = GObject.registerClass({
         this._buildActions();
 
         this._newRecordingButton.connect('clicked', () => this.emit('new-recording-requested'));
-        this._generateButton.connect('clicked', () => this.emit('generate-requested', false));
+        this._generateButton.connect('clicked',
+            () => this.emit('generate-requested', generateCard(this._status).regenerate));
         this._retryButton.connect('clicked', () => this.emit('retry-requested'));
+        this._banner.connect('button-clicked', () => this.emit('retry-requested'));
 
         for (const [button, tab] of [[this._transcriptTab, 'transcricao'], [this._summaryTab, 'resumo']]) {
             button.connect('toggled', () => {
@@ -114,16 +118,32 @@ var DetailPane = GObject.registerClass({
         this._sync();
     }
 
+    // Ordem esperada: setRecording → setTranscript → setState. Trocar de gravação (inclusive
+    // para null) zera transcrição, status e a visão: nada da gravação anterior aparece sob o
+    // título da nova. Exceção: uma transcrição dada com nenhuma gravação selecionada (ordem
+    // invertida) fica e passa a usar o arquivo da gravação definida agora.
     setRecording(recording) {
-        for (const id of this._recordingIds)
-            this._recording.disconnect(id);
-        this._recordingIds = [];
-        this._recording = recording ?? null;
-        if (this._recording) {
-            this._recordingIds = [
-                this._recording.connect('notify::name', () => this._syncTitle()),
-                this._recording.connect('notify::duration', () => this._syncSubtitle()),
-            ];
+        const next = recording ?? null;
+        if (next !== this._recording) {
+            for (const id of this._recordingIds)
+                this._recording.disconnect(id);
+            this._recordingIds = [];
+            const pending = this._recording === null && this._transcript !== null;
+            this._recording = next;
+            if (next) {
+                this._recordingIds = [
+                    next.connect('notify::name', () => this._renamed()),
+                    next.connect('notify::duration', () => this._syncSubtitle()),
+                ];
+            }
+            if (pending && next) {
+                this._view.setRecordingFile(next.file);
+            } else {
+                this._transcript = null;
+                this._status = 'none';
+                this._view.clear();
+                this._view.running = false;
+            }
         }
         this._closeSearch();
         this._syncTitle();
@@ -134,10 +154,11 @@ var DetailPane = GObject.registerClass({
     setTranscript(t) {
         this._transcript = t ?? null;
         this._closeSearch();
+        // Sem gravação o arquivo fica null até setRecording (nunca o de outra gravação).
         if (this._transcript)
             this._view.setTranscript(this._transcript, this._recording?.file ?? null);
         else
-            this._view.release();
+            this._view.clear();
         this._syncSubtitle();
         this._sync();
     }
@@ -149,7 +170,9 @@ var DetailPane = GObject.registerClass({
     }
 
     setErrorMessage(message) {
-        this._errorLabel.label = message ?? '';
+        this._errorMessage = message ?? '';
+        this._errorLabel.label = this._errorMessage;
+        this._syncBanner();
     }
 
     setCostText(text) {
@@ -254,6 +277,13 @@ var DetailPane = GObject.registerClass({
             this._runFind();
     }
 
+    // Renomear troca o arquivo da gravação (e move a transcrição): a visão passa a usá-lo.
+    _renamed() {
+        this._syncTitle();
+        if (this._view.transcript)
+            this._view.setRecordingFile(this._recording.file);
+    }
+
     _syncTitle() {
         this._titleLabel.label = this._recording?.name ?? '';
         this._titleLabel.tooltip_text = this._titleLabel.label;
@@ -286,13 +316,9 @@ var DetailPane = GObject.registerClass({
         this._syncToolbar();
     }
 
-    // Estado efetivo: "pronta" sem transcrição carregada mostra o cartão de gerar.
-    _effectiveStatus() {
-        return this._status === 'ready' && !this._transcript ? 'none' : this._status;
-    }
-
     _sync() {
-        const state = paneState(this._recording, this._hasRecordings, this._effectiveStatus());
+        const state = paneState(this._recording, this._hasRecordings, this._status,
+            this._transcript !== null);
         if (state === 'empty-library' || state === 'no-selection') {
             this._mainStack.visible_child_name = state;
         } else {
@@ -300,22 +326,37 @@ var DetailPane = GObject.registerClass({
             this._stateStack.visible_child_name = state;
         }
         this._spinner.spinning = state === 'running';
+        this._generateTitleLabel.label = generateCard(this._status).title;
         this._summaryStack.visible_child_name = this._transcript ? 'coming-soon' : 'no-transcript';
         this._state = state;
+        this._syncBanner();
         this._syncTabs();
     }
 
+    _syncBanner() {
+        const banner = this._state === 'ready' ? paneBanner(this._status, this._transcript !== null) : 'none';
+        if (banner === 'running') {
+            this._banner.title = 'Gerando novamente…';
+            this._banner.button_label = null;
+        } else if (banner === 'error') {
+            this._banner.title = this._errorMessage
+                ? `Não foi possível gerar novamente: ${this._errorMessage}`
+                : 'Não foi possível gerar novamente.';
+            this._banner.button_label = 'Tentar de novo';
+        }
+        this._banner.revealed = banner !== 'none';
+    }
+
     _syncToolbar() {
-        const ready = this._state === 'ready';
-        const canSearch = ready && this._tab === 'transcricao';
-        if (!canSearch)
+        const actions = paneActions({ state: this._state, status: this._status, tab: this._tab });
+        if (!actions.search)
             this._closeSearch();
-        this._searchButton.sensitive = canSearch;
-        this._copyButton.sensitive = ready;
-        this._exportButton.sensitive = ready;
-        this._copyAction.enabled = ready;
-        this._exportAction.enabled = ready;
-        this._regenerateAction.enabled = ready;
-        this._moreButton.sensitive = ready;
+        this._searchButton.sensitive = actions.search;
+        this._copyButton.sensitive = actions.copy;
+        this._copyAction.enabled = actions.copy;
+        this._exportButton.sensitive = actions.export;
+        this._exportAction.enabled = actions.export;
+        this._regenerateAction.enabled = actions.regenerate;
+        this._moreButton.sensitive = actions.regenerate;
     }
 });
