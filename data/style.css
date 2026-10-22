@@ -238,15 +238,31 @@ popover modelbutton.destructive {
   color: @error_color;
 }
 
-/* Transcrição */
+/* Transcrição: blocos no layout da mockup (TranscriptView no painel de detalhe). */
 
 .transcript-block {
-  padding: 6px 10px;
-  border-radius: 12px;
+  padding: 18px 16px 18px 32px;
+  border-radius: 10px;
   transition: background-color 150ms ease-out;
 }
 
-/* Bloco tocando: fundo laranja suave, barra à esquerda, horário e ponto em laranja. */
+/* Busca dentro da transcrição: resultados com fundo sutil, o ativo com contorno. */
+.transcript-block.find-match {
+  background-color: @find_match;
+}
+
+.transcript-block.find-active {
+  outline: 1px solid @find_active;
+  outline-offset: -1px;
+}
+
+/* Depois da busca: passar o mouse vence o fundo de resultado. */
+.transcript-block:hover {
+  background-color: @block_hover;
+}
+
+/* Bloco tocando (depois de hover e busca, que ele vence): fundo laranja suave, barra à
+   esquerda, horário e ponto em laranja. */
 .transcript-block.current {
   background-color: @accent_soft;
   box-shadow: inset 3px 0 @accent;
@@ -283,36 +299,21 @@ popover modelbutton.destructive {
   min-height: 0;
 }
 
-/* Blocos no layout da mockup (TranscriptView embutido no painel de detalhes). */
-
-.transcript-block.embedded {
-  padding: 18px 16px 18px 32px;
-  border-radius: 10px;
-}
-
-.transcript-block.embedded:hover {
-  background-color: @block_hover;
-}
-
-.transcript-block.embedded.current {
-  background-color: @accent_soft;
-}
-
-.transcript-block.embedded .transcript-time {
+.transcript-block .transcript-time {
   color: @text_dim;
   font-size: 16px;
 }
 
-.transcript-block.embedded.current .transcript-time {
+.transcript-block.current .transcript-time {
   color: @accent;
 }
 
-.transcript-block.embedded .speaker-dot {
+.transcript-block .speaker-dot {
   min-width: 12px;
   min-height: 12px;
 }
 
-.transcript-block.embedded .speaker-name {
+.transcript-block .speaker-name {
   padding: 0 4px;
   margin-left: -4px;
   min-height: 0;
@@ -321,34 +322,20 @@ popover modelbutton.destructive {
   font-weight: 600;
 }
 
-.transcript-block.embedded .transcript-text {
+.transcript-block .transcript-text {
   font-size: 18px;
   line-height: 1.45;
 }
 
 /* Menu do bloco: só aparece ao passar o mouse ou com o foco do teclado. */
-.transcript-block.embedded .block-menu {
+.transcript-block .block-menu {
   opacity: 0;
   transition: opacity 120ms ease-out;
 }
 
-.transcript-block.embedded:hover .block-menu,
-.transcript-block.embedded .block-menu:focus-within {
+.transcript-block:hover .block-menu,
+.transcript-block .block-menu:focus-within {
   opacity: 1;
-}
-
-/* Busca dentro da transcrição: resultados com fundo sutil, o ativo com contorno. */
-.transcript-block.find-match {
-  background-color: @find_match;
-}
-
-.transcript-block.find-active {
-  outline: 1px solid @find_active;
-  outline-offset: -1px;
-}
-
-.transcript-block.embedded.current.find-match {
-  background-color: @accent_soft;
 }
 
 /* Painel de detalhe: cabeçalho, abas, botões e cartões de estado */
@@ -563,7 +550,7 @@ button.large {
     outline-offset: -2px;
   }
 
-  .transcript-block.embedded .block-menu {
+  .transcript-block .block-menu {
     opacity: 1;
   }
 

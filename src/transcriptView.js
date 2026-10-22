@@ -377,7 +377,7 @@ var TranscriptView = GObject.registerClass({
         const box = new Gtk.Grid({
             column_spacing: 14,
             row_spacing: 6,
-            css_classes: ['transcript-block', 'embedded'],
+            css_classes: ['transcript-block'],
         });
 
         box.attach(new Gtk.Label({
