@@ -1,4 +1,4 @@
-/* exported defaultRecordingName */
+/* exported defaultRecordingName recordingFileFor */
 
 const MONTHS_SHORT = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
 
@@ -14,4 +14,11 @@ var defaultRecordingName = (date, exists) => {
     for (let n = 2; taken(name); n++)
         name = `${base} (${n})`;
     return name;
+};
+
+// Escolhe o arquivo (ainda não criado) de uma gravação nova em `dir`: nome por data/hora,
+// com " (2)", " (3)"… se já existir.
+var recordingFileFor = (dir, date) => {
+    const name = defaultRecordingName(date, n => dir.get_child_for_display_name(n).query_exists(null));
+    return dir.get_child_for_display_name(name);
 };

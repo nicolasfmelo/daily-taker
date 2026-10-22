@@ -21,6 +21,7 @@ const { Gio, GLib, GObject, Gst, GstPbutils } = imports.gi;
 const { RecordingsDir } = imports.application;
 const { Recording } = imports.recording;
 const { RecordingPipeline, keepRecording } = imports.recorderPipeline;
+const { recordingFileFor } = imports.recordingName;
 
 // All supported encoding profiles.
 var EncodingProfiles = [
@@ -98,12 +99,8 @@ var Recorder = new GObject.registerClass({
     }
 
     start() {
-        let index = 1;
-
-        do {
-            // Nome padrão de uma gravação nova (por exemplo, "Gravação 1").
-            this.file = RecordingsDir.get_child_for_display_name(_('Gravação %d').format(index++));
-        } while (this.file.query_exists(null));
+        // Nome padrão de uma gravação nova: "Gravação 22 out 14:30" (com " (2)" se repetir).
+        this.file = recordingFileFor(RecordingsDir, new Date());
 
         this._peaks.length = 0;
         this.mic_peak = -Infinity;

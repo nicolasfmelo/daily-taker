@@ -5,16 +5,21 @@
     <file>application.js</file>
     <file>devSnapshot.js</file>
     <file>main.js</file>
+    <file>playerModel.js</file>
     <file>preferences.js</file>
     <file>preferencesLogic.js</file>
     <file>recorder.js</file>
     <file>recorderPipeline.js</file>
     <file>recorderWidget.js</file>
     <file>recording.js</file>
+    <file>recordingGroups.js</file>
     <file>recordingList.js</file>
     <file>recordingListWidget.js</file>
+    <file>recordingName.js</file>
     <file>row.js</file>
     <file>secrets.js</file>
+    <file>sidebarModel.js</file>
+    <file>speakerColors.js</file>
     <file>transcriber.js</file>
     <file>transcript.js</file>
     <file>transcriptFormat.js</file>
