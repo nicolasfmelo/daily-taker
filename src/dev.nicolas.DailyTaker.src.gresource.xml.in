@@ -4,6 +4,7 @@
     <file>application.js</file>
     <file>main.js</file>
     <file>recorder.js</file>
+    <file>recorderPipeline.js</file>
     <file>recorderWidget.js</file>
     <file>recording.js</file>
     <file>recordingList.js</file>

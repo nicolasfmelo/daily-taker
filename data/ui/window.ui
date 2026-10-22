@@ -94,42 +94,6 @@
     </child>
   </template>
   <menu id="primaryMenu">
-    <submenu>
-      <attribute translatable="yes" name="label">Preferred Format</attribute>
-      <item>
-        <attribute translatable="yes" name="label">Vorbis</attribute>
-        <attribute name="action">app.audio-profile</attribute>
-        <attribute name="target">vorbis</attribute>
-      </item>
-      <item>
-        <attribute translatable="yes" name="label">Opus</attribute>
-        <attribute name="action">app.audio-profile</attribute>
-        <attribute name="target">opus</attribute>
-      </item>
-      <item>
-        <attribute translatable="yes" name="label">FLAC</attribute>
-        <attribute name="action">app.audio-profile</attribute>
-        <attribute name="target">flac</attribute>
-      </item>
-      <item>
-        <attribute translatable="yes" name="label">MP3</attribute>
-        <attribute name="action">app.audio-profile</attribute>
-        <attribute name="target">mp3</attribute>
-      </item>
-    </submenu>
-    <submenu>
-      <attribute translatable="yes" name="label">Audio Channel</attribute>
-      <item>
-        <attribute translatable="yes" name="label">Stereo</attribute>
-        <attribute name="action">app.audio-channel</attribute>
-        <attribute name="target">stereo</attribute>
-      </item>
-      <item>
-        <attribute translatable="yes" name="label">Mono</attribute>
-        <attribute name="action">app.audio-channel</attribute>
-        <attribute name="target">mono</attribute>
-      </item>
-    </submenu>
     <section>
       <item>
         <attribute name="label" translatable="yes">_Keyboard Shortcuts</attribute>

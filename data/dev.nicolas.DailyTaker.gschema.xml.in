@@ -1,14 +1,4 @@
 <schemalist>
-  <enum id="@app-id@.AudioProfile">
-    <value nick='vorbis' value='0'/>
-    <value nick='opus' value='1'/>
-    <value nick='flac' value='2'/>
-    <value nick='mp3' value='3'/>
-  </enum>
-  <enum id="@app-id@.AudioChannel">
-    <value nick='stereo' value='0'/>
-    <value nick='mono' value='1'/>
-  </enum>
   <schema id="@app-id@" path="/dev/nicolas/DailyTaker/" gettext-domain="@gettext-package@">
     <key name="window-size" type="ai">
       <default>[780, 480]</default>
@@ -19,16 +9,6 @@
       <default>[]</default>
       <summary>Window position</summary>
       <description>Window position (x and y).</description>
-    </key>
-    <key name="audio-profile" enum="@app-id@.AudioProfile">
-      <default>'flac'</default>
-      <summary>Maps media types to audio encoder preset names.</summary>
-      <description>Maps media types to audio encoder preset names. If there is no mapping set, the default encoder settings will be used.</description>
-    </key>
-    <key name="audio-channel" enum="@app-id@.AudioChannel">
-      <default>'stereo'</default>
-      <summary>Available channels</summary>
-      <description>Maps available channels. If there is not no mapping set, stereo channel will be used by default.</description>
     </key>
   </schema>
 </schemalist>

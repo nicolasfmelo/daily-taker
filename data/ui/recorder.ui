@@ -24,6 +24,92 @@
                     </style>
                   </object>
                 </child>
+                <child>
+                  <object class="GtkGrid" id="levelsGrid">
+                    <property name="halign">center</property>
+                    <property name="margin_top">12</property>
+                    <property name="row_spacing">6</property>
+                    <property name="column_spacing">12</property>
+                    <style>
+                      <class name="recorder-levels"/>
+                    </style>
+                    <child>
+                      <object class="GtkLabel">
+                        <property name="label">Mic</property>
+                        <property name="xalign">0</property>
+                        <property name="mnemonic_widget">micLevel</property>
+                        <style>
+                          <class name="caption"/>
+                          <class name="dim-label"/>
+                        </style>
+                        <layout>
+                          <property name="column">0</property>
+                          <property name="row">0</property>
+                        </layout>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkLevelBar" id="micLevel">
+                        <property name="width_request">220</property>
+                        <property name="valign">center</property>
+                        <property name="min_value">0</property>
+                        <property name="max_value">1</property>
+                        <accessibility>
+                          <property name="label">Mic</property>
+                        </accessibility>
+                        <layout>
+                          <property name="column">1</property>
+                          <property name="row">0</property>
+                        </layout>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkLabel">
+                        <property name="label">Sistema</property>
+                        <property name="xalign">0</property>
+                        <property name="mnemonic_widget">systemLevel</property>
+                        <style>
+                          <class name="caption"/>
+                          <class name="dim-label"/>
+                        </style>
+                        <layout>
+                          <property name="column">0</property>
+                          <property name="row">1</property>
+                        </layout>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkLevelBar" id="systemLevel">
+                        <property name="width_request">220</property>
+                        <property name="valign">center</property>
+                        <property name="min_value">0</property>
+                        <property name="max_value">1</property>
+                        <accessibility>
+                          <property name="label">Sistema</property>
+                        </accessibility>
+                        <layout>
+                          <property name="column">1</property>
+                          <property name="row">1</property>
+                        </layout>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkLabel" id="systemSilentLabel">
+                        <property name="label">sem sinal do sistema</property>
+                        <property name="xalign">0</property>
+                        <property name="visible">False</property>
+                        <style>
+                          <class name="caption"/>
+                          <class name="dim-label"/>
+                        </style>
+                        <layout>
+                          <property name="column">1</property>
+                          <property name="row">2</property>
+                        </layout>
+                      </object>
+                    </child>
+                  </object>
+                </child>
               </object>
             </child>
             <child>

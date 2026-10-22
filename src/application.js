@@ -49,12 +49,6 @@ var Application = GObject.registerClass(class Application extends Adw.Applicatio
     }
 
     _initAppMenu() {
-        const profileAction = Settings.create_action('audio-profile');
-        this.add_action(profileAction);
-
-        const channelAction = Settings.create_action('audio-channel');
-        this.add_action(channelAction);
-
         let aboutAction = new Gio.SimpleAction({ name: 'about' });
         aboutAction.connect('activate', this._showAbout.bind(this));
         this.add_action(aboutAction);

@@ -3,6 +3,11 @@ const { Gio, GObject, Gtk } = imports.gi;
 const { formatTime } = imports.utils;
 const { WaveForm, WaveType } = imports.waveform;
 
+// Pico abaixo do qual o áudio do sistema é considerado silêncio.
+const SYSTEM_SILENCE_PEAK = 0.01;
+// Tempo de gravação (ns) sem sinal do sistema antes de mostrar o aviso.
+const SYSTEM_SILENCE_NOTICE = 10 * 1000000000;
+
 var RecorderState = {
     RECORDING: 0,
     PAUSED: 1,
@@ -13,7 +18,7 @@ var RecorderWidget = GObject.registerClass({
     Template: 'resource:///dev/nicolas/DailyTaker/ui/recorder.ui',
     InternalChildren: [
         'recorderBox', 'playbackStack', 'recorderTime',
-        'pauseBtn', 'resumeBtn',
+        'pauseBtn', 'resumeBtn', 'micLevel', 'systemLevel', 'systemSilentLabel',
     ],
     Signals: {
         'canceled': {},
@@ -36,6 +41,24 @@ var RecorderWidget = GObject.registerClass({
         this.recorder.bind_property('current-peak', this.waveform, 'peak', GObject.BindingFlags.SYNC_CREATE | GObject.BindingFlags.DEFAULT);
         this.recorder.connect('notify::duration', _recorder => {
             this._recorderTime.set_markup(formatTime(_recorder.duration));
+            if (!this._systemHeard && _recorder.duration >= SYSTEM_SILENCE_NOTICE)
+                this._systemSilentLabel.visible = true;
+        });
+
+        for (const levelBar of [this._micLevel, this._systemLevel]) {
+            // Sem as faixas low/high/full padrão (pensadas para bateria).
+            levelBar.remove_offset_value(Gtk.LEVEL_BAR_OFFSET_LOW);
+            levelBar.remove_offset_value(Gtk.LEVEL_BAR_OFFSET_HIGH);
+            levelBar.remove_offset_value(Gtk.LEVEL_BAR_OFFSET_FULL);
+        }
+        this.recorder.bind_property('mic-peak', this._micLevel, 'value', GObject.BindingFlags.SYNC_CREATE);
+        this.recorder.bind_property('system-peak', this._systemLevel, 'value', GObject.BindingFlags.SYNC_CREATE);
+        this._systemHeard = false;
+        this.recorder.connect('notify::system-peak', _recorder => {
+            if (_recorder.system_peak >= SYSTEM_SILENCE_PEAK) {
+                this._systemHeard = true;
+                this._systemSilentLabel.visible = false;
+            }
         });
 
 
@@ -77,6 +100,8 @@ var RecorderWidget = GObject.registerClass({
     }
 
     onStart() {
+        this._systemHeard = false;
+        this._systemSilentLabel.visible = false;
         this._playbackStack.visible_child_name = 'recorder-pause';
         this.state = RecorderState.RECORDING;
 

@@ -18,8 +18,9 @@
  *
  */
 const { GLib, GObject, Gst, GstPbutils } = imports.gi;
-const { RecordingsDir, Settings } = imports.application;
+const { RecordingsDir } = imports.application;
 const { Recording } = imports.recording;
+const { buildPipelineDescription } = imports.recorderPipeline;
 
 // All supported encoding profiles.
 var EncodingProfiles = [
@@ -54,10 +55,10 @@ var EncodingProfiles = [
         extension: 'm4a' },
 ];
 
-var AudioChannels = {
-    0: { name: 'stereo', channels: 2 },
-    1: { name: 'mono', channels: 1 },
-};
+// Converte um pico do elemento `level` (dBFS) para [0, 1].
+function _dbToLinear(peak) {
+    return Math.pow(10, Math.min(peak, 0) / 20);
+}
 
 var Recorder = new GObject.registerClass({
     Properties: {
@@ -71,37 +72,31 @@ var Recorder = new GObject.registerClass({
             'Waveform current peak', 'Waveform current peak in float [0, 1]',
             GObject.ParamFlags.READWRITE | GObject.ParamFlags.CONSTRUCT,
             0.0, 1.0, 0.0),
+        'mic-peak': GObject.ParamSpec.float(
+            'mic-peak',
+            'Microphone peak', 'Microphone current peak in float [0, 1]',
+            GObject.ParamFlags.READABLE,
+            0.0, 1.0, 0.0),
+        'system-peak': GObject.ParamSpec.float(
+            'system-peak',
+            'System audio peak', 'System audio current peak in float [0, 1]',
+            GObject.ParamFlags.READABLE,
+            0.0, 1.0, 0.0),
     },
 }, class Recorder extends GObject.Object {
     _init() {
         this._peaks = [];
+        this._micPeak = 0.0;
+        this._systemPeak = 0.0;
         super._init({});
+        this.pipeline = null;
+    }
 
-        let srcElement, audioConvert, caps;
-        try {
-            this.pipeline = new Gst.Pipeline({ name: 'pipe' });
-            srcElement = Gst.ElementFactory.make('pulsesrc', 'srcElement');
-            audioConvert = Gst.ElementFactory.make('audioconvert', 'audioConvert');
-            caps = Gst.Caps.from_string('audio/x-raw');
-            this.level = Gst.ElementFactory.make('level', 'level');
-            this.ebin = Gst.ElementFactory.make('encodebin', 'ebin');
-            this.filesink = Gst.ElementFactory.make('filesink', 'filesink');
-        } catch (error) {
-            log(`Not all elements could be created.\n${error}`);
-        }
-
-        try {
-            this.pipeline.add(srcElement);
-            this.pipeline.add(audioConvert);
-            this.pipeline.add(this.level);
-            this.pipeline.add(this.ebin);
-            this.pipeline.add(this.filesink);
-        } catch (error) {
-            log(`Not all elements could be addded.\n${error}`);
-        }
-
-        srcElement.link(audioConvert);
-        audioConvert.link_filtered(this.level, caps);
+    _createPipeline(location) {
+        const pipeline = Gst.parse_launch(buildPipelineDescription({ location }));
+        // Define o caminho também como propriedade, sem depender de aspas na descrição.
+        pipeline.get_by_name('filesink').set_property('location', location);
+        return pipeline;
     }
 
     start() {
@@ -113,6 +108,18 @@ var Recorder = new GObject.registerClass({
             this.file = RecordingsDir.get_child_for_display_name(_('Recording %d').format(index++));
         } while (this.file.query_exists(null));
 
+        this._peaks.length = 0;
+        this._reachedEos = false;
+        this.mic_peak = -Infinity;
+        this.system_peak = -Infinity;
+        try {
+            this.pipeline = this._createPipeline(this.file.get_path());
+        } catch (error) {
+            log(`Unable to create the recorder pipeline.\n${error}`);
+            this.pipeline = null;
+            return;
+        }
+
         this.recordBus = this.pipeline.get_bus();
         this.recordBus.add_signal_watch();
         this.handlerId = this.recordBus.connect('message', (_, message) => {
@@ -120,16 +127,14 @@ var Recorder = new GObject.registerClass({
                 this._onMessageReceived(message);
         });
 
-
-        this.ebin.set_property('profile', this._getProfile());
-        this.filesink.set_property('location', this.file.get_path());
-        this.level.link(this.ebin);
-        this.ebin.link(this.filesink);
-
         this.state = Gst.State.PLAYING;
 
         this.timeout = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 100, () => {
-            const pos = this.pipeline.query_position(Gst.Format.TIME)[1];
+            if (!this.pipeline)
+                return true;
+            // Consulta o `level` da mixagem: a posição do pipeline vem do filesink e
+            // atrasa ~1 s (páginas Ogg retidas pelo oggmux).
+            const pos = this.pipeline.get_by_name('mix').query_position(Gst.Format.TIME)[1];
             if (pos > 0)
                 this.duration = pos;
             return true;
@@ -146,19 +151,20 @@ var Recorder = new GObject.registerClass({
     }
 
     stop() {
-        this.state = Gst.State.NULL;
-        this.duration = 0;
-        if (this.timeout) {
-            GLib.source_remove(this.timeout);
-            this.timeout = null;
-        }
-
         if (this.recordBus) {
             this.recordBus.remove_watch();
             this.recordBus.disconnect(this.handlerId);
             this.recordBus = null;
         }
 
+        this._finishStream();
+        this.state = Gst.State.NULL;
+        this.pipeline = null;
+        this.duration = 0;
+        if (this.timeout) {
+            GLib.source_remove(this.timeout);
+            this.timeout = null;
+        }
 
         if (this.file && this.file.query_exists(null) && this._peaks.length > 0) {
             let recording = new Recording(this.file);
@@ -168,6 +174,21 @@ var Recorder = new GObject.registerClass({
         }
 
         return null;
+    }
+
+    // Envia EOS e espera (no máximo 2 s) o opusenc/oggmux escoarem e fecharem o arquivo.
+    // Pausado, as fontes ao vivo não fluem: volta a PLAYING só para o EOS passar.
+    _finishStream() {
+        if (!this.pipeline || this._reachedEos)
+            return;
+
+        if (this.state === Gst.State.PAUSED)
+            this.state = Gst.State.PLAYING;
+        this.pipeline.send_event(Gst.Event.new_eos());
+        const msg = this.pipeline.get_bus().timed_pop_filtered(2 * Gst.SECOND,
+            Gst.MessageType.EOS | Gst.MessageType.ERROR);
+        if (!msg || msg.type !== Gst.MessageType.EOS)
+            log('Recorder pipeline did not reach EOS cleanly');
     }
 
     _onMessageReceived(message) {
@@ -184,13 +205,26 @@ var Recorder = new GObject.registerClass({
             if (s && s.has_name('level')) {
                 const peakVal = s.get_value('peak');
 
-                if (peakVal)
-                    this.current_peak = peakVal.get_nth(0);
+                if (peakVal) {
+                    const peak = peakVal.get_nth(0);
+                    switch (message.src.name) {
+                    case 'mic':
+                        this.mic_peak = peak;
+                        break;
+                    case 'system':
+                        this.system_peak = peak;
+                        break;
+                    case 'mix':
+                        this.current_peak = peak;
+                        break;
+                    }
+                }
             }
             break;
         }
 
         case Gst.MessageType.EOS:
+            this._reachedEos = true;
             this.stop();
             break;
         case Gst.MessageType.WARNING:
@@ -200,26 +234,6 @@ var Recorder = new GObject.registerClass({
             log(message.parse_error().toString());
             break;
         }
-    }
-
-    _getChannel() {
-        let channelIndex = Settings.get_enum('audio-channel');
-        return AudioChannels[channelIndex].channels;
-    }
-
-    _getProfile() {
-        let profileIndex = Settings.get_enum('audio-profile');
-        const profile = EncodingProfiles[profileIndex];
-
-        let audioCaps = Gst.Caps.from_string(profile.audioCaps);
-        audioCaps.set_value('channels', this._getChannel());
-
-        let encodingProfile = GstPbutils.EncodingAudioProfile.new(audioCaps, null, null, 1);
-        let containerCaps = Gst.Caps.from_string(profile.containerCaps);
-        let containerProfile = GstPbutils.EncodingContainerProfile.new('record', null, containerCaps, null);
-        containerProfile.add_profile(encodingProfile);
-
-        return containerProfile;
     }
 
     get duration() {
@@ -233,12 +247,31 @@ var Recorder = new GObject.registerClass({
 
     // eslint-disable-next-line camelcase
     set current_peak(peak) {
-        if (peak > 0)
-            peak = 0;
-
-        this._current_peak = Math.pow(10, peak / 20);
+        this._current_peak = _dbToLinear(peak);
         this._peaks.push(this._current_peak);
         this.notify('current-peak');
+    }
+
+    // eslint-disable-next-line camelcase
+    get mic_peak() {
+        return this._micPeak;
+    }
+
+    // eslint-disable-next-line camelcase
+    set mic_peak(peak) {
+        this._micPeak = _dbToLinear(peak);
+        this.notify('mic-peak');
+    }
+
+    // eslint-disable-next-line camelcase
+    get system_peak() {
+        return this._systemPeak;
+    }
+
+    // eslint-disable-next-line camelcase
+    set system_peak(peak) {
+        this._systemPeak = _dbToLinear(peak);
+        this.notify('system-peak');
     }
 
     set duration(val) {
@@ -252,6 +285,9 @@ var Recorder = new GObject.registerClass({
 
     set state(s) {
         this._pipeState = s;
+        if (!this.pipeline)
+            return;
+
         const ret = this.pipeline.set_state(this._pipeState);
 
         if (ret === Gst.StateChangeReturn.FAILURE)
