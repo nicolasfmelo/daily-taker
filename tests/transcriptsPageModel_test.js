@@ -117,4 +117,12 @@ test('dateButtonLabel: só o prefixo sem data; com data, dd/mm/aaaa', () => {
     assert.equal(M.dateButtonLabel('Até', new Date(2026, 0, 5)), 'Até 05/01/2026');
 });
 
+test('isDayChoice: dia escolhido no mês mostrado aplica; trocar de mês ou ano só navega', () => {
+    assert.equal(M.isDayChoice([2026, 9], [2026, 9]), true);
+    assert.equal(M.isDayChoice([2026, 9], [2026, 10]), false);
+    assert.equal(M.isDayChoice([2026, 9], [2026, 8]), false);
+    assert.equal(M.isDayChoice([2026, 9], [2025, 9]), false);
+    assert.equal(M.isDayChoice([2026, 11], [2027, 0]), false);
+});
+
 finish();

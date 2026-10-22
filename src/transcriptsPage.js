@@ -1,10 +1,11 @@
 /* exported TranscriptsPage */
 // Aba "Transcrições": lista, busca e filtro por datas. Não conhece a janela: quem a usa
 // decide o que fazer com 'transcript-activated' (hoje, Window.showTranscript).
-const { Gio, GObject, Gtk, Pango } = imports.gi;
+const { Gio, GLib, GObject, Gtk, Pango } = imports.gi;
 const { listTranscripts } = imports.transcriptStore;
 const {
-    dateButtonLabel, dateFromCalendar, emptyState, presentEntries, rowSummary, visibleEntries,
+    dateButtonLabel, dateFromCalendar, emptyState, isDayChoice, presentEntries, rowSummary,
+    visibleEntries,
 } = imports.transcriptsPageModel;
 
 const EMPTY_ICON = 'text-x-generic-symbolic';
@@ -34,11 +35,11 @@ var TranscriptsPage = GObject.registerClass({
         this._searchEntry.connect('search-changed', () => this._render());
 
         this._setupDateFilter(this._fromCalendar, this._fromPopover, this._fromClearButton,
-            date => {
+            () => this._from, date => {
                 this._from = date;
             });
         this._setupDateFilter(this._toCalendar, this._toPopover, this._toClearButton,
-            date => {
+            () => this._to, date => {
                 this._to = date;
             });
 
@@ -70,19 +71,29 @@ var TranscriptsPage = GObject.registerClass({
             this.reload();
     }
 
-    _setupDateFilter(calendar, popover, clearButton, setDate) {
+    _setupDateFilter(calendar, popover, clearButton, getDate, setDate) {
         let shown = [calendar.year, calendar.month];
+        let resetting = false;
+        // Ao abrir, o calendário mostra o filtro aplicado (ou hoje).
         popover.connect('show', () => {
+            const date = getDate();
+            resetting = true;
+            calendar.select_day(date
+                ? GLib.DateTime.new_local(date.getFullYear(), date.getMonth() + 1, date.getDate(), 0, 0, 0)
+                : GLib.DateTime.new_now_local());
+            resetting = false;
             shown = [calendar.year, calendar.month];
         });
         calendar.connect('day-selected', () => {
+            const current = [calendar.year, calendar.month];
+            const choice = isDayChoice(shown, current);
+            shown = current;
+            if (resetting || !choice)
+                return;
             const dt = calendar.get_date();
             setDate(dateFromCalendar(dt.get_year(), dt.get_month(), dt.get_day_of_month()));
             this._render();
-            // Trocar de mês também seleciona um dia: só fecha num clique no mês mostrado.
-            if (calendar.year === shown[0] && calendar.month === shown[1])
-                popover.popdown();
-            shown = [calendar.year, calendar.month];
+            popover.popdown();
         });
         clearButton.connect('clicked', () => {
             setDate(null);

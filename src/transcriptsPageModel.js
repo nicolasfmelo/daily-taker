@@ -1,4 +1,5 @@
-/* exported presentEntries visibleEntries rowSummary emptyState dateFromCalendar dateButtonLabel */
+/* exported presentEntries visibleEntries rowSummary emptyState dateFromCalendar dateButtonLabel
+   isDayChoice */
 // Decisões da aba "Transcrições", sem GTK: testáveis isoladamente e reaproveitáveis
 // por outra navegação (a página só desenha o que sai daqui).
 const { excerpt, filterTranscripts } = imports.transcriptSearch;
@@ -48,3 +49,8 @@ var dateFromCalendar = (year, month, day) => new Date(year, month - 1, day);
 
 var dateButtonLabel = (prefix, date) =>
     date ? `${prefix} ${pad(date.getDate())}/${pad(date.getMonth() + 1)}/${date.getFullYear()}` : prefix;
+
+// Gtk.Calendar emite 'day-selected' também ao trocar de mês/ano: só é escolha de dia
+// se o [ano, mês] continua o que estava sendo mostrado.
+var isDayChoice = ([shownYear, shownMonth], [year, month]) =>
+    shownYear === year && shownMonth === month;
