@@ -19,7 +19,7 @@
 ## Global Constraints
 
 - Idioma de toda a UI e mensagens: pt-BR com acentuação correta. Identificadores de código em inglês.
-- Modelo `elevenlabs/scribe-v2`; endpoint `POST https://openrouter.ai/api/v1/audio/transcriptions`, multipart: `file`, `model`, `response_format=verbose_json`, `diarize=true`, `timestamp_granularities[]=word`, `language` opcional.
+- Modelo `elevenlabs/scribe-v2`; endpoint `POST https://openrouter.ai/api/v1/audio/transcriptions`, multipart: `file`, `model`, `response_format=verbose_json`, `diarize=true`, `timestamp_granularities[]=word`, `language=pt` (português; "Automático" omite o campo, escolha nas Preferências).
 - Upload multipart máximo 25 MB; formato Ogg/Opus mono 32 kbps; preço de estimativa US$ 0,000031/s.
 - App id `dev.nicolas.DailyTaker`; pasta de dados `~/.local/share/daily-taker/`; instalação `meson install --prefix ~/.local`; sem Flatpak.
 - Nada é enviado à rede antes do clique em **Gerar transcrição**. A chave nunca aparece em log nem no `transcript.json`.
@@ -198,7 +198,7 @@ spikes/     diarize.sh     docs/superpowers/spikes/
   - `transcribeFile({apiKey, file: Gio.File, language, baseUrl = API_BASE, retries = 2, backoffMs = 2000}): Promise<object>` (resolve com o JSON `verbose_json`)
   - `checkApiKey({apiKey, baseUrl = API_BASE}): Promise<{ok: boolean, error?: TranscribeError}>` (endpoint confirmado na Task 0)
 
-- [ ] **Step 1: Testes falhando (puros):** `estimateCostUsd(3600)` ≈ `0.1116`; `formFields({language:'pt'})` contém `['model','elevenlabs/scribe-v2']`, `['response_format','verbose_json']`, `['diarize','true']`, `['timestamp_granularities[]','word']`, `['language','pt']`; `classifyError(400,'diarize not supported').kind==='diarize'`; 429 `retryable`, 401 não.
+- [ ] **Step 1: Testes falhando (puros):** `estimateCostUsd(3600)` ≈ `0.1116`; `formFields({language:'pt'})` contém `['model','elevenlabs/scribe-v2']`, `['response_format','verbose_json']`, `['diarize','true']`, `['timestamp_granularities[]','word']`, `['language','pt']`; `classifyError(400,'diarize not supported').kind==='diarize'`; 429 `retryable`, 401 não; `formFields({language:'auto'})` não contém nenhum par `language`.
 - [ ] **Step 2: Testes falhando (servidor local `Soup.Server` em porta efêmera, `baseUrl` apontando para ele):** servidor responde 429, 429, 200 → `transcribeFile` resolve e o servidor viu 3 requisições; a requisição tem `Authorization: Bearer k` e partes `model`, `diarize`, `file` com `filename="recording.ogg"` (ler com `Soup.Multipart.new_from_message`); 401 → rejeita `kind 'auth'` com 1 requisição; `backoffMs: 1` nos testes.
 - [ ] **Step 3: (Review Focus 4)** arquivo de 0 bytes → rejeita `empty`; arquivo de `MAX_UPLOAD_BYTES + 1` bytes → rejeita `tooLarge`; em ambos o servidor de teste registra **0** requisições.
 - [ ] **Step 4: Implementar** com `Soup.Session`, `Soup.Multipart`, `Gio._promisify` em `send_and_read_async`; nome do arquivo na parte sempre `recording.ogg`, content-type `audio/ogg`; erro de conexão → `kind 'network'` (retryable).
@@ -257,13 +257,13 @@ spikes/     diarize.sh     docs/superpowers/spikes/
 
 **Files:**
 - Create: `src/preferences.js`, `data/ui/preferences.ui`
-- Modify: `data/*.gschema.xml.in` (chave `language`, string, padrão `'auto'`, valores `auto`/`pt`), `data/ui/window.ui` (item "Preferências" no menu), `src/application.js` (ação `app.preferences`, atalho `<Primary>comma`), `src/meson.build`/gresource listas
+- Modify: `data/*.gschema.xml.in` (chave `language`, string, padrão `'pt'`, valores `pt`/`auto`), `data/ui/window.ui` (item "Preferências" no menu), `src/application.js` (ação `app.preferences`, atalho `<Primary>comma`), `src/meson.build`/gresource listas
 
 **Interfaces:**
 - Consumes: `defaultKeyStore` (Task 7), `checkApiKey` (Task 6).
 - Produces: `class PreferencesWindow extends Adw.PreferencesWindow`; `Settings.get_string('language')`.
 
-- [ ] **Step 1: Implementar** com `Adw.PasswordEntryRow` (chave), botões **Testar chave** (mostra toast "Chave válida"/mensagem do `TranscribeError`) e **Remover chave**, `Adw.ComboRow` de idioma (Automático / Português). Indica a origem atual (`Chave salva no chaveiro`, `usando DAILY_TAKER_OP_KEY`). Na primeira abertura com só a env, oferece **Salvar nas Preferências**.
+- [ ] **Step 1: Implementar** com `Adw.PasswordEntryRow` (chave), botões **Testar chave** (mostra toast "Chave válida"/mensagem do `TranscribeError`) e **Remover chave**, `Adw.ComboRow` de idioma (Português (padrão) / Automático). Indica a origem atual (`Chave salva no chaveiro`, `usando DAILY_TAKER_OP_KEY`). Na primeira abertura com só a env, oferece **Salvar nas Preferências**.
 - [ ] **Step 2: Verificação manual:** salvar chave → reabrir mostra "salva no chaveiro"; testar chave inválida → mensagem de autenticação; remover → volta para a env.
 - [ ] **Step 3: Commit:** `feat: tela de preferências com a chave da API`.
 
