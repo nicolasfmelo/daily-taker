@@ -2,6 +2,7 @@
 const { Gio, GObject, Gtk } = imports.gi;
 const { formatTime } = imports.utils;
 const { WaveForm, WaveType } = imports.waveform;
+const { NOTHING_RECORDED_MESSAGE, recorderFailureMessage } = imports.recorderPipeline;
 
 // Pico abaixo do qual o áudio do sistema é considerado silêncio.
 const SYSTEM_SILENCE_PEAK = 0.01;
@@ -26,11 +27,16 @@ var RecorderWidget = GObject.registerClass({
         'resumed': {},
         'started': {},
         'stopped': { param_types: [GObject.TYPE_OBJECT] },
+        // Emitido depois de 'stopped'/'canceled' quando algo deu errado; texto para um toast.
+        'failed': { param_types: [GObject.TYPE_STRING] },
     },
 }, class RecorderWidget extends Gtk.Box {
     _init(recorder) {
         super._init({});
         this.recorder = recorder;
+        this._state = RecorderState.STOPPED;
+        this._cancelDialog = null;
+        this.recorder.connect('error', () => this._onRecorderError());
 
         this.waveform = new WaveForm({
             vexpand: true,
@@ -127,13 +133,19 @@ var RecorderWidget = GObject.registerClass({
 
         dialog.set_transient_for(Gio.Application.get_default().get_active_window());
         dialog.connect('response', (_, response) => {
+            this._cancelDialog = null;
+            dialog.close();
+            // Um erro do gravador já encerrou a gravação enquanto o diálogo estava aberto.
+            if (this._state === RecorderState.STOPPED)
+                return;
+
             switch (response) {
             case Gtk.ResponseType.YES: {
                 const recording = this.recorder.stop();
                 this.state = RecorderState.STOPPED;
                 this.waveform.destroy();
 
-                recording.delete();
+                recording?.delete();
                 this.emit('canceled');
                 break;
             }
@@ -141,10 +153,9 @@ var RecorderWidget = GObject.registerClass({
                 this.onResume();
                 break;
             }
-
-            dialog.close();
         });
 
+        this._cancelDialog = dialog;
         dialog.show();
     }
 
@@ -152,10 +163,36 @@ var RecorderWidget = GObject.registerClass({
         this.state = RecorderState.STOPPED;
         const recording = this.recorder.stop();
         this.waveform.destroy();
-        this.emit('stopped', recording);
+        if (recording) {
+            this.emit('stopped', recording);
+        } else {
+            this.emit('canceled');
+            this.emit('failed', NOTHING_RECORDED_MESSAGE);
+        }
+    }
+
+    // O microfone ou a saída de áudio falhou (ao ligar ou no meio): encerra a gravação,
+    // mantém o trecho já gravado, se houver, e devolve a janela à lista.
+    _onRecorderError() {
+        if (this._state === RecorderState.STOPPED)
+            return;
+        this.state = RecorderState.STOPPED;
+        if (this._cancelDialog) {
+            const dialog = this._cancelDialog;
+            this._cancelDialog = null;
+            dialog.close();
+        }
+        const recording = this.recorder.stop();
+        this.waveform.destroy();
+        if (recording)
+            this.emit('stopped', recording);
+        else
+            this.emit('canceled');
+        this.emit('failed', recorderFailureMessage(recording !== null));
     }
 
     set state(recorderState) {
+        this._state = recorderState;
         switch (recorderState) {
         case RecorderState.PAUSED:
             this.actionsGroup.lookup('pause').enabled = false;

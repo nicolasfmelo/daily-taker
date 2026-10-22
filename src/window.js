@@ -24,6 +24,7 @@ const { Recorder } = imports.recorder;
 const { RecordingList } = imports.recordingList;
 const { RecordingsListWidget } = imports.recordingListWidget;
 const { RecorderWidget } = imports.recorderWidget;
+const { NOTHING_RECORDED_MESSAGE } = imports.recorderPipeline;
 const { RecordingsDir, Settings } = imports.application;
 const { defaultKeyStore } = imports.secrets;
 const { TranscribeError, transcribeFile } = imports.transcriber;
@@ -146,6 +147,7 @@ var Window = GObject.registerClass({
         this.recorderWidget.connect('started', this.onRecorderStarted.bind(this));
         this.recorderWidget.connect('canceled', this.onRecorderCanceled.bind(this));
         this.recorderWidget.connect('stopped', this.onRecorderStopped.bind(this));
+        this.recorderWidget.connect('failed', (_widget, message) => this.addToast(message));
         this.insert_action_group('recorder', this.recorderWidget.actionsGroup);
         this._emptyPage.icon_name = `${pkg.name}-symbolic`;
 
@@ -241,6 +243,11 @@ var Window = GObject.registerClass({
     }
 
     onRecorderStopped(widget, recording) {
+        if (!recording) {
+            this.addToast(NOTHING_RECORDED_MESSAGE);
+            this.onRecorderCanceled();
+            return;
+        }
         // A gravação nova entra em modo de renomear na aba Gravações.
         this._viewStack.visible_child_name = 'recordings';
         this._recordingList.insert(0, recording);

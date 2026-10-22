@@ -17,10 +17,10 @@
  *  Author: Meg Ford <megford@gnome.org>
  *
  */
-const { GLib, GObject, Gst, GstPbutils } = imports.gi;
+const { Gio, GLib, GObject, Gst, GstPbutils } = imports.gi;
 const { RecordingsDir } = imports.application;
 const { Recording } = imports.recording;
-const { buildPipelineDescription } = imports.recorderPipeline;
+const { RecordingPipeline, keepRecording } = imports.recorderPipeline;
 
 // All supported encoding profiles.
 var EncodingProfiles = [
@@ -61,6 +61,10 @@ function _dbToLinear(peak) {
 }
 
 var Recorder = new GObject.registerClass({
+    Signals: {
+        // Falha ao ligar ou no meio da gravação; a mensagem é para a interface (pt-BR).
+        'error': { param_types: [GObject.TYPE_STRING] },
+    },
     Properties: {
         'duration': GObject.ParamSpec.int(
             'duration',
@@ -89,14 +93,8 @@ var Recorder = new GObject.registerClass({
         this._micPeak = 0.0;
         this._systemPeak = 0.0;
         super._init({});
-        this.pipeline = null;
-    }
-
-    _createPipeline(location) {
-        const pipeline = Gst.parse_launch(buildPipelineDescription({ location }));
-        // Define o caminho também como propriedade, sem depender de aspas na descrição.
-        pipeline.get_by_name('filesink').set_property('location', location);
-        return pipeline;
+        this._session = null;
+        this._errorIdleId = 0;
     }
 
     start() {
@@ -108,86 +106,89 @@ var Recorder = new GObject.registerClass({
         } while (this.file.query_exists(null));
 
         this._peaks.length = 0;
-        this._reachedEos = false;
         this.mic_peak = -Infinity;
         this.system_peak = -Infinity;
-        try {
-            this.pipeline = this._createPipeline(this.file.get_path());
-        } catch (error) {
-            log(`Unable to create the recorder pipeline.\n${error}`);
-            this.pipeline = null;
-            return;
-        }
-
-        this.recordBus = this.pipeline.get_bus();
-        this.recordBus.add_signal_watch();
-        this.handlerId = this.recordBus.connect('message', (_, message) => {
-            if (message !== null)
-                this._onMessageReceived(message);
+        this._session = new RecordingPipeline({
+            location: this.file.get_path(),
+            onError: message => this._reportError(message),
+            onMessage: message => this._onMessageReceived(message),
         });
-
-        this.state = Gst.State.PLAYING;
+        this._session.start();
 
         this.timeout = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 100, () => {
-            if (!this.pipeline)
+            if (!this._session)
                 return true;
-            // Consulta o `level` da mixagem: a posição do pipeline vem do filesink e
-            // atrasa ~1 s (páginas Ogg retidas pelo oggmux).
-            const pos = this.pipeline.get_by_name('mix').query_position(Gst.Format.TIME)[1];
+            const pos = this._session.position();
             if (pos > 0)
                 this.duration = pos;
             return true;
         });
     }
 
+    // O aviso sai fora da pilha atual: start()/pause() terminam antes de a interface reagir.
+    _reportError(message) {
+        if (this._errorIdleId)
+            return;
+        this._errorIdleId = GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
+            this._errorIdleId = 0;
+            this.emit('error', message);
+            return GLib.SOURCE_REMOVE;
+        });
+    }
+
     pause() {
-        this.state = Gst.State.PAUSED;
+        this._session?.setState(Gst.State.PAUSED);
     }
 
     resume() {
-        if (this.state === Gst.State.PAUSED)
-            this.state = Gst.State.PLAYING;
+        if (this._session?.state === Gst.State.PAUSED)
+            this._session.setState(Gst.State.PLAYING);
     }
 
+    // Devolve a gravação, ou null se nada foi gravado (o arquivo vazio é apagado).
+    // Depois de um erro no meio da gravação, o trecho já gravado é mantido.
     stop() {
-        if (this.recordBus) {
-            this.recordBus.remove_watch();
-            this.recordBus.disconnect(this.handlerId);
-            this.recordBus = null;
-        }
-
-        this._finishStream();
-        this.state = Gst.State.NULL;
-        this.pipeline = null;
-        this.duration = 0;
         if (this.timeout) {
             GLib.source_remove(this.timeout);
             this.timeout = null;
         }
+        if (this._errorIdleId) {
+            GLib.source_remove(this._errorIdleId);
+            this._errorIdleId = 0;
+        }
+        this.duration = 0;
 
-        if (this.file && this.file.query_exists(null) && this._peaks.length > 0) {
-            let recording = new Recording(this.file);
-            recording.peaks = this._peaks.slice();
-            this._peaks.length = 0;
+        const session = this._session;
+        this._session = null;
+        if (!session)
+            return null;
+        session.stop();
+
+        const file = this.file;
+        const peaks = this._peaks.slice();
+        this._peaks.length = 0;
+        const exists = file.query_exists(null);
+        let size = 0;
+        try {
+            size = exists ? file.query_info('standard::size', Gio.FileQueryInfoFlags.NONE, null).get_size() : 0;
+        } catch (e) {
+            size = 0;
+        }
+
+        if (keepRecording({ exists, size, peakCount: peaks.length })) {
+            let recording = new Recording(file);
+            recording.peaks = peaks;
             return recording;
         }
 
+        if (exists) {
+            try {
+                file.delete(null);
+            } catch (e) {
+                log(`Unable to remove the empty recording ${file.get_basename()}: ${e.message}`);
+            }
+        }
         return null;
-    }
-
-    // Envia EOS e espera (no máximo 2 s) o opusenc/oggmux escoarem e fecharem o arquivo.
-    // Pausado, as fontes ao vivo não fluem: volta a PLAYING só para o EOS passar.
-    _finishStream() {
-        if (!this.pipeline || this._reachedEos)
-            return;
-
-        if (this.state === Gst.State.PAUSED)
-            this.state = Gst.State.PLAYING;
-        this.pipeline.send_event(Gst.Event.new_eos());
-        const msg = this.pipeline.get_bus().timed_pop_filtered(2 * Gst.SECOND,
-            Gst.MessageType.EOS | Gst.MessageType.ERROR);
-        if (!msg || msg.type !== Gst.MessageType.EOS)
-            log('Recorder pipeline did not reach EOS cleanly');
     }
 
     _onMessageReceived(message) {
@@ -223,14 +224,7 @@ var Recorder = new GObject.registerClass({
         }
 
         case Gst.MessageType.EOS:
-            this._reachedEos = true;
             this.stop();
-            break;
-        case Gst.MessageType.WARNING:
-            log(message.parse_warning()[0].toString());
-            break;
-        case Gst.MessageType.ERROR:
-            log(message.parse_error().toString());
             break;
         }
     }
@@ -277,20 +271,4 @@ var Recorder = new GObject.registerClass({
         this._duration = val;
         this.notify('duration');
     }
-
-    get state() {
-        return this._pipeState;
-    }
-
-    set state(s) {
-        this._pipeState = s;
-        if (!this.pipeline)
-            return;
-
-        const ret = this.pipeline.set_state(this._pipeState);
-
-        if (ret === Gst.StateChangeReturn.FAILURE)
-            log('Unable to update the recorder pipeline state');
-    }
-
 });
