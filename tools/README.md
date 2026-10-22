@@ -38,9 +38,9 @@ Cria `DIR/daily-taker/` (o `XDG_DATA_HOME` do app aponta para `DIR`):
 ## `snapshot.sh` — captura da janela
 
 ```sh
-bash tools/snapshot.sh OUT.png [--component window|playerbar|transcriptview|detailpane|detailpanecheck|sidebar|sidebarcheck]
+bash tools/snapshot.sh OUT.png [--component window|windowcheck|playerbar|transcriptview|detailpane|detailpanecheck|sidebar|sidebarcheck]
                        [--select N] [--tab transcricao|resumo] [--at SEG] [--size LxA]
-                       [--state recorder|none|running|error|ready] [--embedded 0|1]
+                       [--state recorder|none|running|error|ready]
                        [--find TEXTO] [--empty 0|1] [--query TEXTO]
 ```
 
@@ -48,6 +48,35 @@ bash tools/snapshot.sh OUT.png [--component window|playerbar|transcriptview|deta
   demais são renderizados sozinhos numa janela simples, com dados de fixture;
   são registrados em `COMPONENTS` em `src/devSnapshot.js`. Um nome não
   registrado falha com mensagem clara e sem PNG.
+  - `window`: a janela mestre-detalhe real (`src/window.js`) com a biblioteca das
+    fixtures. Espera a varredura da pasta (`RecordingList.loaded`) e as durações.
+    `--select N` seleciona a gravação N da lista (1 = "Daily · Projeto Atlas"; 4 =
+    "Sem transcrição"; padrão: nenhuma) e carrega painel, transcrição e player;
+    `--tab transcricao|resumo` escolhe a aba; `--at SEG` posiciona o player
+    pausado (realça o bloco daquele instante); `--query TEXTO` aplica a busca da
+    sidebar; `--empty 1` esvazia só a lista em memória (painel "Nenhuma gravação
+    ainda"; nenhum arquivo é tocado); `--state recorder` mostra a tela de
+    gravação. O `Playback` da janela usa um `fakesink` durante a captura
+    (`playbackOptions()` em `src/devSnapshot.js`). Imprime as larguras mínimas e
+    o breakpoint aplicado (`nenhum`, `média` abaixo de 1000 sp, `estreita` abaixo
+    de 720 sp, sidebar recolhida). Ex.:
+    `bash tools/snapshot.sh /tmp/a.png --select 1 --at 34` (o alvo da mockup) e
+    `bash tools/snapshot.sh /tmp/n.png --select 1 --size 600x900` (recolhida).
+  - `windowcheck`: verificação da janela inteira na cópia das fixtures. Imprime
+    `PASS`/`FAIL` por verificação: estado do painel de cada fixture (3 prontas, a
+    4ª sem transcrição, com custo estimado); trocar de gravação com outra tocando
+    para o áudio anterior (e continua parado 400 ms depois); clique num bloco
+    pula e toca; renomear a selecionada recarrega o player na URI nova, pausado na
+    mesma posição, com a visão no arquivo novo e a seleção mantida; nome inválido
+    recusado; a selecionada que sai da lista (tocando) dá lugar à vizinha com o
+    player parado; Excluir manda para a lixeira do ambiente isolado; começar a
+    gravar para o player; parar insere a gravação nova (cópia de uma fixture,
+    sem microfone) no topo, uma vez, e a seleciona com o player parado; parar
+    sem nada gravado e falha do gravador avisam e voltam à lista; breakpoint
+    conforme a largura, e recolher/Voltar mantém a seleção; lista vazia mostra a
+    biblioteca vazia. Tocar usa `fakesink`: nenhum som. Uma falha = sem PNG e
+    saída ≠ 0. Rode também com `--size 600x900` (breakpoint real). Altera
+    arquivos: só no ambiente isolado.
   - `playerbar`: a barra do player (`src/playerBar.js`) com a gravação mais
     recente das fixtures (19:08), pausada em `--at SEG` (padrão 0), volume de
     exemplo 60 % e `Gio.Settings` em memória. O `Playback` usa um `fakesink` e
@@ -55,13 +84,12 @@ bash tools/snapshot.sh OUT.png [--component window|playerbar|transcriptview|deta
     (`ready` do componente, limite de 30 s) antes dos 1,5 s de assentamento.
     Ex.: `bash tools/snapshot.sh /tmp/p.png --component playerbar --at 34 --size 1200x120`
     (a janela simples tem altura mínima de 200 px).
-  - `transcriptview`: a visão da transcrição (`src/transcriptView.js`) no modo
-    embutido (o do painel de detalhes), com a transcrição da gravação `--select N`
+  - `transcriptview`: a visão da transcrição (`src/transcriptView.js`, a do
+    painel de detalhes), com a transcrição da gravação `--select N`
     (padrão 1 = a mais recente, "Daily · Projeto Atlas"). `--at SEG` posiciona um
     `Playback` pausado (fakesink, volume 0) e realça o bloco daquele instante;
-    `--find TEXTO` aplica a busca interna (`.find-match`/`.find-active`);
-    `--embedded 0` mostra o modo antigo (cabeçalho próprio), usado pela janela
-    atual até a Task 10. Espera o sinal `blocks-built` (lotes ociosos) e a posição.
+    `--find TEXTO` aplica a busca interna (`.find-match`/`.find-active`).
+    Espera o sinal `blocks-built` (lotes ociosos) e a posição.
     Tamanho padrão 1000x700.
     Ex.: `bash tools/snapshot.sh /tmp/t.png --component transcriptview --select 1 --at 34`
   - `detailpane`: o painel de detalhe (`src/detailPane.js`): cabeçalho, abas,
@@ -100,9 +128,7 @@ bash tools/snapshot.sh OUT.png [--component window|playerbar|transcriptview|deta
     selecionada seleciona a vizinha, lista vazia). Uma falha = sem PNG e saída
     ≠ 0. Grava uma transcrição e renomeia: só no ambiente isolado.
 - `--select N` (item N da lista, a partir de 1; 0 = nenhum no `detailpane`), `--tab`, `--at SEG` (posição
-  do player): já são lidos e repassados a `maybeSnapshot` (`params.select`,
-  `params.tab`, `params.at`), mas a janela atual ainda os ignora (imprime uma
-  nota); passam a valer quando a janela nova existir.
+  do player): valem para `window` e para os componentes indicados acima.
 - `--state recorder` (só com `--component window`): mostra a tela de gravação no
   lugar da lista, para conferir o tema nela. Só troca a página da janela; nenhuma
   gravação começa e nenhum dispositivo de áudio é aberto (`WINDOW_STATES` em
@@ -113,7 +139,7 @@ bash tools/snapshot.sh OUT.png [--component window|playerbar|transcriptview|deta
   `1100x760` para `detailpane`; `360x900` para `sidebar`/`sidebarcheck`): tamanho do monitor
   virtual e da janela.
 - Componentes que alteram dados (`MUTATING_COMPONENTS` em `src/devSnapshot.js`:
-  `detailpanecheck`, `sidebarcheck`): o `snapshot.sh` exporta
+  `detailpanecheck`, `sidebarcheck`, `windowcheck`): o `snapshot.sh` exporta
   `DAILY_TAKER_SNAPSHOT_SANDBOX=1` e `DAILY_TAKER_SNAPSHOT_ROOT=<raiz temporária>`;
   antes de construir o componente (e de novo no início dele), `devSnapshot.js`
   exige a marca e que `GLib.get_user_data_dir()` esteja dentro dessa raiz
@@ -162,8 +188,9 @@ bash tools/snapshot.sh OUT.png [--component window|playerbar|transcriptview|deta
      sinks/fontes reais (alsa, pulse, pipewire, jack, openal, oss) e põe
      `fakeaudiosink` no topo, então `autoaudiosink`/playbin/GstPlayer tocam
      no nada e `autoaudiosrc` não acha fonte. `silencePlayback(player)` em
-     `src/devSnapshot.js` (volume 0 + mudo, só durante captura) é aplicado ao
-     player da janela e fica disponível para os componentes.
+     `src/devSnapshot.js` (volume 0 + mudo, só durante captura) é usado pelos
+     componentes avulsos; o `Playback` da janela, durante a captura, sai num
+     `fakesink` (`playbackOptions()`), então nunca abre um dispositivo de som.
      Prova: `bash tools/snapshot.sh --probe-audio` roda playbin, autoaudiosink,
      autoaudiosrc, alsasink/alsasrc explícitos, o `pulsesrc` do gravador e um
      GstPlayer nesse mesmo ambiente, mostra o sink escolhido e confere em
