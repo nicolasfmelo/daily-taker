@@ -12,26 +12,13 @@
             <child>
               <object class="GtkShortcutsShortcut">
                 <property name="accelerator">&lt;ctrl&gt;R</property>
-                <property name="title" translatable="yes" context="shortcut window">Gravar</property>
+                <property name="title" translatable="yes" context="shortcut window">Nova gravação</property>
               </object>
             </child>
             <child>
               <object class="GtkShortcutsShortcut">
-                <property name="accelerator">S</property>
-                <property name="title" translatable="yes" context="shortcut window">Parar a gravação</property>
-              </object>
-            </child>
-            <child>
-              <object class="GtkShortcutsShortcut">
-                <property name="accelerator">space</property>
-                <property name="title" translatable="yes" context="shortcut window">Reproduzir / Pausar / Retomar</property>
-              </object>
-            </child>
-
-             <child>
-              <object class="GtkShortcutsShortcut">
-                <property name="accelerator">Delete</property>
-                <property name="title" translatable="yes" context="shortcut window">Excluir</property>
+                <property name="accelerator">&lt;ctrl&gt;comma</property>
+                <property name="title" translatable="yes" context="shortcut window">Preferências</property>
               </object>
             </child>
             <child>
@@ -56,29 +43,64 @@
         </child>
         <child>
           <object class="GtkShortcutsGroup">
-            <property name="title" translatable="yes" context="shortcut window">Gravação</property>
-             <child>
+            <property name="title" translatable="yes" context="shortcut window">Gravação selecionada</property>
+            <child>
+              <object class="GtkShortcutsShortcut">
+                <property name="accelerator">space</property>
+                <property name="title" translatable="yes" context="shortcut window">Reproduzir / Pausar</property>
+              </object>
+            </child>
+            <child>
               <object class="GtkShortcutsShortcut">
                 <property name="accelerator">B</property>
-                <property name="title" translatable="yes" context="shortcut window">Voltar</property>
+                <property name="title" translatable="yes" context="shortcut window">Voltar 10 s</property>
               </object>
             </child>
-             <child>
+            <child>
               <object class="GtkShortcutsShortcut">
                 <property name="accelerator">N</property>
-                <property name="title" translatable="yes" context="shortcut window">Avançar</property>
+                <property name="title" translatable="yes" context="shortcut window">Avançar 10 s</property>
               </object>
             </child>
-             <child>
+            <child>
               <object class="GtkShortcutsShortcut">
                 <property name="accelerator">F2</property>
                 <property name="title" translatable="yes" context="shortcut window">Renomear</property>
               </object>
             </child>
-             <child>
+            <child>
               <object class="GtkShortcutsShortcut">
-                <property name="accelerator">&lt;ctrl&gt;s</property>
-                <property name="title" translatable="yes" context="shortcut window">Exportar</property>
+                <property name="accelerator">Delete</property>
+                <property name="title" translatable="yes" context="shortcut window">Excluir</property>
+              </object>
+            </child>
+            <child>
+              <object class="GtkShortcutsShortcut">
+                <property name="accelerator">&lt;ctrl&gt;S</property>
+                <property name="title" translatable="yes" context="shortcut window">Exportar áudio</property>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
+          <object class="GtkShortcutsGroup">
+            <property name="title" translatable="yes" context="shortcut window">Durante a gravação</property>
+            <child>
+              <object class="GtkShortcutsShortcut">
+                <property name="accelerator">space</property>
+                <property name="title" translatable="yes" context="shortcut window">Pausar / Retomar</property>
+              </object>
+            </child>
+            <child>
+              <object class="GtkShortcutsShortcut">
+                <property name="accelerator">S</property>
+                <property name="title" translatable="yes" context="shortcut window">Parar a gravação</property>
+              </object>
+            </child>
+            <child>
+              <object class="GtkShortcutsShortcut">
+                <property name="accelerator">Delete</property>
+                <property name="title" translatable="yes" context="shortcut window">Excluir a gravação</property>
               </object>
             </child>
           </object>

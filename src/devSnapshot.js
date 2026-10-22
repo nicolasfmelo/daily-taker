@@ -3,7 +3,7 @@
 // Captura de tela para conferência visual (tools/snapshot.sh). Inerte sem a variável
 // DAILY_TAKER_SNAPSHOT: com ela, mostra a janela (ou um componente numa janela simples),
 // espera assentar, grava um PNG no caminho indicado e encerra o app.
-const { Adw, Gio, GLib, Graphene, Gst, Gtk } = imports.gi;
+const { Adw, Gdk, Gio, GLib, Graphene, Gst, Gtk } = imports.gi;
 
 const SETTLE_MS = 1500;
 // Limite para um componente ficar pronto (ex.: picos da onda gerados).
@@ -569,6 +569,27 @@ const sidebarCheckComponent = () => {
         check(asked.length === 0, 'Renomear bloqueado durante a transcrição (na ação)');
         service.set(sem.uri, 'none');
 
+        // 4d. Duração ainda desconhecida: Gerar desligado (menu e ação), como na linha antiga;
+        // liga sozinho quando a duração chega (notify::duration), mesmo com o menu aberto.
+        const generateAction = () => {
+            const section = button.menu_model.get_item_link(0, 'section');
+            return section.get_item_attribute_value(1, 'action', null).get_string()[0];
+        };
+        const knownDuration = sem._duration;
+        sem._duration = 0;
+        sem.notify('duration');
+        button.popup();
+        check(generateAction() === 'sidebar.busy', 'duração 0: Gerar desligado no menu');
+        asked.length = 0;
+        sidebar.activate_action('sidebar.transcribe', target);
+        check(asked.length === 0, 'duração 0: ação Gerar não emite');
+        sem._duration = knownDuration;
+        sem.notify('duration');
+        check(generateAction() === 'sidebar.transcribe', 'duração conhecida com o menu aberto: Gerar ligado');
+        button.popdown();
+        sidebar.activate_action('sidebar.transcribe', target);
+        check(asked.length === 1 && asked[0][0] === 'transcribe-requested', 'duração conhecida: ação Gerar emite');
+
         // 4c. Transcrição ilegível: conta como existente até ser lida; lida, sai o selo.
         transcriptFileFor(sem.file).replace_contents('{ isto não é json', null, false,
             Gio.FileCreateFlags.REPLACE_DESTINATION, null);
@@ -837,17 +858,163 @@ const windowCheckComponent = (params, { window }) => {
         'remover a selecionada (tocando): vizinha selecionada, áudio anterior parado');
         list.insert(index, notas);
 
-        // 6. Excluir (sidebar ⋮ → Excluir): sai da lista e vai para a lixeira isolada.
-        await selectInWindow(window, sem);
-        sidebar.emit('delete-requested', sem);
-        check(list.getIndex(sem.file) < 0 && sidebar.selected === notas && playback.uri === notas.uri &&
-            !playback.playing && toasts.some(t => t.includes('lixeira')),
-        'excluir a selecionada: vizinha selecionada, aviso da lixeira');
-        await sleep(500);
-        const trashed = Gio.File.new_for_path(GLib.build_filenamev([GLib.get_user_data_dir(), 'Trash',
-            'files', 'Sem transcrição']));
-        check(!sem.file.query_exists(null) && trashed.query_exists(null),
-            'arquivo excluído foi para a lixeira do ambiente isolado');
+        // 6. Excluir com Desfazer (Review Focus 1 e 2). A = notas (selecionada, tocando),
+        // B = sem (excluída logo depois, pela tecla Delete).
+        const queue = window._deleteQueue;
+        // Ação pelo caminho de um widget (o botão Desfazer do toast, o menu): o
+        // Gio.ActionGroup da janela também tem activate_action (sem prefixo) e esconde este.
+        const winAction = (name, param) => Gtk.Widget.prototype.activate_action.call(window, name, param);
+        const trashedFile = name => Gio.File.new_for_path(GLib.build_filenamev([GLib.get_user_data_dir(),
+            'Trash', 'files', name]));
+        const lastId = () => Math.max(...window._deleteToasts.keys());
+        await selectInWindow(window, notas);
+        await durationKnown(playback);
+        started = playing();
+        playback.play();
+        await started;
+        sidebar.emit('delete-requested', notas);
+        const idA = lastId();
+        const toastA = window._deleteToasts.get(idA)?.toast;
+        check(list.getIndex(notas.file) < 0 && queue.has(notas) && notas.file.query_exists(null),
+            'excluir A: sai da lista, fica na fila, arquivo ainda no lugar');
+        check(sidebar.selected === sem && playback.uri === sem.uri && !playback.playing &&
+            pane._state === 'not-transcribed' && pane._titleLabel.label === sem.name && bar._recording === sem,
+        'excluir a selecionada (tocando): vizinha selecionada, player parado nela, painel definido');
+        check(toastA?.title === '"Notas da reunião" excluída' && toastA.use_markup === false &&
+            toastA.button_label === 'Desfazer' && toastA.action_name === 'win.undo-delete' &&
+            toastA.action_target.unpack() === idA && toastA.timeout === 8,
+        `toast de A: "${toastA?.title}", sem markup, Desfazer → win.undo-delete(${idA}), 8 s`);
+        let gone = null;
+        try {
+            window.transcriptionService._save(notas.file, {});
+        } catch (err) {
+            gone = err.kind;
+        }
+        check(gone === 'recordingGone',
+            'transcrição que termina com a gravação na fila de exclusão não é salva (recordingGone)');
+        sidebar._list.get_selected_row()?.grab_focus();
+        check(window.handleShortcutKey(Gdk.KEY_Delete, 0), 'tecla Delete com o foco na lista exclui a selecionada');
+        const idB = lastId();
+        check(idB !== idA && queue.has(sem) && list.getIndex(sem.file) < 0 && sidebar.selected === ideias &&
+            playback.uri === ideias.uri, 'excluir B logo depois: id próprio, vizinha (nova última) selecionada');
+        check(window._deleteToasts.get(idB)?.toast.title === '"Sem transcrição" excluída', 'toast de B com o nome de B');
+        winAction('win.undo-delete', new GLib.Variant('i', idA));
+        check(list.getIndex(notas.file) === 2 && !queue.has(notas) && sidebar.selected === notas &&
+            playback.uri === notas.uri && pane._titleLabel.label === notas.name,
+        `Desfazer A: só A volta (na posição por data) e é selecionada (índice ${list.getIndex(notas.file)}, ` +
+        `selecionada ${sidebar.selected?.name}, player ${playback.uri === notas.uri}, título ${pane._titleLabel.label})`);
+        check(queue.has(sem) && list.getIndex(sem.file) < 0 && sem.file.query_exists(null),
+            'Desfazer A não mexe em B (continua pendente)');
+        window._deleteToasts.get(idB).toast.dismiss();
+        for (let i = 0; i < 20 && sem.file.query_exists(null); i++)
+            await sleep(100);
+        await sleep(200);
+        check(!sem.file.query_exists(null) && trashedFile('Sem transcrição').query_exists(null) &&
+            !queue.has(sem) && list.getIndex(notas.file) === 2 && notas.file.query_exists(null),
+        'toast de B some sem Desfazer: B na lixeira isolada, A presente');
+        const nBefore = toasts.length;
+        winAction('win.undo-delete', new GLib.Variant('i', idB));
+        check(list.getIndex(sem.file) < 0 && toasts.length === nBefore,
+            'Desfazer depois de confirmada: nada (sem erro nem aviso)');
+        await sleep(300);
+        check(!trashedFile('Notas da reunião').query_exists(null) && notas.file.query_exists(null),
+            'o toast de A, dispensado pelo Desfazer, não manda A para a lixeira');
+
+        // 6b. Atalhos de teclado (Review Focus 5). Sem Gdk.KeyEvent no GJS: a tecla entra por
+        // handleShortcutKey (o mesmo caminho do controlador de teclas), com o foco real.
+        await selectInWindow(window, daily);
+        await durationKnown(playback);
+        sidebar._searchEntry.grab_focus();
+        check(!window.handleShortcutKey(Gdk.KEY_space, 0) && !window.handleShortcutKey(Gdk.KEY_b, 0) &&
+            !window.handleShortcutKey(Gdk.KEY_Delete, 0) && !window.handleShortcutKey(Gdk.KEY_F2, 0) &&
+            !playback.playing && list.getIndex(daily.file) === 0 && window._renameDialog === null,
+        'digitando na busca: espaço, B, Delete e F2 seguem para o campo (nada toca, nada é excluído)');
+        bar._playButton.grab_focus();
+        check(!window.handleShortcutKey(Gdk.KEY_space, 0), 'espaço com um botão focado fica para o botão');
+        rowOf(daily).grab_focus();
+        check(!window.handleShortcutKey(Gdk.KEY_space, 0, { inPopover: true }), 'tecla vinda de um popover: ignorada');
+        check(!window.handleShortcutKey(Gdk.KEY_B, Gdk.ModifierType.SHIFT_MASK), 'Shift+B não é B');
+        started = playing();
+        check(window.handleShortcutKey(Gdk.KEY_space, 0), 'espaço com o foco na lista: tratado');
+        check(await started, 'espaço toca a selecionada');
+        const paused = within(nextSignal(playback, 'state-changed', p => p === false), 3000);
+        playback.pause();
+        await paused;
+        const at30 = nextSignal(playback, 'position-updated', pos => Math.abs(pos - 30) < 0.5);
+        playback.seek(30);
+        await within(at30, 3000);
+        await sleep(300);
+        window.handleShortcutKey(Gdk.KEY_n, 0);
+        check(Math.abs(playback.position - 40) < 0.6, `N avança 10 s (${playback.position.toFixed(1)} s)`);
+        window.handleShortcutKey(Gdk.KEY_B, 0);  // Caps Lock: B maiúsculo sem Shift
+        window.handleShortcutKey(Gdk.KEY_b, 0);
+        check(Math.abs(playback.position - 20) < 0.6, `B volta 10 s, duas vezes (${playback.position.toFixed(1)} s)`);
+        started = playing();
+        const enabled = window.lookup_action('play-pause').enabled;
+        winAction('win.play-pause', null);
+        check(await started, `win.play-pause toca (ligada: ${enabled}, tocando: ${playback.playing})`);
+        const pausedAgain = within(nextSignal(playback, 'state-changed', p => p === false), 3000);
+        winAction('win.play-pause', null);
+        check(await pausedAgain && !playback.playing, 'win.play-pause pausa');
+        const exported = [];
+        const exportAudio = window._exportAudio;
+        window._exportAudio = r => exported.push(r);
+        sidebar._searchEntry.grab_focus();
+        check(window.handleShortcutKey(Gdk.KEY_s, Gdk.ModifierType.CONTROL_MASK) && exported[0] === daily,
+            'Ctrl+S (mesmo na busca) exporta a selecionada pelo mesmo caminho do botão e do menu');
+        window._exportAudio = exportAudio;
+        rowOf(daily).grab_focus();
+        window.state = WindowState.RECORDER;
+        check(!window.handleShortcutKey(Gdk.KEY_space, 0) && !window.handleShortcutKey(Gdk.KEY_Delete, 0) &&
+            ['play-pause', 'seek-backward', 'seek-forward', 'rename', 'delete', 'export-audio']
+                .every(a => !window.lookup_action(a).enabled) && list.getIndex(daily.file) === 0 && !playback.playing,
+        'tela de gravação: ações win.* desligadas e as teclas ficam para o gravador');
+        window.state = WindowState.BROWSE;
+        check(window.lookup_action('delete').enabled, 'de volta à lista: ações ligadas');
+
+        // 6c. Renomear pelo F2: diálogo com validação; transcrição que começa com ele aberto
+        // bloqueia; nome repetido avisa sem exceção.
+        rowOf(daily).grab_focus();
+        check(window.handleShortcutKey(Gdk.KEY_F2, 0) && window._renameDialog?.recording === daily,
+            'F2 abre o diálogo de renomear da selecionada');
+        const dlg = window._renameDialog.dialog;
+        const entry = dlg.get_extra_child();
+        check(entry.text === daily.name && dlg.get_response_enabled('rename') && dlg.body_use_markup === false,
+            'diálogo pré-preenchido com o nome, Renomear ligado, sem markup');
+        entry.text = 'x.transcript.json';
+        check(!dlg.get_response_enabled('rename') && dlg.body.includes('.transcript.json'), 'nome inválido: aviso no diálogo, Renomear desligado');
+        entry.text = '   ';
+        check(!dlg.get_response_enabled('rename'), 'nome vazio: Renomear desligado');
+        entry.text = 'Daily renomeada';
+        const service = window.transcriptionService;
+        service._running.set(daily.uri, new Promise(() => {}));
+        window._onTranscriptionChanged(daily.uri, 'running');
+        check(!dlg.get_response_enabled('rename') && dlg.body === 'Aguarde a transcrição terminar para renomear.' &&
+            !window.lookup_action('rename').enabled, 'transcrição começou com o diálogo aberto: Renomear desligado');
+        const nToasts = toasts.length;
+        dlg.response('rename');
+        check(daily.name === 'Daily · Projeto Atlas' && toasts[nToasts] === 'Aguarde a transcrição terminar para renomear.',
+            'confirmar mesmo assim: recusado com aviso');
+        dlg.close();
+        winAction('win.rename', null);
+        check(window._renameDialog === null, 'win.rename durante a transcrição: nenhum diálogo');
+        service._running.delete(daily.uri);
+        window._onTranscriptionChanged(daily.uri, 'none');
+        check(window.lookup_action('rename').enabled, 'transcrição terminou: renomear ligado de novo');
+        check(!window._renameRecording(daily, notas.name) && daily.name === 'Daily · Projeto Atlas' &&
+            toasts[toasts.length - 1] === 'Já existe uma gravação com esse nome.', 'nome de outra gravação: aviso, sem exceção');
+        check(!window._renameRecording(daily, daily.name) && !window._renameRecording(daily, '  '),
+            'nome igual ou vazio: nada');
+        winAction('win.rename', null);
+        const dlg2 = window._renameDialog?.dialog;
+        dlg2.get_extra_child().text = 'Daily renomeada';
+        dlg2.response('rename');
+        dlg2.close();
+        check(daily.name === 'Daily renomeada' && sidebar.selected === daily && rowOf(daily)._title.label === 'Daily renomeada' &&
+            pane._titleLabel.label === 'Daily renomeada' && playback.uri === daily.uri,
+        'renomear pelo diálogo: seleção, item da sidebar, título do painel e player seguem');
+        daily.name = 'Daily · Projeto Atlas';
+        await selectInWindow(window, ideias);
 
         // 7. Gravador: começar para o player; parar insere, seleciona e deixa parado.
         await selectInWindow(window, daily);
@@ -906,6 +1073,27 @@ const windowCheckComponent = (params, { window }) => {
             playback.uri === null && !bar._playButton.sensitive, 'lista vazia: painel da biblioteca vazia, player desligado');
         list.splice(0, 0, all);
         check(pane._mainStack.visible_child_name === 'no-selection', 'lista de volta: "Selecione uma gravação"');
+
+        // 10. Fechar a janela com uma exclusão pendente: vai para a lixeira antes de sair
+        // (conferido no shutdown real, chamado pelo close() do fim da captura).
+        sidebar.emit('delete-requested', fresh);
+        check(queue.has(fresh) && fresh.file.query_exists(null), 'exclusão pendente antes de fechar');
+        const shutdown = window.shutdown;
+        window.shutdown = function () {
+            const pending = queue.has(fresh);
+            shutdown.call(this);
+            const ok = pending && !queue.has(fresh) && !fresh.file.query_exists(null) &&
+                trashedFile('Gravação de teste').query_exists(null) && queue.commitAll().length === 0;
+            print(`${ok ? 'PASS' : 'FAIL'} windowcheck: fechar a janela manda a exclusão pendente para a lixeira`);
+            let again = true;
+            try {
+                window._commitPendingDeletes();
+                shutdown.call(this);
+            } catch (err) {
+                again = false;
+            }
+            print(`${again ? 'PASS' : 'FAIL'} windowcheck: fechar de novo / fila vazia não lança`);
+        };
 
         // Captura: daily no 00:34.
         await selectInWindow(window, daily);

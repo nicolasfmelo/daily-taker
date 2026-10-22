@@ -116,14 +116,27 @@ var Recording = new GObject.registerClass({
         return this._peaks;
     }
 
-    delete() {
+    // Manda o áudio, a transcrição e a forma de onda para a lixeira do sistema. `sync`:
+    // espera terminar (ao fechar o app, quando uma operação assíncrona não chegaria ao fim).
+    delete({ sync = false } = {}) {
         try {
             trashTranscript(this._file);
         } catch (e) {
             log(`Failed to trash the transcript of ${this.name}: ${e.message}`);
         }
-        this._file.trash_async(GLib.PRIORITY_HIGH, null, null);
-        this.waveformCache.trash_async(GLib.PRIORITY_DEFAULT, null, null);
+        if (!sync) {
+            this._file.trash_async(GLib.PRIORITY_HIGH, null, null);
+            this.waveformCache.trash_async(GLib.PRIORITY_DEFAULT, null, null);
+            return;
+        }
+        for (const file of [this._file, this.waveformCache]) {
+            try {
+                file.trash(null);
+            } catch (e) {
+                if (!e.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.NOT_FOUND))
+                    log(`Failed to trash ${file.get_basename()}: ${e.message}`);
+            }
+        }
     }
 
     // Copia o áudio para `dest` (substitui: o diálogo de salvar já confirmou). `onDone(ok)`

@@ -57,7 +57,8 @@ bash tools/snapshot.sh OUT.png [--component window|windowcheck|playerbar|transcr
     sidebar; `--empty 1` esvazia só a lista em memória (painel "Nenhuma gravação
     ainda"; nenhum arquivo é tocado); `--state recorder` mostra a tela de
     gravação. O `Playback` da janela usa um `fakesink` durante a captura
-    (`playbackOptions()` em `src/devSnapshot.js`). Imprime as larguras mínimas e
+    (`playbackOptions()` em `src/devSnapshot.js`, passado pelo `Application` à
+    janela: o `window.js` não importa o devSnapshot). Imprime as larguras mínimas e
     o breakpoint aplicado (`nenhum`, `média` abaixo de 1000 sp, `estreita` abaixo
     de 720 sp, sidebar recolhida). Ex.:
     `bash tools/snapshot.sh /tmp/a.png --select 1 --at 34` (o alvo da mockup) e
@@ -69,13 +70,34 @@ bash tools/snapshot.sh OUT.png [--component window|windowcheck|playerbar|transcr
     pula e toca; renomear a selecionada recarrega o player na URI nova, pausado na
     mesma posição, com a visão no arquivo novo e a seleção mantida; nome inválido
     recusado; a selecionada que sai da lista (tocando) dá lugar à vizinha com o
-    player parado; Excluir manda para a lixeira do ambiente isolado; começar a
+    player parado; **Excluir com Desfazer** (fila `DeleteQueue`): excluir A (a
+    selecionada, tocando) e logo depois B (pela tecla Delete) dá um toast por
+    exclusão (`"<nome>" excluída`, sem markup, 8 s, Desfazer →
+    `win.undo-delete(id)`), a vizinha selecionada com o player parado nela e o
+    painel definido; uma transcrição que termina com a gravação na fila não é
+    salva; Desfazer A devolve só A (na posição por data, selecionada) e B
+    continua pendente; o toast de B sumir manda B para a lixeira isolada com A
+    presente; Desfazer depois de confirmada não faz nada; **atalhos**
+    (`handleShortcutKey`, o mesmo caminho do controlador de teclas, com o foco
+    real; o GJS não cria `Gdk.KeyEvent`): espaço/B/Delete/F2 digitados na busca
+    ficam para o campo, espaço num botão focado fica para o botão, tecla vinda de
+    popover e Shift+B são ignorados, espaço com o foco na lista toca, N/B pulam
+    ±10 s, `win.play-pause` toca e pausa, Ctrl+S (mesmo na busca) exporta pelo
+    mesmo caminho do botão e do menu, na tela de gravação as ações `win.*` ficam
+    desligadas; **renomear** pelo F2: diálogo pré-preenchido, sem markup, nome
+    inválido ou vazio desliga Renomear, uma transcrição que começa com o diálogo
+    aberto bloqueia (aviso "Aguarde a transcrição terminar para renomear."),
+    nome de outra gravação avisa sem exceção, renomear mantém seleção, item da
+    sidebar, título do painel e player; começar a
     gravar para o player; parar insere a gravação nova (cópia de uma fixture,
     sem microfone) no topo, uma vez, e a seleciona com o player parado; parar
     sem nada gravado e falha do gravador avisam e voltam à lista; breakpoint
     conforme a largura, e recolher/Voltar mantém a seleção; lista vazia mostra a
-    biblioteca vazia. Tocar usa `fakesink`: nenhum som. Uma falha = sem PNG e
-    saída ≠ 0. Rode também com `--size 600x900` (breakpoint real). Altera
+    biblioteca vazia; **fechar a janela** com uma exclusão pendente a manda para
+    a lixeira antes de sair, e fechar de novo/fila vazia não lança (conferido no
+    `shutdown()` real, depois da captura). Tocar usa `fakesink`: nenhum som. Uma
+    falha = sem PNG e saída ≠ 0; uma `FAIL` impressa depois da captura (o
+    fechamento) também faz o `snapshot.sh` sair com erro. Rode também com `--size 600x900` (breakpoint real). Altera
     arquivos: só no ambiente isolado.
   - `playerbar`: a barra do player (`src/playerBar.js`) com a gravação mais
     recente das fixtures (19:08), pausada em `--at SEG` (padrão 0), volume de
@@ -124,7 +146,8 @@ bash tools/snapshot.sh OUT.png [--component window|windowcheck|playerbar|transcr
     `select(null)`, busca por nome e por conteúdo, seleção escondida pela busca
     → nenhuma, `select` de item escondido limpa a busca, `invalidateTranscript`
     no selo e na busca, status do serviço, menu ⋮ montado só ao abrir e as
-    ações, Exportar do cabeçalho, renomear troca a chave do cache, remover a
+    ações, Gerar desligado com duração 0 e religado por `notify::duration`
+    com o menu aberto, Exportar do cabeçalho, renomear troca a chave do cache, remover a
     selecionada seleciona a vizinha, lista vazia). Uma falha = sem PNG e saída
     ≠ 0. Grava uma transcrição e renomeia: só no ambiente isolado.
 - `--select N` (item N da lista, a partir de 1; 0 = nenhum no `detailpane`), `--tab`, `--at SEG` (posição

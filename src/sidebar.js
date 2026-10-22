@@ -8,7 +8,7 @@ const { Gio, GLib, GObject, Gtk, Pango } = imports.gi;
 
 const { groupLabel, itemDate, itemSubtitle } = imports.recordingGroups;
 const { emptyListMessage, nextSelection, recordingMatchesHaystack, statusBadge } = imports.sidebarModel;
-const { rowStatus } = imports.transcriptionUi;
+const { rowActions, rowStatus } = imports.transcriptionUi;
 const { searchableText } = imports.transcriptSearch;
 const { loadTranscript, transcriptFileFor } = imports.transcriptStore;
 
@@ -363,10 +363,19 @@ var Sidebar = GObject.registerClass({
         return itemSubtitle({ created: recordingDate(recording), durationSec: recording.duration / 1e9 }, now);
     }
 
+    // O que o menu ⋮ permite agora: renomear e gerar ficam bloqueados durante a
+    // transcrição; gerar também enquanto a duração não é conhecida (rowActions).
+    _allowed(recording) {
+        return rowActions({
+            status: this._service.status(recording.file),
+            seconds: recording.duration / 1e9,
+            editMode: false,
+        });
+    }
+
     _fillMenu(button, recording) {
         const menu = button.menu_model;
-        const status = this._statusOf(recording);
-        const running = status === 'running';
+        const allowed = this._allowed(recording);
         this._haystackFor(recording);
         const hasTranscript = this._hasTranscript(recording);
         const target = new GLib.Variant('s', recording.uri);
@@ -377,10 +386,10 @@ var Sidebar = GObject.registerClass({
         };
         menu.remove_all();
         const main = new Gio.Menu();
-        // Durante uma transcrição: renomear e gerar ficam bloqueados (ação desligada).
-        main.append_item(item('Renomear', running ? 'sidebar.busy' : 'sidebar.rename'));
+        // Bloqueado = ação sempre desligada (o item aparece insensível).
+        main.append_item(item('Renomear', allowed.rename ? 'sidebar.rename' : 'sidebar.busy'));
         main.append_item(item(hasTranscript ? 'Gerar novamente' : 'Gerar transcrição',
-            running ? 'sidebar.busy' : 'sidebar.transcribe'));
+            allowed.transcribe ? 'sidebar.transcribe' : 'sidebar.busy'));
         main.append_item(item('Exportar áudio', 'sidebar.export'));
         menu.append_section(null, main);
         const danger = new Gio.Menu();
@@ -414,14 +423,14 @@ var Sidebar = GObject.registerClass({
             group.add_action(action);
             return action;
         };
-        // Renomear e Gerar: o menu já os bloqueia durante a transcrição; a ação confere
-        // de novo (a ação pode ser ativada por outro caminho).
+        // Renomear e Gerar: o menu já os bloqueia (_allowed); a ação confere de novo (ela
+        // pode ser ativada por outro caminho).
         add('rename', r => {
-            if (this._service.status(r.file) !== 'running')
+            if (this._allowed(r).rename)
                 this.emit('rename-requested', r);
         });
         add('transcribe', r => {
-            if (this._service.status(r.file) === 'running')
+            if (!this._allowed(r).transcribe)
                 return;
             this._haystackFor(r);
             this.emit('transcribe-requested', r, this._hasTranscript(r));
@@ -446,7 +455,11 @@ var Sidebar = GObject.registerClass({
                 ids: [
                     recording.connect('notify::name', () => this._renamed(recording)),
                     recording.connect('notify::duration', () => {
-                        this._rowFor(recording)?.setSubtitle(this._subtitleOf(recording, new Date()));
+                        const row = this._rowFor(recording);
+                        row?.setSubtitle(this._subtitleOf(recording, new Date()));
+                        // Menu aberto: "Gerar" liga assim que a duração fica conhecida.
+                        if (row?.menuButton.active && row.menuButton.menu_model)
+                            this._fillMenu(row.menuButton, recording);
                     }),
                 ],
             });

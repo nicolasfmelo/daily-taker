@@ -22,7 +22,7 @@
 // sidebar com as gravações e, à direita, o painel de detalhe com o player único embaixo.
 // A seleção da sidebar é a fonte da verdade: a janela leva a gravação selecionada ao
 // painel, à barra do player e ao Playback. A tela de gravação cobre a janela inteira.
-const { Adw, Gio, GLib, GObject, Gtk } = imports.gi;
+const { Adw, Gdk, Gio, GLib, GObject, Gtk } = imports.gi;
 
 const { Recorder } = imports.recorder;
 const { RecordingList } = imports.recordingList;
@@ -41,9 +41,10 @@ const { loadTranscript, saveTranscript, transcriptFileFor } = imports.transcript
 const { exportContent, exportExtension } = imports.transcriptViewModel;
 const { TranscriptionService } = imports.transcriptionService;
 const { TranscriptionController } = imports.transcriptionController;
-const { confirmMessage, guardedSave, hasNamedSpeakers, recordingNameProblem, rowStatus } =
+const { confirmMessage, guardedSave, hasNamedSpeakers, recordingNameProblem, rowActions, rowStatus } =
     imports.transcriptionUi;
-const { playbackOptions } = imports.devSnapshot;
+const { DeleteQueue } = imports.deleteQueue;
+const { deletedToastTitle, shortcutFor, shouldHandleShortcut } = imports.shortcuts;
 
 var WindowState = {
     BROWSE: 0,
@@ -53,6 +54,23 @@ var WindowState = {
 // Diálogo de arquivo fechado pelo usuário: nada a avisar.
 const dismissed = e => e.matches?.(Gtk.DialogError, Gtk.DialogError.DISMISSED) ?? false;
 
+// Pulo dos atalhos B/N, em segundos.
+const SEEK_STEP = 10;
+// Tempo do toast "… excluída" com Desfazer, em segundos.
+const UNDO_TIMEOUT = 8;
+const RENAME_BUSY_MESSAGE = 'Aguarde a transcrição terminar para renomear.';
+
+// Do widget com o foco até a janela: algum ancestral satisfaz `pred`?
+const focusWithin = (widget, pred) => {
+    for (let w = widget; w; w = w.get_parent()) {
+        if (pred(w))
+            return true;
+    }
+    return false;
+};
+const isEditable = w => w instanceof Gtk.TextView || GObject.type_is_a(w.constructor.$gtype, Gtk.Editable.$gtype);
+const isButton = w => w instanceof Gtk.Button || w instanceof Gtk.CheckButton || w instanceof Gtk.Switch;
+
 var Window = GObject.registerClass({
     Template: 'resource:///dev/nicolas/DailyTaker/ui/window.ui',
     InternalChildren: [
@@ -60,7 +78,9 @@ var Window = GObject.registerClass({
         'contentView', 'mediumBreakpoint', 'narrowBreakpoint',
     ],
 }, class Window extends Adw.ApplicationWindow {
-    _init(params) {
+    // playbackOptions: opções do Playback (o Application passa a saída silenciosa
+    // durante uma captura do tools/snapshot.sh; o código de produção não carrega o devSnapshot).
+    _init({ playbackOptions = {}, ...params } = {}) {
         super._init({ icon_name: pkg.name, ...params });
         this._appIcon.icon_name = pkg.name;
         this._closed = false;
@@ -69,6 +89,10 @@ var Window = GObject.registerClass({
         this._selectedIds = [];
         this._pendingSeek = null;       // { id } do seek que espera a mídia recarregada
         this._midnightId = 0;
+        this._signalIds = [];           // [objeto, id] soltos no shutdown
+        this._deleteQueue = new DeleteQueue();
+        this._deleteToasts = new Map(); // id da exclusão → { toast, handlerId } até o toast sumir
+        this._renameDialog = null;      // { recording, validate } do diálogo aberto
 
         this.recorder = new Recorder();
         this.recorderWidget = new RecorderWidget(this.recorder);
@@ -79,7 +103,10 @@ var Window = GObject.registerClass({
         this.transcriptionService = new TranscriptionService({
             getKey: () => defaultKeyStore().get(),
             transcribe: transcribeFile,
-            save: guardedSave(saveTranscript),
+            // Uma gravação esperando o "Desfazer" já saiu da biblioteca: nada é salvo ao lado dela.
+            save: guardedSave(saveTranscript, {
+                isRemoved: file => this._deleteQueue.pending().some(r => r.file.equal(file)),
+            }),
             language: () => Settings.get_string('language'),
             now: () => new Date(),
         });
@@ -94,7 +121,7 @@ var Window = GObject.registerClass({
         });
 
         // Player único: criado uma vez; velocidade e volume salvos são aplicados pelo bind.
-        this.playback = new Playback(playbackOptions());
+        this.playback = new Playback(playbackOptions);
         this._sidebar = new Sidebar({
             recordingList: this._recordingList,
             transcriptionService: this.transcriptionService,
@@ -117,9 +144,10 @@ var Window = GObject.registerClass({
         this._connectPane();
         this._connectRecorder();
         this._connectNavigation();
+        this._setupActions();
         // Depois da sidebar: quando este ouvinte roda, ela já reconciliou a seleção.
-        this._recordingList.connect('items-changed', () => this._onLibraryChanged());
-        this._recordingList.connect('notify::loaded', () => this._syncLibrary());
+        this._track(this._recordingList, 'items-changed', () => this._onLibraryChanged());
+        this._track(this._recordingList, 'notify::loaded', () => this._syncLibrary());
         // Um único ouvinte do serviço na janela (a sidebar cuida dos próprios selos).
         this.transcriptionService.connectChange((uri, status) => this._onTranscriptionChanged(uri, status));
         this._setupDates();
@@ -149,18 +177,25 @@ var Window = GObject.registerClass({
     set state(state) {
         this._state = state;
         this._mainStack.visible_child_name = state === WindowState.RECORDER ? 'recorder' : 'browse';
+        this._syncActions();
     }
 
+    // Fechar = shutdown(), que destrói a janela e sai num ocioso: a janela não é destruída
+    // pelo caminho padrão (true), então há um único caminho de encerramento.
     vfunc_close_request() {
         this.shutdown();
-        return false;
+        return true;
     }
 
-    // Encerra o app: solta player, gravador e temporizadores, desmonta os widgets e sai.
-    // Chamado ao fechar a janela (e pelo devSnapshot, que pode nunca mostrá-la).
+    // Encerra o app. Ordem: (1) as exclusões pendentes vão para a lixeira (o usuário já viu
+    // os avisos; síncrono, para terminar antes de sair); (2) solta transcrição, temporizador,
+    // ouvintes, monitor da pasta, player e gravador; (3) num ocioso desmonta os widgets com
+    // o JS ainda vivo, destrói a janela e sai. Chamado ao fechar a janela (e pelo
+    // devSnapshot, que pode nunca mostrá-la). Uma segunda chamada não faz nada.
     shutdown() {
         if (this._closed)
             return;
+        this._commitPendingDeletes();
         // Uma transcrição em andamento não segura o fechamento: é simplesmente abandonada.
         this._closed = true;
         this._transcription.close();
@@ -168,21 +203,39 @@ var Window = GObject.registerClass({
             GLib.source_remove(this._midnightId);
             this._midnightId = 0;
         }
+        for (const [object, id] of this._signalIds)
+            object.disconnect(id);
+        this._signalIds = [];
+        for (const { toast, handlerId } of this._deleteToasts.values())
+            toast.disconnect(handlerId);
+        this._deleteToasts.clear();
         this._cancelPendingSeek();
         this._recordingList.cancellable.cancel();
+        this._recordingList.dirMonitor.cancel();
         this.playback.destroy();
         this.recorder.stop();
-        // Desmonta os widgets com o JS ainda vivo e só então sai: sem isso a árvore (com
-        // vfuncs e funções JS, como o cabeçalho da lista) só seria desfeita na coleta de
-        // lixo do encerramento, onde o GJS bloqueia essas chamadas.
+        // Sem isso a árvore (com vfuncs e funções JS, como o cabeçalho da lista) só seria
+        // desfeita na coleta de lixo do encerramento, onde o GJS bloqueia essas chamadas.
         const app = this.application;
         GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
             this._sidebarPage.child = null;
             this._sidebar.run_dispose();
+            this.destroy();
             this.run_dispose();
-            app.quit();
+            app?.quit();
             return GLib.SOURCE_REMOVE;
         });
+    }
+
+    // Todas as exclusões pendentes vão para a lixeira agora (fechar a janela).
+    _commitPendingDeletes() {
+        for (const recording of this._deleteQueue.commitAll())
+            recording.delete({ sync: true });
+    }
+
+    // connect() que o shutdown desfaz.
+    _track(object, signal, handler) {
+        this._signalIds.push([object, object.connect(signal, handler)]);
     }
 
     // --- Ligações ---
@@ -245,7 +298,7 @@ var Window = GObject.registerClass({
 
     // "Hoje"/"Ontem" mudam à meia-noite e enquanto a janela fica em segundo plano.
     _setupDates() {
-        this.connect('notify::is-active', () => {
+        this._track(this, 'notify::is-active', () => {
             if (this.is_active)
                 this._sidebar.refreshDates();
         });
@@ -280,6 +333,7 @@ var Window = GObject.registerClass({
         this.playback.load(next?.uri ?? null);
         if (!next && this._splitView.collapsed)
             this._splitView.show_content = false;
+        this._syncActions();
     }
 
     _trackSelected(recording) {
@@ -420,13 +474,20 @@ var Window = GObject.registerClass({
     // --- Transcrição ---
 
     _onTranscriptionChanged(uri, status) {
-        const recording = this._selected;
-        if (this._closed || !recording || recording.uri !== uri)
+        if (this._closed)
             return;
+        // Começou uma transcrição da gravação do diálogo de renomear aberto: ele bloqueia.
+        if (this._renameDialog?.recording.uri === uri)
+            this._renameDialog.validate();
+        const recording = this._selected;
+        if (!recording || recording.uri !== uri)
+            return;
+        this._syncActions();
         if (status === 'running') {
             this._detailPane.setState('running');
         } else if (status === 'error') {
-            this._detailPane.setErrorMessage(this._transcription.failureMessage(recording));
+            // O serviço avisa 'error' antes de o controlador registrar a falha: a mensagem
+            // chega logo depois por _onTranscriptionFailed (onFailed).
             this._detailPane.setState('error');
         }
         // 'none' depois de salvar: _onTranscriptionDone relê a transcrição do disco.
@@ -498,24 +559,34 @@ var Window = GObject.registerClass({
         });
     }
 
-    // Renomear simples (a Task 11 refina): diálogo com o nome atual, validado.
+    // Diálogo de renomear: nome atual pré-preenchido, Enter confirma, validação na hora
+    // (nome inválido ou vazio desliga Renomear; transcrição em andamento também, mesmo que
+    // comece com o diálogo aberto). Texto do usuário nunca como markup.
     _showRenameDialog(recording) {
-        if (this.transcriptionService.status(recording.file) === 'running')
+        if (this._closed || !recording || this._indexOf(recording) < 0)
             return;
-        const entry = new Gtk.Entry({ text: recording.name, activates_default: true });
+        if (this._isTranscribing(recording)) {
+            this.addToast(RENAME_BUSY_MESSAGE);
+            return;
+        }
+        const entry = new Gtk.Entry({ text: recording.name, activates_default: true, hexpand: true });
         const dialog = new Adw.MessageDialog({
             transient_for: this,
             modal: true,
             heading: 'Renomear gravação',
-            extra_child: entry,
+            heading_use_markup: false,
+            body_use_markup: false,
         });
+        // Pelo método: a propriedade extra-child é marcada obsoleta (aviso do GJS).
+        dialog.set_extra_child(entry);
         dialog.add_response('cancel', 'Cancelar');
         dialog.add_response('rename', 'Renomear');
         dialog.set_response_appearance('rename', Adw.ResponseAppearance.SUGGESTED);
         dialog.default_response = 'rename';
         dialog.close_response = 'cancel';
         const validate = () => {
-            const problem = recordingNameProblem(entry.text);
+            const problem = this._isTranscribing(recording)
+                ? RENAME_BUSY_MESSAGE : recordingNameProblem(entry.text);
             dialog.body = problem ?? '';
             dialog.set_response_enabled('rename', !problem && entry.text.trim() !== '');
             if (problem)
@@ -525,7 +596,11 @@ var Window = GObject.registerClass({
         };
         entry.connect('changed', validate);
         validate();
+        const state = { recording, validate, dialog };
+        this._renameDialog = state;
         dialog.connect('response', (_dialog, response) => {
+            if (this._renameDialog === state)
+                this._renameDialog = null;
             if (response === 'rename' && !this._closed)
                 this._renameRecording(recording, entry.text);
         });
@@ -533,10 +608,15 @@ var Window = GObject.registerClass({
         entry.grab_focus();
     }
 
-    // Devolve true se renomeou. O player e o painel seguem a gravação (notify::name).
+    _isTranscribing(recording) {
+        return this.transcriptionService.status(recording.file) === 'running';
+    }
+
+    // Devolve true se renomeou. Vazio ou igual: nada. O player (recarregado na URI nova,
+    // pausado na mesma posição), o painel e a sidebar seguem a gravação (notify::name).
     _renameRecording(recording, text) {
-        const name = text.trim();
-        if (!name || name === recording.name)
+        const name = (text ?? '').trim();
+        if (!name || name === recording.name || this._indexOf(recording) < 0)
             return false;
         const problem = recordingNameProblem(name);
         if (problem) {
@@ -544,27 +624,177 @@ var Window = GObject.registerClass({
             return false;
         }
         // O serviço grava ao lado do arquivo antigo: renomear durante a transcrição a perderia.
-        if (this.transcriptionService.status(recording.file) === 'running')
+        if (this._isTranscribing(recording)) {
+            this.addToast(RENAME_BUSY_MESSAGE);
             return false;
+        }
         try {
             recording.name = name;
         } catch (e) {
-            this.addToast('Não foi possível renomear a gravação');
+            this.addToast(e.matches?.(Gio.IOErrorEnum, Gio.IOErrorEnum.EXISTS)
+                ? 'Já existe uma gravação com esse nome.'
+                : 'Não foi possível renomear a gravação.');
             return false;
         }
         return true;
     }
 
-    // Task 11: troca por uma fila com "Desfazer" (DeleteQueue). Por ora a gravação vai
-    // direto para a lixeira do sistema (recuperável por lá). Sai da lista antes: a sidebar
-    // seleciona a vizinha e o player solta o arquivo antes de ele ir para a lixeira.
+    // Excluir com "Desfazer": o player solta o arquivo, a gravação sai da lista (a sidebar
+    // seleciona a vizinha ou nenhuma) e entra na fila; um toast por exclusão, com o id dela
+    // na ação win.undo-delete. Sem Desfazer até o toast sumir, vai para a lixeira do sistema.
     _deleteRecording(recording) {
+        if (this._closed || !recording)
+            return;
         const index = this._indexOf(recording);
         if (index < 0)
             return;
-        const name = recording.name;
+        if (this.playback.uri === recording.uri) {
+            this._cancelPendingSeek();
+            this.playback.load(null);
+        }
         this._recordingList.remove(index);
-        recording.delete();
-        this.addToast(`"${name}" foi para a lixeira`);
+        const id = this._deleteQueue.add(recording, index);
+        // Sem markup: o nome é do usuário. HIGH: a exclusão mais recente aparece já (a
+        // anterior volta para a fila de toasts, ainda com o próprio Desfazer).
+        const toast = new Adw.Toast({
+            title: deletedToastTitle(recording.name),
+            use_markup: false,
+            timeout: UNDO_TIMEOUT,
+            priority: Adw.ToastPriority.HIGH,
+            button_label: 'Desfazer',
+            action_name: 'win.undo-delete',
+            action_target: new GLib.Variant('i', id),
+        });
+        // Num ocioso: se o clique em Desfazer chegar junto com o dismissed, o undo vence
+        // (commit de um id já desfeito não faz nada).
+        // O ouvinte sai junto com o toast (ou no shutdown): nenhum JS fica preso a um toast
+        // que só seria finalizado na coleta de lixo do encerramento.
+        const handlerId = toast.connect('dismissed', () => {
+            toast.disconnect(handlerId);
+            this._deleteToasts.delete(id);
+            GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
+                this._commitDelete(id);
+                return GLib.SOURCE_REMOVE;
+            });
+        });
+        this._deleteToasts.set(id, { toast, handlerId });
+        this._toastOverlay.add_toast(toast);
+    }
+
+    // O toast sumiu sem Desfazer: a gravação vai para a lixeira (nada se já foi desfeita).
+    _commitDelete(id) {
+        this._deleteQueue.commit(id)?.delete();
+    }
+
+    // Desfazer: a gravação volta para a lista, na ordem por data, e é selecionada.
+    _undoDelete(id) {
+        const item = this._deleteQueue.undo(id);
+        // Pelo botão o toast já está sumindo; pela ação direta, some agora.
+        this._deleteToasts.get(id)?.toast.dismiss();
+        if (!item || this._closed)
+            return;
+        const { recording } = item;
+        if (!recording.file.query_exists(null)) {
+            this.addToast('Não foi possível restaurar a gravação.');
+            return;
+        }
+        if (this._recordingList.getIndex(recording.file) < 0)
+            this._recordingList.sortedInsert(recording);
+        this.selectRecording(recording);
+    }
+
+    // --- Ações e atalhos de teclado ---
+
+    // Ações win.* da gravação selecionada (desligadas no gravador e sem seleção) e
+    // win.undo-delete(id). As teclas chegam por _onKeyPressed (ver shortcuts.js para a regra).
+    _setupActions() {
+        const add = (name, fn, parameterType = null) => {
+            const action = new Gio.SimpleAction({ name, parameter_type: parameterType });
+            action.connect('activate', (_action, param) => fn(param));
+            this.add_action(action);
+            return action;
+        };
+        const selected = fn => () => {
+            if (this._selected)
+                fn(this._selected);
+        };
+        this._actions = {
+            'play-pause': add('play-pause', selected(r => this._togglePlay(r))),
+            'seek-backward': add('seek-backward', selected(r => this._seekBy(r, -SEEK_STEP))),
+            'seek-forward': add('seek-forward', selected(r => this._seekBy(r, SEEK_STEP))),
+            'rename': add('rename', selected(r => this._showRenameDialog(r))),
+            'delete': add('delete', selected(r => this._deleteRecording(r))),
+            'export-audio': add('export-audio', selected(r => this._exportAudio(r))),
+        };
+        add('undo-delete', param => this._undoDelete(param.unpack()), new GLib.VariantType('i'));
+
+        // Captura: a janela vê a tecla antes do widget focado e decide (shouldHandleShortcut);
+        // o que ela não trata segue para o widget. Os atalhos não usam set_accels_for_action:
+        // os aceleradores do app disparariam mesmo digitando na busca.
+        const keys = new Gtk.EventControllerKey({ propagation_phase: Gtk.PropagationPhase.CAPTURE });
+        keys.connect('key-pressed', (controller, keyval, _keycode, state) => {
+            const event = controller.get_current_event();
+            const surface = event?.get_surface() ?? null;
+            return this.handleShortcutKey(keyval, state, {
+                inPopover: surface !== null && surface !== this.get_surface(),
+            });
+        });
+        this.add_controller(keys);
+        this._syncActions();
+    }
+
+    // Trata a tecla se for um atalho válido agora; true = consumida. `inPopover`: a tecla
+    // veio de um popover (outra superfície). Público para a verificação do devSnapshot,
+    // que não consegue criar um Gdk.KeyEvent.
+    handleShortcutKey(keyval, state, { inPopover = false } = {}) {
+        const mods = state & Gtk.accelerator_get_default_mod_mask();
+        const action = shortcutFor({
+            key: Gdk.keyval_name(Gdk.keyval_to_lower(keyval)),
+            ctrl: (mods & Gdk.ModifierType.CONTROL_MASK) !== 0,
+            shift: (mods & Gdk.ModifierType.SHIFT_MASK) !== 0,
+            alt: (mods & Gdk.ModifierType.ALT_MASK) !== 0,
+        });
+        if (!action)
+            return false;
+        const focus = this.get_focus();
+        const handle = shouldHandleShortcut({
+            action,
+            focusIsEditable: focusWithin(focus, isEditable),
+            focusIsButton: focusWithin(focus, isButton),
+            inDialog: inPopover || focusWithin(focus, w => w instanceof Gtk.Popover),
+            recorderState: this.state === WindowState.RECORDER,
+        });
+        const target = this._actions[action];
+        if (!handle || !target.enabled)
+            return false;
+        target.activate(null);
+        return true;
+    }
+
+    _syncActions() {
+        if (!this._actions)
+            return;
+        const recording = this._closed ? null : this._selected;
+        const browsing = this._state !== WindowState.RECORDER;
+        const on = browsing && recording !== null;
+        const allowed = recording ? rowActions({
+            status: this.transcriptionService.status(recording.file),
+            seconds: recording.duration / 1e9,
+            editMode: false,
+        }) : { rename: false };
+        for (const name of ['play-pause', 'seek-backward', 'seek-forward', 'delete', 'export-audio'])
+            this._actions[name].enabled = on;
+        this._actions.rename.enabled = on && allowed.rename;
+    }
+
+    _togglePlay(recording) {
+        if (this.playback.uri !== recording.uri)
+            this.playback.load(recording.uri);
+        this.playback.toggle();
+    }
+
+    _seekBy(recording, delta) {
+        if (this.playback.uri === recording.uri)
+            this.playback.seek(this.playback.position + delta);
     }
 });

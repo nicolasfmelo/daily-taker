@@ -198,4 +198,9 @@ if [ -n "${SNAPSHOT_VERBOSE:-}" ]; then
 else
     grep -E "$app_lines" "$work/run.log" || true
 fi
+# Verificações que rodam depois da captura (ex.: o fechamento no windowcheck) só
+# aparecem no log: uma FAIL ali também é falha.
+if grep -q '^FAIL ' "$work/run.log"; then
+    die "verificação falhou depois da captura (ver FAIL acima)"
+fi
 echo "snapshot: $out"

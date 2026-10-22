@@ -26,7 +26,7 @@ var Settings = new Gio.Settings({ schema: pkg.name });
 
 const { Window } = imports.window;
 const { PreferencesWindow } = imports.preferences;
-const { maybeSnapshot } = imports.devSnapshot;
+const { maybeSnapshot, playbackOptions } = imports.devSnapshot;
 const { applyTheme } = imports.appTheme;
 
 var Application = GObject.registerClass(class Application extends Adw.Application {
@@ -70,8 +70,9 @@ var Application = GObject.registerClass(class Application extends Adw.Applicatio
         this.set_accels_for_action('app.preferences', ['<Primary>comma']);
         this.set_accels_for_action('win.show-help-overlay', ['<Primary>question']);
         // Gravador: Ctrl+R começa; os demais só valem com a gravação em andamento (as ações
-        // ficam desligadas fora dela).
-        // Os atalhos da janela (win.*) chegam na Task 11.
+        // ficam desligadas fora dela). Os atalhos do modo lista (espaço, B, N, F2, Delete,
+        // Ctrl+S → win.*) não são aceleradores do app: a janela os trata com a guarda de
+        // foco (ver shortcuts.js), para não dispararem enquanto se digita.
         this.set_accels_for_action('recorder.start', ['<Primary>r']);
         this.set_accels_for_action('recorder.pause', ['space']);
         this.set_accels_for_action('recorder.resume', ['space']);
@@ -99,7 +100,8 @@ var Application = GObject.registerClass(class Application extends Adw.Applicatio
     }
 
     vfunc_activate() {
-        this.window = new Window({ application: this });
+        // Fora de uma captura (DAILY_TAKER_SNAPSHOT), {}: a saída de áudio padrão.
+        this.window = new Window({ application: this, playbackOptions: playbackOptions() });
         if (pkg.name.endsWith('Devel'))
             this.window.add_css_class('devel');
         // Só com DAILY_TAKER_SNAPSHOT (tools/snapshot.sh); sem ela não faz nada.
