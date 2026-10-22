@@ -44,6 +44,7 @@ const { TranscriptionController } = imports.transcriptionController;
 const { confirmMessage, guardedSave, hasNamedSpeakers, recordingNameProblem, rowActions, rowStatus } =
     imports.transcriptionUi;
 const { DeleteQueue } = imports.deleteQueue;
+const { stripIconFromLayout } = imports.headerLayout;
 const { deletedToastTitle, shortcutFor, shouldHandleShortcut } = imports.shortcuts;
 
 var WindowState = {
@@ -76,7 +77,7 @@ const isButton = w => w instanceof Gtk.Button || w instanceof Gtk.CheckButton ||
 var Window = GObject.registerClass({
     Template: 'resource:///dev/nicolas/DailyTaker/ui/window.ui',
     InternalChildren: [
-        'toastOverlay', 'mainStack', 'backButton', 'appIcon', 'splitView', 'sidebarPage',
+        'toastOverlay', 'mainStack', 'headerBar', 'backButton', 'appIcon', 'splitView', 'sidebarPage',
         'contentView', 'mediumBreakpoint', 'narrowBreakpoint',
     ],
 }, class Window extends Adw.ApplicationWindow {
@@ -153,6 +154,7 @@ var Window = GObject.registerClass({
         // Um único ouvinte do serviço na janela (a sidebar cuida dos próprios selos).
         this.transcriptionService.connectChange((uri, status) => this._onTranscriptionChanged(uri, status));
         this._setupDates();
+        this._setupHeaderLayout();
 
         const builder = Gtk.Builder.new_from_resource('/dev/nicolas/DailyTaker/gtk/help-overlay.ui');
         this.set_help_overlay(builder.get_object('help_overlay'));
@@ -307,6 +309,18 @@ var Window = GObject.registerClass({
         split.connect('notify::collapsed', syncBack);
         split.connect('notify::show-content', syncBack);
         syncBack();
+    }
+
+    // O layout dos botões da barra de título é o do sistema (ordem e lados do usuário), sem o
+    // token `icon`: o GTK desenharia um ícone pequeno do app antes do nosso, maior, ao lado
+    // do título. Acompanha mudanças do layout do sistema. Layout vazio: o padrão vale.
+    _setupHeaderLayout() {
+        const settings = Gtk.Settings.get_default();
+        const sync = () => {
+            this._headerBar.decoration_layout = stripIconFromLayout(settings.gtk_decoration_layout) || null;
+        };
+        this._track(settings, 'notify::gtk-decoration-layout', sync);
+        sync();
     }
 
     // "Hoje"/"Ontem" mudam à meia-noite e enquanto a janela fica em segundo plano.

@@ -6,6 +6,7 @@
     <file>deleteQueue.js</file>
     <file>detailPane.js</file>
     <file>devSnapshot.js</file>
+    <file>headerLayout.js</file>
     <file>main.js</file>
     <file>peaksPipeline.js</file>
     <file>playback.js</file>

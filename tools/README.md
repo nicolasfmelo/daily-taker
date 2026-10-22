@@ -182,6 +182,13 @@ bash tools/snapshot.sh OUT.png [--component window|windowcheck|playerbar|transcr
   `DAILY_TAKER_SNAPSHOT` definido à mão na sessão real.
 - Leva ~4 s. Saída ≠ 0 se nenhum PNG for gerado; `SNAPSHOT_VERBOSE=1` mostra o
   log completo do mutter/app; `SNAPSHOT_TIMEOUT` (padrão 60 s) limita a execução.
+- Layout dos botões da barra de título: o script grava no `gtk-4.0/settings.ini`
+  isolado `gtk-decoration-layout=icon:minimize,maximize,close`, o layout do
+  usuário (o token `icon` faz o GTK desenhar um ícone pequeno do app no início
+  de cada barra; a janela o remove da própria barra, `src/headerLayout.js`).
+  `DAILY_TAKER_SNAPSHOT_DECORATION_LAYOUT=appmenu:close` troca o valor (só
+  `a-z , :`); vazio (`DAILY_TAKER_SNAPSHOT_DECORATION_LAYOUT=`) não grava nada e
+  vale o padrão do GTK.
 
 ### Como funciona (receita do compositor headless)
 
@@ -244,7 +251,8 @@ bash tools/snapshot.sh OUT.png [--component window|windowcheck|playerbar|transcr
 ### Diferenças em relação à tela real
 
 - Fontes padrão do sistema: a configuração do usuário (`~/.config/gtk-4.0`,
-  dconf, portal de configurações) não é lida. O esquema de cores não depende
+  dconf, portal de configurações) não é lida (o único item reproduzido é o
+  layout dos botões da barra de título, acima). O esquema de cores não depende
   disso: o app força o tema escuro (`src/appTheme.js`), então a captura sai
   escura como na sessão do usuário.
 - O registro do GStreamer fica em cache em `build/snapshot-cache/`.

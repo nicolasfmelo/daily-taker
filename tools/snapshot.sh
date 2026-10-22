@@ -106,6 +106,15 @@ for d in data config cache home runtime; do
 done
 chmod 700 "$work/runtime"
 cp -a "$build/snapshot-fixtures/daily-taker" "$work/data/"
+# Layout dos botões das barras de título: o do usuário (com o token `icon`, que faz o GTK
+# desenhar um ícone pequeno do app no início de cada barra), para as capturas reproduzirem
+# a instalação real. DAILY_TAKER_SNAPSHOT_DECORATION_LAYOUT troca o valor (vazio = não grava).
+decoration_layout="${DAILY_TAKER_SNAPSHOT_DECORATION_LAYOUT-icon:minimize,maximize,close}"
+[[ "$decoration_layout" =~ ^[a-z,:]*$ ]] || die "DAILY_TAKER_SNAPSHOT_DECORATION_LAYOUT inválido: $decoration_layout"
+if [ -n "$decoration_layout" ]; then
+    mkdir -p "$work/config/gtk-4.0"
+    printf '[Settings]\ngtk-decoration-layout=%s\n' "$decoration_layout" > "$work/config/gtk-4.0/settings.ini"
+fi
 mkdir -p "$build/snapshot-cache"
 
 # Áudio sem saída nem entrada reais, mesmo se algo tocar (--at, tarefas futuras):
