@@ -280,6 +280,54 @@
                     </child>
                   </object>
                 </child>
+                <child>
+                  <object class="GtkBox">
+                    <property name="margin_start">14</property>
+                    <property name="margin_end">14</property>
+                    <property name="margin_top">12</property>
+                    <property name="spacing">8</property>
+                    <property name="halign">end</property>
+                    <child>
+                      <object class="GtkStack" id="transcriptionStatusStack">
+                        <property name="valign">center</property>
+                        <child>
+                          <object class="GtkStackPage">
+                            <property name="name">none</property>
+                            <property name="child">
+                              <object class="GtkBox"/>
+                            </property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkStackPage">
+                            <property name="name">running</property>
+                            <property name="child">
+                              <object class="GtkSpinner" id="transcriptionSpinner"/>
+                            </property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkStackPage">
+                            <property name="name">icon</property>
+                            <property name="child">
+                              <object class="GtkImage" id="transcriptionStatusIcon"/>
+                            </property>
+                          </object>
+                        </child>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkButton" id="transcribeBtn">
+                        <property name="valign">center</property>
+                        <property name="label">Gerar transcrição</property>
+                        <property name="action_name">recording.transcribe</property>
+                        <style>
+                          <class name="pill"/>
+                        </style>
+                      </object>
+                    </child>
+                  </object>
+                </child>
               </object>
             </child>
           </object>

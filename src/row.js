@@ -2,6 +2,8 @@
 const { Gdk, Gio, GObject, Gtk } = imports.gi;
 const { displayDateTime, formatTime } = imports.utils;
 const { WaveForm, WaveType } = imports.waveform;
+const { loadTranscript } = imports.transcriptStore;
+const { rowStatus, statusInfo } = imports.transcriptionUi;
 
 var RowState = {
     PLAYING: 0,
@@ -14,6 +16,7 @@ var Row = GObject.registerClass({
         'playbackStack', 'mainStack', 'waveformStack', 'rightStack',
         'name', 'entry', 'date', 'duration', 'revealer', 'playbackControls',
         'saveBtn', 'playBtn', 'pauseBtn',
+        'transcriptionStatusStack', 'transcriptionSpinner', 'transcriptionStatusIcon',
     ],
     Signals: {
         'play': { param_types: [GObject.TYPE_STRING] },
@@ -21,6 +24,7 @@ var Row = GObject.registerClass({
         'seek-backward': {},
         'seek-forward': {},
         'deleted': {},
+        'transcribe': {},
     },
     Properties: {
         'expanded': GObject.ParamSpec.boolean(
@@ -30,8 +34,9 @@ var Row = GObject.registerClass({
             false),
     },
 }, class Row extends Gtk.ListBoxRow {
-    _init(recording) {
+    _init(recording, transcriptionService) {
         this._recording = recording;
+        this._transcriptionService = transcriptionService;
         this._expanded = false;
         this._editMode = false;
 
@@ -122,7 +127,14 @@ var Row = GObject.registerClass({
         });
         this.actionGroup.add_action(seekForwardAction);
 
+        this.transcribeAction = new Gio.SimpleAction({ name: 'transcribe' });
+        this.transcribeAction.connect('activate', () => {
+            this.emit('transcribe');
+        });
+        this.actionGroup.add_action(this.transcribeAction);
+
         this.insert_action_group('recording', this.actionGroup);
+        this.refreshTranscriptionStatus();
 
         this.waveform.connect('gesture-pressed', _ => {
             pauseAction.activate(null);
@@ -174,6 +186,29 @@ var Row = GObject.registerClass({
         }
     }
 
+    // Recalcula o estado a partir do serviço e do disco: vale tanto na criação da linha
+    // (que pode ser refeita a qualquer momento) quanto a cada mudança avisada pelo serviço.
+    refreshTranscriptionStatus() {
+        const file = this._recording.file;
+        const serviceStatus = this._transcriptionService.status(file);
+        const hasTranscript = serviceStatus === 'none' && loadTranscript(file) !== null;
+        const status = rowStatus({ hasTranscript, serviceStatus });
+        const info = statusInfo(status);
+
+        this._transcriptionStatus = status;
+        this._transcriptionSpinner.spinning = status === 'running';
+        if (status === 'running')
+            this._transcriptionStatusStack.visible_child_name = 'running';
+        else if (info.icon)
+            this._transcriptionStatusStack.visible_child_name = 'icon';
+        else
+            this._transcriptionStatusStack.visible_child_name = 'none';
+        if (info.icon)
+            this._transcriptionStatusIcon.icon_name = info.icon;
+        this._transcriptionStatusStack.tooltip_text = info.tooltip;
+        this.transcribeAction.enabled = status !== 'running' && !this._editMode;
+    }
+
     set editMode(state) {
         this._mainStack.visible_child_name = state ? 'edit' : 'display';
         this._editMode = state;
@@ -193,6 +228,7 @@ var Row = GObject.registerClass({
             if (action !== 'save')
                 this.actionGroup.lookup(action).enabled = !state;
         }
+        this.transcribeAction.enabled = !state && this._transcriptionStatus !== 'running';
     }
 
     get editMode() {

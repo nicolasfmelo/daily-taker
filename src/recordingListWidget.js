@@ -5,9 +5,10 @@ const { Row, RowState } = imports.row;
 var RecordingsListWidget = new GObject.registerClass({
     Signals: {
         'row-deleted': { param_types: [GObject.TYPE_OBJECT, GObject.TYPE_INT] },
+        'transcribe-requested': { param_types: [GObject.TYPE_OBJECT] },
     },
 }, class RecordingsListWidget extends Adw.Bin {
-    _init(model, player) {
+    _init(model, player, transcriptionService) {
         super._init();
         this.list = Gtk.ListBox.new();
         this.list.valign = Gtk.Align.START;
@@ -21,6 +22,17 @@ var RecordingsListWidget = new GObject.registerClass({
         this.set_child(this.list);
 
         this._player = player;
+        this._transcriptionService = transcriptionService;
+
+        // Um único ouvinte para a lista toda: as linhas são recriadas/removidas à vontade
+        // e o serviço não oferece desconexão. Só linhas ainda presentes são atualizadas.
+        this._transcriptionService.connectChange(uri => {
+            for (let i = 0, row; (row = this.list.get_row_at_index(i)); i++) {
+                if (row._recording.uri === uri)
+                    row.refreshTranscriptionStatus();
+            }
+        });
+
         this._player.connect('state-changed', (_player, state) => {
             if (state === GstPlayer.PlayerState.STOPPED && this.activePlayingRow) {
                 this.activePlayingRow.state = RowState.PAUSED;
@@ -36,7 +48,7 @@ var RecordingsListWidget = new GObject.registerClass({
         });
 
         this.list.bind_model(model, recording => {
-            let row = new Row(recording);
+            let row = new Row(recording, this._transcriptionService);
 
             row.waveform.connect('gesture-pressed', _ => {
                 if (!this.activePlayingRow || this.activePlayingRow !== row) {
@@ -81,6 +93,10 @@ var RecordingsListWidget = new GObject.registerClass({
                 let position = this._player.position + 10 * Gst.SECOND;
                 position = position < 0 || position > _row._recording.duration ? 0 : position;
                 this._player.seek(position);
+            });
+
+            row.connect('transcribe', () => {
+                this.emit('transcribe-requested', row._recording);
             });
 
             row.connect('deleted', () => {

@@ -24,6 +24,12 @@ const { Recorder } = imports.recorder;
 const { RecordingList } = imports.recordingList;
 const { RecordingsListWidget } = imports.recordingListWidget;
 const { RecorderWidget } = imports.recorderWidget;
+const { Settings } = imports.application;
+const { defaultKeyStore } = imports.secrets;
+const { TranscribeError, transcribeFile } = imports.transcriber;
+const { saveTranscript } = imports.transcriptStore;
+const { TranscriptionService } = imports.transcriptionService;
+const { canRetry, confirmMessage, guardedSave, hasKey } = imports.transcriptionUi;
 
 var WindowState = {
     EMPTY: 0,
@@ -62,7 +68,19 @@ var Window = GObject.registerClass({
             }
         });
 
-        this._recordingListWidget = new RecordingsListWidget(this._recordingList, this.player);
+        this._closed = false;
+        this.transcriptionService = new TranscriptionService({
+            getKey: () => defaultKeyStore().get(),
+            transcribe: transcribeFile,
+            save: guardedSave(saveTranscript),
+            language: () => Settings.get_string('language'),
+            now: () => new Date(),
+        });
+
+        this._recordingListWidget = new RecordingsListWidget(this._recordingList, this.player, this.transcriptionService);
+        this._recordingListWidget.connect('transcribe-requested', (_widget, recording) => {
+            this._requestTranscription(recording);
+        });
 
         this._recordingListWidget.connect('row-deleted', (_listBox, recording, index) => {
             this._recordingList.remove(index);
@@ -94,6 +112,8 @@ var Window = GObject.registerClass({
     }
 
     vfunc_close_request() {
+        // Uma transcrição em andamento não segura o fechamento: é simplesmente abandonada.
+        this._closed = true;
         this._recordingList.cancellable.cancel();
         if (this.itemsSignalId)
             this._recordingList.disconnect(this.itemsSignalId);
@@ -129,6 +149,78 @@ var Window = GObject.registerClass({
         this._recordingList.insert(0, recording);
         this._recordingListWidget.list.get_row_at_index(0).editMode = true;
         this.state = WindowState.LIST;
+    }
+
+    _requestTranscription(recording) {
+        // A chave é verificada antes de tocar no serviço: sem chave a linha não entra em erro.
+        let key = null;
+        try {
+            key = defaultKeyStore().get();
+        } catch (e) {
+            key = null;
+        }
+        if (!hasKey(key)) {
+            this.application.activate_action('preferences', null);
+            return;
+        }
+
+        if (this.transcriptionService.status(recording.file) === 'running')
+            return;
+
+        const { heading, body } = confirmMessage(recording.duration / 1e9);
+        const dialog = new Adw.MessageDialog({
+            transient_for: this,
+            modal: true,
+            heading,
+            body,
+        });
+        dialog.add_response('cancel', 'Cancelar');
+        dialog.add_response('transcribe', 'Transcrever');
+        dialog.set_response_appearance('transcribe', Adw.ResponseAppearance.SUGGESTED);
+        dialog.default_response = 'transcribe';
+        dialog.close_response = 'cancel';
+        dialog.connect('response', (_dialog, response) => {
+            if (response === 'transcribe' && !this._closed)
+                this._runTranscription(recording);
+        });
+        dialog.present();
+    }
+
+    _runTranscription(recording) {
+        const file = recording.file;
+        const created = recording.timeCreated;
+        const recordedAt = created && created.to_unix() > 0 ? created : recording.timeModified;
+        this.transcriptionService.run({
+            file,
+            title: recording.name,
+            recordedAt: recordedAt.format_iso8601(),
+        }).catch(error => this._onTranscriptionFailed(recording, error));
+    }
+
+    _onTranscriptionFailed(recording, error) {
+        if (this._closed)
+            return;
+
+        // Só a mensagem fixa do TranscribeError chega à tela (nunca chave nem resposta bruta).
+        const message = error instanceof TranscribeError
+            ? error.message : new TranscribeError('unknown').message;
+        const toast = new Adw.Toast({ title: message, use_markup: false, timeout: 10 });
+        if (canRetry(error, this._hasRecording(recording) && recording.file.query_exists(null))) {
+            toast.button_label = 'Tentar de novo';
+            toast.connect('button-clicked', () => {
+                if (!this._closed)
+                    this._requestTranscription(recording);
+            });
+        }
+        this._toastOverlay.add_toast(toast);
+    }
+
+    _hasRecording(recording) {
+        for (let i = 0; i < this._recordingList.get_n_items(); i++) {
+            if (this._recordingList.get_item(i) === recording)
+                return true;
+        }
+        return false;
     }
 
     sendNotification(message, recording, index) {
