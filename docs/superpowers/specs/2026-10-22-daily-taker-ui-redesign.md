@@ -76,6 +76,12 @@ arredondados de 12–16 px nos cartões e botões; botão "Nova gravação" em p
 escuro/branco (conforme contraste da mockup). Os valores finais de espaçamento são ajustados até a
 comparação visual (seção 9) ficar equivalente; o que o GTK não reproduzir idêntico é listado no relatório.
 
+> **Divergência registrada na Task 12:** a mockup está desenhada a ~1,3× dos px lógicos
+> (sidebar de 439 px na imagem = 338 px). Na comparação nessa proporção o texto dos blocos
+> ficou com **20 px** (linha de ~29 px, quebra em ~540 px), "Gravações" com 30 px, a
+> sidebar fixa em **336 px** (300 px entre 720 e 1000 sp, com o selo só no ponto) e a
+> barra de título com 55 px. Detalhes em `docs/superpowers/design/comparacao-notas.md`.
+
 ## 4. Sidebar "Gravações"
 
 - Cabeçalho: título "Gravações" + botão de ícone **Exportar áudio** (⇪): salva uma cópia do áudio da

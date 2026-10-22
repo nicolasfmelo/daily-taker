@@ -21,7 +21,10 @@ Cria `DIR/daily-taker/` (o `XDG_DATA_HOME` do app aponta para `DIR`):
 | `Sem transcrição`       | há 3 dias 14:05              | 95 s (01:35)   | não         |
 
 - Áudio Ogg/Opus mono 32 kb/s, sem extensão (como as gravações do app), um tom
-  com volume variando para a forma de onda não sair chapada.
+  com volume variando como uma fala (sílabas e trechos mais altos e mais baixos de
+  dezenas de segundos), para a forma de onda de 19 min não sair chapada. A marca
+  `DIR/.daily-taker-fixtures` guarda o modo e a versão do áudio (`full:2`):
+  mudar a fórmula do tom refaz o áudio guardado.
 - `<nome>.transcript.json` no formato v1 (`src/transcript.js`), 2 locutores:
   `0` renomeado "Nicolas" e `1` com o nome padrão "Locutor 2". Blocos da mockup
   em 00:00, 00:18, 00:34 e 00:47, seguidos de mais 7 blocos (até ~2:40) para a
@@ -53,18 +56,24 @@ bash tools/snapshot.sh OUT.png [--component window|windowcheck|playerbar|transcr
     `--select N` seleciona a gravação N da lista (1 = "Daily · Projeto Atlas"; 4 =
     "Sem transcrição"; padrão: nenhuma) e carrega painel, transcrição e player;
     `--tab transcricao|resumo` escolhe a aba; `--at SEG` posiciona o player
-    pausado (realça o bloco daquele instante); `--query TEXTO` aplica a busca da
+    pausado (realça o bloco daquele instante); com uma gravação selecionada a
+    captura espera a onda do player e põe o volume de exemplo de 60 % pelo slider
+    (só com `GSETTINGS_BACKEND=memory`, como no `snapshot.sh`); `--query TEXTO` aplica a busca da
     sidebar; `--empty 1` esvazia só a lista em memória (painel "Nenhuma gravação
     ainda"; nenhum arquivo é tocado); `--state recorder` mostra a tela de
     gravação. O `Playback` da janela usa um `fakesink` durante a captura
     (`playbackOptions()` em `src/devSnapshot.js`, passado pelo `Application` à
     janela: o `window.js` não importa o devSnapshot). Imprime as larguras mínimas e
-    o breakpoint aplicado (`nenhum`, `média` abaixo de 1000 sp, `estreita` abaixo
-    de 720 sp, sidebar recolhida). Ex.:
+    o breakpoint aplicado (`nenhum`: sidebar de 336 px; `média` abaixo de 1000 sp:
+    sidebar de 300 px com o selo só no ponto; `estreita` abaixo de 720 sp, sidebar
+    recolhida). A mockup está a ~1,3× (ver
+    `docs/superpowers/design/comparacao-notas.md`): para comparar na mesma
+    proporção use `--size 1160x766` e amplie 1,3×. Ex.:
     `bash tools/snapshot.sh /tmp/a.png --select 1 --at 34` (o alvo da mockup) e
     `bash tools/snapshot.sh /tmp/n.png --select 1 --size 600x900` (recolhida).
   - `windowcheck`: verificação da janela inteira na cópia das fixtures. Imprime
-    `PASS`/`FAIL` por verificação: estado do painel de cada fixture (3 prontas, a
+    `PASS`/`FAIL` por verificação: depois do primeiro map a sidebar aquece o
+    cache da busca (a primeira busca não lê transcrição nenhuma); estado do painel de cada fixture (3 prontas, a
     4ª sem transcrição, com custo estimado); trocar de gravação com outra tocando
     para o áudio anterior (e continua parado 400 ms depois); clique num bloco
     pula e toca; renomear a selecionada recarrega o player na URI nova, pausado na
@@ -109,7 +118,10 @@ bash tools/snapshot.sh OUT.png [--component window|windowcheck|playerbar|transcr
     gravar para o player; parar insere a gravação nova (cópia de uma fixture,
     sem microfone) no topo, uma vez, e a seleciona com o player parado; parar
     sem nada gravado e falha do gravador avisam e voltam à lista; breakpoint
-    conforme a largura, e recolher/Voltar mantém a seleção; lista vazia mostra a
+    conforme a largura, e recolher/Voltar mantém a seleção; recolhida, parar uma
+    gravação abre o painel dela; **persistência**: velocidade (1,5x), volume
+    (40 %) e Acompanhar áudio mudados pela barra vão para o `Gio.Settings` (em
+    memória), o mudo não é gravado, e uma `PlayerBar` nova lê os três de volta; lista vazia mostra a
     biblioteca vazia; **fechar a janela** com duas exclusões pendentes manda as
     duas para a lixeira (cada uma uma vez, na ordem em que foram feitas, com a
     transcrição) antes de sair, e fechar de novo/fila vazia não lança. Esperas
@@ -163,7 +175,9 @@ bash tools/snapshot.sh OUT.png [--component window|windowcheck|playerbar|transcr
     de 360 px). Ex.: `bash tools/snapshot.sh /tmp/s.png --component sidebar --select 1`
   - `sidebarcheck`: verificação da `Sidebar` na cópia das fixtures. Imprime uma
     linha `PASS`/`FAIL` por verificação (seleção emite uma vez, clique na linha,
-    `select(null)`, busca por nome e por conteúdo, seleção escondida pela busca
+    `select(null)`, busca por nome e por conteúdo, aquecimento do cache da busca
+    (ociosos, as 3 transcrições, depois nenhuma leitura na busca, invalidar relê
+    só aquela, destruir no meio para), seleção escondida pela busca
     → nenhuma, `select` de item escondido limpa a busca, `invalidateTranscript`
     no selo e na busca, status do serviço, menu ⋮ montado só ao abrir e as
     ações, Gerar desligado com duração 0 e religado por `notify::duration`
@@ -189,6 +203,9 @@ bash tools/snapshot.sh OUT.png [--component window|windowcheck|playerbar|transcr
   (`isSandboxed`, testado em `tests/devSnapshot_test.js`). Fora disso recusa
   com mensagem clara e saída ≠ 0, sem alterar nada — inclusive com
   `DAILY_TAKER_SNAPSHOT` definido à mão na sessão real.
+- Não rode duas capturas ao mesmo tempo: elas compilam a mesma pasta `build`
+  (o ninja pode perder as dependências do gresource) e regravam as mesmas
+  fixtures em cache.
 - Leva ~4 s. Saída ≠ 0 se nenhum PNG for gerado; `SNAPSHOT_VERBOSE=1` mostra o
   log completo do mutter/app; `SNAPSHOT_TIMEOUT` (padrão 60 s) limita a execução.
 - Layout dos botões da barra de título: o script grava no `gtk-4.0/settings.ini`

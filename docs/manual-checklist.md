@@ -11,13 +11,14 @@ Use gravações curtas para gastar pouco.
 ## Gravação
 
 - [ ] **Gravar microfone e sistema.** Tocar um áudio no computador, falar no
-  microfone e clicar em *Gravar*. Esperado: os indicadores *Mic* e *Sistema* se
+  microfone e clicar em *Nova gravação* (ou Ctrl+R). Esperado: os indicadores *Mic* e *Sistema* se
   mexem conforme cada fonte tem som; o cronômetro avança.
 - [ ] **Aviso de sistema sem sinal.** Gravar sem tocar nada no computador por
   mais de 10 s. Esperado: aparece "sem sinal do sistema" junto ao indicador
   *Sistema*; ao voltar a tocar áudio, o aviso some.
-- [ ] **Parar.** Clicar em parar. Esperado: a gravação aparece no topo da lista
-  como "Gravação N" e toca com a voz e o som do sistema.
+- [ ] **Parar.** Clicar em parar. Esperado: a janela volta à lista com a gravação
+  nova no topo, selecionada, com o nome de data e hora (ex.: "Gravação 22 out
+  09:30"), o player parado nela; ela toca com a voz e o som do sistema.
 - [ ] **Pausar e retomar.** Pausar no meio, esperar alguns segundos e retomar.
   Esperado: o cronômetro e a onda param durante a pausa; o áudio final não tem
   o trecho pausado.
@@ -45,10 +46,11 @@ Use gravações curtas para gastar pouco.
 
 ## Gerar transcrição
 
-- [ ] **Fluxo normal.** Na linha de uma gravação, clicar em *Gerar transcrição*
-  e confirmar. Esperado: o botão vira um spinner ("Transcrevendo…"); ao terminar
-  vira *Abrir transcrição*; existe `<gravação>.transcript.json` ao lado do
-  áudio em `~/.local/share/daily-taker/`.
+- [ ] **Fluxo normal.** Selecionar uma gravação sem transcrição e clicar em
+  *Gerar transcrição* no cartão (que mostra o custo estimado) e confirmar.
+  Esperado: o cartão vira "Transcrevendo…" e o selo da sidebar mostra o spinner;
+  ao terminar aparecem os blocos e o selo "● Transcrita"; existe
+  `<gravação>.transcript.json` ao lado do áudio em `~/.local/share/daily-taker/`.
 - [ ] **Clique duplo = uma cobrança.** Clicar duas vezes rápido em *Gerar
   transcrição* (e depois em *Transcrever* no diálogo). Esperado: só uma
   requisição é enviada (conferir uma única cobrança no painel do OpenRouter) e
@@ -57,8 +59,8 @@ Use gravações curtas para gastar pouco.
   erro com o botão *Tentar de novo*; com a rede de volta, o botão refaz a
   tentativa e conclui.
 - [ ] **Sem chave.** Remover a chave (e não ter `DAILY_TAKER_OP_KEY`) e clicar em
-  *Gerar transcrição*. Esperado: abre *Preferências* sem enviar nada nem mudar a
-  linha para erro.
+  *Gerar transcrição*. Esperado: abre *Preferências* sem enviar nada nem mudar o
+  selo para erro.
 - [ ] **Chave inválida.** Em *Preferências*, colar uma chave errada e clicar em
   *Testar chave*. Esperado: mensagem de chave rejeitada. Com uma chave válida:
   mensagem de sucesso.
@@ -68,54 +70,100 @@ Use gravações curtas para gastar pouco.
   chave salva. Esperado: *Preferências* mostra "Usando a variável
   DAILY_TAKER_OP_KEY" com a opção de salvar nas Preferências.
 
-## Visualização da transcrição
+## Interface nova (sidebar, painel e player)
 
-- [ ] **Abrir.** Clicar em *Abrir transcrição*. Esperado: título, data e hora,
-  detalhes e blocos por locutor com tempos; *Voltar* retorna à lista.
-- [ ] **Clicar em um bloco.** Esperado: o áudio pula para o início do bloco e o
-  bloco fica destacado; durante a reprodução o destaque acompanha a fala.
-- [ ] **Copiar seleção.** Selecionar parte do texto e Ctrl+C. Esperado: cola só o
-  trecho selecionado.
-- [ ] **Copiar bloco.** Usar *Copiar bloco*. Esperado: toast "Copiado"; cola o
-  bloco com locutor e tempo.
-- [ ] **Copiar tudo, nas duas variantes.** *Copiar tudo* em "Com locutores e
-  tempos" e em "Só o texto". Esperado: a primeira cola locutor, tempo e texto; a
-  segunda cola apenas o texto.
-- [ ] **Renomear locutor.** Renomear "Locutor 1" para um nome. Esperado: o nome
-  muda em todos os blocos, persiste ao fechar e reabrir a transcrição e aparece
-  na exportação.
-- [ ] **Exportar.** Exportar em Markdown (.md) e em texto (.txt). Esperado: o
-  nome sugerido começa com data e hora (`AAAA-MM-DD_HHMM_titulo.ext`) e o
-  conteúdo bate com a tela.
-- [ ] **Gerar novamente.** Clicar em *Gerar novamente*. Esperado: o diálogo
-  avisa que será cobrado de novo (com a duração) e que os nomes de locutores
-  serão perdidos; *Cancelar* não altera nada; confirmar substitui a transcrição.
-  Durante a execução, renomear locutor fica bloqueado.
+Use gravações reais com transcrição (2 locutores, de preferência longas) e o
+fone de ouvido.
 
-## Aba Transcrições
-
-- [ ] **Ordem.** Esperado: as mais recentes aparecem primeiro.
-- [ ] **Busca.** Buscar `reuniao` onde existe "Reunião". Esperado: encontra
-  (sem diferenciar acentos nem maiúsculas). Uma busca sem resultado mostra
-  "Nada encontrado para essa busca".
-- [ ] **Filtros De/Até.** Escolher um dia em *De* e outro em *Até*. Esperado: a
-  lista mostra só as transcrições do intervalo; *Limpar* remove o filtro.
-- [ ] **Calendário.** Abrir o calendário de *De* e navegar entre meses sem
-  escolher um dia. Esperado: o filtro não muda ao navegar.
-- [ ] **Abrir a partir da aba.** Clicar em uma transcrição. Esperado: abre a
-  visualização e o áudio correspondente.
+- [ ] **Abrir.** Esperado: tema escuro com acento laranja; a sidebar
+  "Gravações" com as gravações agrupadas (HOJE, ONTEM, …), nenhuma selecionada e
+  o painel "Selecione uma gravação"; o player desligado.
+- [ ] **Barra de título com um só ícone.** Esperado: só o ícone grande ao lado de
+  "Daily Taker" (o ícone pequeno do sistema não aparece duplicado), os botões da
+  janela no lado configurado no GNOME.
+- [ ] **Selecionar gravações.** Clicar em cada gravação. Esperado: o item fica
+  com fundo e barra laranja; o painel mostra título, "22 out 2026 • 19min08s • 2
+  locutores" e os blocos; o player carrega a gravação parada em 00:00 com a onda
+  (alturas variadas, não uma faixa chapada). Trocar com outra tocando para o áudio
+  anterior. Uma sem transcrição mostra o cartão com o custo estimado.
+- [ ] **Player.** Play/pausa pelo botão e pelo Espaço (com o foco fora da busca);
+  B/N voltam/avançam 10 s; clicar e arrastar na onda pula para o ponto.
+  Esperado: posição e marcador acompanham; o bloco que está tocando fica em
+  laranja (fundo, barra, horário e ponto).
+- [ ] **Velocidade.** Escolher 0,75x, 1,5x e 2x. Esperado: o áudio muda de
+  velocidade (o tom é preservado se o plugin permitir); fechar e abrir o app
+  mantém a última velocidade.
+- [ ] **Volume.** Arrastar o slider e clicar no ícone (mudo e de volta).
+  Esperado: o volume muda; o ícone mostra mudo/baixo/médio/alto; reabrir o app
+  mantém o volume do slider (o mudo não é lembrado).
+- [ ] **Acompanhar áudio.** Ligado: tocando, a transcrição rola para manter o
+  bloco atual no meio. Desligado: só realça, não rola; religar volta ao bloco.
+  Esperado: a escolha persiste ao reabrir.
+- [ ] **Clicar num bloco.** Esperado: o áudio pula para o início do bloco e toca;
+  selecionar texto com o mouse não pula; o nome do locutor abre "Renomear
+  locutor"; o menu ⋮ do bloco (ao passar o mouse) tem *Copiar bloco*.
+- [ ] **Buscar na transcrição.** Clicar na lupa do painel e digitar `acentos`
+  (ou um termo sem acento de uma palavra acentuada). Esperado: os blocos que
+  batem ficam com fundo amarelo sutil, o ativo com contorno e barra amarelos
+  (diferente do laranja do bloco tocando), "1 de N" no contador; Enter/Shift+Enter
+  e as setas navegam; Esc fecha e limpa.
+- [ ] **Buscar na sidebar.** Digitar o nome de uma gravação e depois uma palavra
+  que só existe dentro de uma transcrição, com e sem acento (`reuniao` acha
+  "reunião"). Esperado: filtra por nome e conteúdo, a primeira tecla não trava
+  mesmo com muitas gravações; sem resultado: "Nada encontrado para essa busca";
+  Esc limpa. A gravação selecionada escondida pela busca continua no painel.
+- [ ] **Copiar.** Botão Copiar → "Com locutores e tempos" e "Só o texto".
+  Esperado: toast "Copiado"; colar mostra o formato escolhido.
+- [ ] **Exportar transcrição.** Botão Exportar → Markdown (.md) e Texto (.txt).
+  Esperado: nome sugerido `AAAA-MM-DD_HHMM_titulo.ext`, conteúdo igual à tela,
+  toast "Transcrição exportada".
+- [ ] **Exportar áudio.** Pelo botão ⇪ da sidebar, pelo menu ⋮ do item e por
+  Ctrl+S. Esperado: diálogo de salvar com o nome da gravação; a cópia toca;
+  toast "Áudio exportado".
+- [ ] **Renomear.** F2 (ou ⋮ → Renomear). Esperado: diálogo com o nome atual;
+  nome vazio ou inválido desliga *Renomear*; um nome de outra gravação avisa "Já
+  existe uma gravação com esse nome."; renomear mantém seleção, player (na mesma
+  posição) e transcrição.
+- [ ] **Excluir e desfazer.** Delete (ou ⋮ → Excluir) na selecionada. Esperado:
+  sai da lista, a vizinha é selecionada com o player parado, toast `"<nome>"
+  excluída` com *Desfazer* por 8 s; *Desfazer* devolve a gravação (com a
+  transcrição) selecionada. Sem desfazer, áudio, transcrição e onda vão para a
+  **lixeira do sistema** (conferir no Arquivos → Lixeira; nada é apagado de vez).
+- [ ] **Duas exclusões rápidas.** Excluir duas gravações seguidas. Esperado: um
+  toast para cada, cada *Desfazer* devolve só a sua; fechar o app com as duas
+  pendentes manda as duas para a lixeira.
+- [ ] **Recusa durante a transcrição.** Com uma transcrição em andamento, tentar
+  excluir e renomear aquela gravação. Esperado: aviso "Aguarde a transcrição
+  terminar para excluir." / "… para renomear."; nada muda; depois de terminar,
+  funciona.
+- [ ] **Aba Resumo.** Clicar em *Resumo*. Esperado: "Resumo em breve" com o botão
+  *Gerar resumo* desligado (sem transcrição: "Gere a transcrição primeiro"); as
+  abas têm o mesmo peso de fonte ao passar o mouse e com o foco.
+- [ ] **Gerar novamente.** ⋮ do painel → *Gerar novamente*. Esperado: o diálogo
+  avisa a nova cobrança e a perda dos nomes de locutor; durante a geração um
+  aviso escuro "Gerando novamente…" fica sobre a transcrição antiga; em falha,
+  "Tentar de novo" no aviso.
+- [ ] **Janela média.** Largura entre 720 e 1000 px. Esperado: sidebar de 300 px
+  com o selo só no ponto verde (texto na dica), painel com margens menores, player
+  sem o slider de volume e sem o rótulo do toggle; nada cortado.
+- [ ] **Janela estreita.** Abaixo de 720 px. Esperado: só a lista; escolher uma
+  gravação (clique ou Enter) abre o painel com *Voltar*; *Voltar* mantém a
+  seleção e o player. Parar uma gravação nova nesse modo abre o painel dela.
+  As setas do teclado mudam a seleção na lista sem abrir o painel (Enter abre).
+- [ ] **Português.** Menu, *Sobre*, atalhos (Ctrl+?), cartões, avisos e dicas dos
+  botões. Esperado: tudo em português com acentos corretos.
 
 ## Gravações com transcrição
 
 - [ ] **Renomear.** Renomear uma gravação que tem transcrição. Esperado: o
-  `.transcript.json` acompanha o novo nome e continua abrindo.
+  `.transcript.json` acompanha o novo nome e a transcrição continua no painel.
 - [ ] **Excluir e desfazer.** Excluir uma gravação com transcrição. Esperado:
   toast `"Gravação N" excluída` com *Desfazer*; ao desfazer, áudio e transcrição
   voltam; sem desfazer, ambos vão para a lixeira.
 - [ ] **Renomear atualiza o título da transcrição.** Renomear uma gravação
   transcrita de "Gravação 3" para "Daily 22/10". Esperado: o cabeçalho da
-  transcrição, a linha na aba *Transcrições* e o nome sugerido na exportação
-  passam a usar "Daily 22/10"; a busca por "daily" encontra a transcrição.
+  transcrição, o item da sidebar e o nome sugerido na exportação passam a usar
+  "Daily 22/10"; a busca por "daily" encontra a gravação.
 - [ ] **Nome inválido.** Tentar renomear uma gravação para um nome que termine em
   `.transcript.json`. Esperado: o nome é recusado com um aviso curto e a
   gravação não é renomeada.
@@ -125,15 +173,6 @@ Use gravações curtas para gastar pouco.
 - [ ] **JSON corrompido.** Estragar um `.transcript.json` (por exemplo, apagar
   metade do arquivo) e reabrir o app. Esperado: o arquivo é ignorado (a gravação
   aparece sem transcrição), o app não trava e o stderr não mostra exceções.
-
-## Interface
-
-- [ ] **Janela estreita.** Reduzir a janela até a largura mínima. Esperado: o
-  layout vira o modo estreito (barra de abas embaixo) e nada fica cortado de
-  forma que impeça o uso.
-- [ ] **Português.** Percorrer o menu, o diálogo *Sobre*, os atalhos (Ctrl+?),
-  a página vazia ("Adicione gravações") e as dicas dos botões. Esperado: tudo em
-  português, com acentos corretos.
 
 ## Pendências conhecidas
 
@@ -150,5 +189,13 @@ Use gravações curtas para gastar pouco.
   conexão ruim isso pode levar muito tempo e gerar mais de uma cobrança.
 - A transcrição retida na memória depois de uma falha ao salvar só existe
   enquanto o app está aberto.
-- A largura mínima da janela (350 px) ainda não foi revisada para todas as
-  telas; em larguras muito pequenas alguns controles podem ficar apertados.
+- As janelas *Preferências* e *Sobre* ainda mostram o ícone pequeno do app na
+  barra de título quando o layout do sistema tem o token `icon` (uma vez só, não
+  duplicado: só a janela principal tira o token).
+- Se o disco continuar falhando ao salvar uma transcrição paga, não há uma ação
+  "Descartar transcrição": excluir a gravação fica recusado até salvar (Tentar de
+  novo) ou fechar o app.
+- A onda do player não tem busca pelo teclado (setas); use B/N.
+- Na janela estreita, mudar a seleção pelas setas não abre o painel (Enter abre).
+- A janela tem largura mínima de 520 px; entre 720 e 1000 px a sidebar fica em
+  300 px.
