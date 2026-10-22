@@ -592,6 +592,8 @@ var Sidebar = GObject.registerClass({
             tracked.uri = recording.uri;
         }
         this._transcripts.delete(recording.uri);
+        // A busca já aquecida continua instantânea para a renomeada.
+        this._rewarm();
         const row = this._rowFor(recording);
         row?.setTitle(recording.name);
         this.refreshStatus(recording.uri);

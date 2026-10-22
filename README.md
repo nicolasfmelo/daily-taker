@@ -58,9 +58,13 @@ Janela única, tema escuro com acento laranja:
 | Ctrl+R | Nova gravação |
 | Ctrl+, | Preferências |
 | Ctrl+? | Atalhos de teclado |
+| Ctrl+Q | Sair |
+| Espaço (gravando) | Pausar / retomar a gravação |
+| S (gravando) | Parar a gravação |
+| Delete (gravando) | Cancelar (excluir) a gravação em andamento, com confirmação |
 
 As teclas de letra e o espaço não disparam enquanto se digita num campo (busca,
-diálogos). Durante a gravação, espaço pausa/retoma e S para.
+diálogos).
 
 ## Requisitos
 

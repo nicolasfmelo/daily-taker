@@ -199,3 +199,11 @@ fone de ouvido.
 - Na janela estreita, mudar a seleção pelas setas não abre o painel (Enter abre).
 - A janela tem largura mínima de 520 px; entre 720 e 1000 px a sidebar fica em
   300 px.
+- A mockup (`docs/superpowers/design/mockup-alvo-2026-10-22.png`) está desenhada a
+  ~1,3× dos px lógicos: numa tela 1× o app tem a mesma composição, mas fica ~23 %
+  menor que a imagem na mesma largura de janela. Decisão de produto pendente:
+  ampliar a interface ×1,3 ou manter (ver `docs/superpowers/design/comparacao-notas.md`).
+- Cerca de 1 em 10 execuções do `windowcheck` (`tools/snapshot.sh --component
+  windowcheck`) imprime 4 linhas `GStreamer-WARNING … Got data flow before
+  stream-start/segment event` no passo roteirizado do gravador (troca rápida de
+  player); provavelmente anterior a esta etapa, não investigado.

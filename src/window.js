@@ -97,6 +97,8 @@ var Window = GObject.registerClass({
         this._midnightId = 0;
         this._signalIds = [];           // [objeto, id] soltos no shutdown
         this._deleteQueue = new DeleteQueue();
+        // Para as formas de onda em andamento no encerramento (trocável pela verificação).
+        this._cancelPeaks = cancelAllPeaks;
         this._deleteToasts = new Map(); // id da exclusão → { toast, handlerId } até o toast sumir
         this._renameDialog = null;      // { recording, validate } do diálogo aberto
 
@@ -196,53 +198,78 @@ var Window = GObject.registerClass({
         return true;
     }
 
-    // Encerra o app. Ordem: (1) as exclusões pendentes vão para a lixeira (o usuário já viu
-    // os avisos; síncrono, para terminar antes de sair); (2) solta transcrição, temporizador,
-    // ouvintes, monitor da pasta, player e gravador; (3) num ocioso desmonta os widgets com
-    // o JS ainda vivo, destrói a janela e sai. Chamado ao fechar a janela (e pelo
-    // devSnapshot, que pode nunca mostrá-la). Uma segunda chamada não faz nada.
+    // Encerra o app. Ordem: (1) PRIMEIRO, e de forma síncrona, as exclusões pendentes vão
+    // para a lixeira (o usuário já viu os avisos; nada antes delas pode atrasá-las ou
+    // impedi-las); (2) solta leituras de duração, formas de onda, transcrição, temporizador,
+    // ouvintes, monitor da pasta, player e gravador, cada passo isolado (uma falha vai para o
+    // log, sem conteúdo, e não pula os outros); (3) num ocioso desmonta os widgets com o JS
+    // ainda vivo, destrói a janela e sai. Chamado ao fechar a janela (e pelo devSnapshot, que
+    // pode nunca mostrá-la). Uma segunda chamada não faz nada.
     shutdown() {
         if (this._closed)
             return;
+        this._closed = true;
+        this._teardown('exclusões pendentes', () => this._commitPendingDeletes());
         // Leituras de duração em andamento param antes de o app sair (senão o GStreamer
         // desmonta o Discoverer no meio, com avisos).
-        for (let i = 0; i < this._recordingList.get_n_items(); i++)
-            this._recordingList.get_item(i).cancelDiscovery();
-        for (const recording of this._deleteQueue.pending())
-            recording.cancelDiscovery();
+        this._teardown('leituras de duração', () => {
+            for (let i = 0; i < this._recordingList.get_n_items(); i++)
+                this._recordingList.get_item(i).cancelDiscovery();
+        });
         // Formas de onda ainda sendo geradas (de qualquer gravação, inclusive as que já saíram
         // da lista): os pipelines vão para NULL agora, não na finalização da saída.
-        cancelAllPeaks();
-        this._commitPendingDeletes();
+        this._teardown('formas de onda', () => this._cancelPeaks());
         // Uma transcrição em andamento não segura o fechamento: é simplesmente abandonada.
-        this._closed = true;
-        this._transcription.close();
-        if (this._midnightId) {
-            GLib.source_remove(this._midnightId);
-            this._midnightId = 0;
-        }
-        for (const [object, id] of this._signalIds)
-            object.disconnect(id);
-        this._signalIds = [];
-        for (const { toast, handlerId } of this._deleteToasts.values())
-            toast.disconnect(handlerId);
-        this._deleteToasts.clear();
-        this._cancelPendingSeek();
-        this._recordingList.cancellable.cancel();
-        this._recordingList.dirMonitor.cancel();
-        this.playback.destroy();
-        this.recorder.stop();
+        this._teardown('transcrição', () => this._transcription.close());
+        this._teardown('temporizador', () => {
+            if (this._midnightId) {
+                GLib.source_remove(this._midnightId);
+                this._midnightId = 0;
+            }
+        });
+        this._teardown('ouvintes', () => {
+            const ids = this._signalIds;
+            this._signalIds = [];
+            for (const [object, id] of ids)
+                object.disconnect(id);
+        });
+        this._teardown('avisos de exclusão', () => {
+            for (const { toast, handlerId } of this._deleteToasts.values())
+                toast.disconnect(handlerId);
+            this._deleteToasts.clear();
+        });
+        this._teardown('player', () => {
+            this._cancelPendingSeek();
+            this.playback.destroy();
+        });
+        this._teardown('pasta', () => {
+            this._recordingList.cancellable.cancel();
+            this._recordingList.dirMonitor.cancel();
+        });
+        this._teardown('gravador', () => this.recorder.stop());
         // Sem isso a árvore (com vfuncs e funções JS, como o cabeçalho da lista) só seria
         // desfeita na coleta de lixo do encerramento, onde o GJS bloqueia essas chamadas.
         const app = this.application;
         GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
-            this._sidebarPage.child = null;
-            this._sidebar.run_dispose();
-            this.destroy();
-            this.run_dispose();
+            this._teardown('widgets', () => {
+                this._sidebarPage.child = null;
+                this._sidebar.run_dispose();
+                this.destroy();
+                this.run_dispose();
+            });
             app?.quit();
             return GLib.SOURCE_REMOVE;
         });
+    }
+
+    // Um passo do encerramento: uma falha vai para o log (só o passo e o tipo do erro, nunca
+    // nomes ou conteúdo) e não impede os seguintes.
+    _teardown(step, fn) {
+        try {
+            fn();
+        } catch (e) {
+            log(`Falha ao encerrar (${step}): ${e?.constructor?.name ?? 'erro'}`);
+        }
     }
 
     // Todas as exclusões pendentes vão para a lixeira agora (fechar a janela), na ordem em
@@ -250,8 +277,16 @@ var Window = GObject.registerClass({
     // abertura); só o nome vai para o log.
     _commitPendingDeletes() {
         for (const recording of this._deleteQueue.commitAll()) {
-            if (!recording.delete({ sync: true }))
+            let ok = false;
+            try {
+                ok = recording.delete({ sync: true });
+            } catch (e) {
+                ok = false;
+            }
+            if (!ok)
                 log(`Exclusão não concluída ao fechar (arquivos mantidos): ${recording.name}`);
+            // Já fora da lista: a leitura da duração dela (se houver) também para.
+            this._teardown('leitura de duração', () => recording.cancelDiscovery());
         }
     }
 

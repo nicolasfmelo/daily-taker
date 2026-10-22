@@ -530,7 +530,24 @@ const sidebarCheckComponent = () => {
             warm.invalidateTranscript(daily.uri);
             const rewarmed = await within(nextSignal(warm, 'search-warmed'), 10000);
             check(rewarmed && warm._parses === 4, `invalidar reaquece só aquela transcrição (${warm._parses})`);
+            // Renomear troca a chave do cache: o aquecimento relê aquela transcrição, e a
+            // primeira busca depois não lê nada.
+            const renamedWarm = nextSignal(warm, 'search-warmed');
+            const beforeRename = warm._parses;
+            ideias.name = 'Ideias aquecidas';
+            const rewarmedAfterRename = await within(renamedWarm, 10000);
+            const beforeQuery = warm._parses;
+            warm.setQuery('acompanhar');
+            check(rewarmedAfterRename && beforeQuery === beforeRename + 1 && warm._parses === beforeQuery &&
+                warm._visible.some(r => r === ideias),
+            `renomear reaquece: a busca depois não lê nenhuma transcrição (${warm._parses - beforeQuery}) e acha a renomeada`);
+            warm.setQuery('');
+            ideias.name = 'Ideias para o app';
             warm.run_dispose();
+            // A sidebar principal (sem aquecimento) também soltou a entrada renomeada: relê já,
+            // para as contagens das seções seguintes partirem do mesmo ponto.
+            sidebar.setQuery('acompanhar');
+            sidebar.setQuery('');
             const stopped = new Sidebar({ recordingList: list, transcriptionService: service, warmSearch: false });
             stopped.warmSearchCache();
             stopped.run_dispose();
@@ -538,13 +555,14 @@ const sidebarCheckComponent = () => {
         }
 
         // 3. invalidateTranscript: transcrição nova no disco → selo e busca.
+        const beforeInvalidate = sidebar._parses;
         saveTranscript(sem.file, loadTranscript(daily.file));
         check(rowOf(sem).badgeKind === 'none', 'antes de invalidar: cache antigo (sem selo)');
         sidebar.invalidateTranscript(sem.uri);
         check(rowOf(sem).badgeKind === 'ok', 'invalidateTranscript atualiza o selo');
         sidebar.setQuery('acompanhar');
         check(names().includes('Sem transcrição'), 'invalidateTranscript atualiza a busca');
-        check(sidebar._parses === parsed + 1, 'invalidar relê só aquela transcrição');
+        check(sidebar._parses === beforeInvalidate + 1, 'invalidar relê só aquela transcrição');
         sidebar.setQuery('');
 
         // 4. Status do serviço: running → spinner; sai de running → relê a transcrição.
@@ -1479,13 +1497,29 @@ const windowCheckComponent = (params, { window }) => {
         const second = copyFixture(daily, 'Gravação de teste 2', true);
         // Duração lida antes de excluir (o Discoverer dela termina antes do fechamento).
         const trashOrder = [];
+        // Ordem do encerramento: exclusões, formas de onda (que falham de propósito) e player.
+        const closeLog = [];
         for (const r of [fresh, second]) {
             const original = r.delete.bind(r);
             r.delete = opts => {
                 trashOrder.push(r.name);
+                closeLog.push(`excluir:${r.name}`);
                 return original(opts);
             };
         }
+        const { activePeakJobs, cancelAllPeaks, generatePeaks } = imports.peaksPipeline;
+        // Parar as formas de onda lança (depois de parar de verdade, para não deixar pipeline
+        // tocando na saída): as exclusões já foram e o resto do encerramento continua.
+        window._cancelPeaks = () => {
+            closeLog.push('formas de onda');
+            cancelAllPeaks();
+            throw new Error('falha simulada ao parar as formas de onda');
+        };
+        const playbackDestroy = playback.destroy.bind(playback);
+        playback.destroy = () => {
+            closeLog.push('player');
+            playbackDestroy();
+        };
         sidebar.emit('delete-requested', fresh);
         sidebar.emit('delete-requested', second);
         check(queue.has(fresh) && queue.has(second) && fresh.file.query_exists(null) && second.file.query_exists(null),
@@ -1493,7 +1527,28 @@ const windowCheckComponent = (params, { window }) => {
         const shutdown = window.shutdown;
         window.shutdown = function () {
             const pending = queue.has(fresh) && queue.has(second);
-            shutdown.call(this);
+            // Uma forma de onda sendo gerada na hora de fechar.
+            generatePeaks(daily.uri, {});
+            const runningPeaks = activePeakJobs();
+            try {
+                shutdown.call(this);
+            } catch (err) {
+                print(`FAIL windowcheck: shutdown() lançou (${err.message}); as exclusões podem não ter ido`);
+                // O app ainda precisa sair (a captura terminaria só no tempo limite).
+                cancelAllPeaks();
+                GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
+                    this.get_application()?.quit();
+                    return GLib.SOURCE_REMOVE;
+                });
+            }
+            const order = closeLog.join(' → ');
+            const orderOk = runningPeaks > 0 &&
+                order === 'excluir:Gravação de teste → excluir:Gravação de teste 2 → formas de onda → player';
+            print(`${orderOk ? 'PASS' : 'FAIL'} windowcheck: fechar com ${runningPeaks} forma(s) de onda em ` +
+                `andamento: as exclusões vão para a lixeira primeiro, depois as formas de onda e o player (${order})`);
+            const restOk = activePeakJobs() === 0 && playback.uri === null && this._closed;
+            print(`${restOk ? 'PASS' : 'FAIL'} windowcheck: parar as formas de onda lançou e o resto do encerramento ` +
+                'continuou (formas de onda paradas, player solto)');
             const ok = pending && !queue.has(fresh) && !queue.has(second) &&
                 trashOrder.join('|') === 'Gravação de teste|Gravação de teste 2' &&
                 !fresh.file.query_exists(null) && !second.file.query_exists(null) &&
