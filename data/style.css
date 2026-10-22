@@ -1,0 +1,31 @@
+@define-color dimmed_color alpha(currentColor, .55);
+
+.recorder-time-label {
+  font-size: 32pt;
+  font-weight: 300;
+}
+
+@keyframes clocks-blink {
+  0% { color: @dimmed_color; }
+  100% { color: @destructive_color; }
+}
+
+.recorder-time-label {
+  color: @dimmed_color;
+}
+
+.recorder-time-label.paused {
+	color: @destructive_color;
+	animation-name: clocks-blink;
+	animation-iteration-count: infinite;
+	animation-timing-function: cubic-bezier(1.0,0,0,1.0);
+	animation-duration: 1s;
+}
+
+button.large {
+  padding: 12px;
+}
+
+.recording-row {
+  padding: 0;
+}
