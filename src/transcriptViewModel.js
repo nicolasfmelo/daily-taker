@@ -1,5 +1,5 @@
 /* exported languageName blockTitle viewHeader exportContent exportExtension speakerEntry
-   currentBlockIndex findMatches nextIndex shouldSeekOnClick */
+   currentBlockIndex findMatches nextIndex findCounterText shouldSeekOnClick */
 // Textos da visão de transcrição, sem GTK: testáveis isoladamente.
 const { blockIndexAt, buildBlocks } = imports.transcript;
 const { copyText, formatClock, formatDateTime, toMarkdown } = imports.transcriptFormat;
@@ -97,3 +97,12 @@ var nextIndex = (matches, current, dir) => {
 // e sem texto selecionado.
 var shouldSeekOnClick = ({ pressed, sameSurface, insideButton, hasSelection } = {}) =>
     pressed === true && sameSurface === true && insideButton !== true && hasSelection !== true;
+
+// Contador da barra de busca do painel: "2 de 5" (ativo a partir de 1) ou "Nenhum resultado".
+var findCounterText = (count, index) => {
+    if (!Number.isInteger(count) || count <= 0)
+        return 'Nenhum resultado';
+    if (Number.isInteger(index) && index >= 0 && index < count)
+        return `${index + 1} de ${count}`;
+    return `${count} ${count === 1 ? 'resultado' : 'resultados'}`;
+};

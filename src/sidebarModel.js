@@ -1,4 +1,4 @@
-/* exported recordingMatches statusBadge */
+/* exported paneState recordingMatches statusBadge */
 
 const { normalize, searchableText } = imports.transcriptSearch;
 
@@ -19,3 +19,15 @@ const BADGES = {
 };
 
 var statusBadge = status => ({ ...(Object.hasOwn(BADGES, status) ? BADGES[status] : { kind: 'none', label: '' }) });
+
+const STATUS_PANES = { running: 'running', error: 'error', ready: 'ready' };
+
+// Painel central do DetailPane: sem gravações, sem seleção ou pelo status da transcrição
+// (qualquer outro status = ainda não transcrita). Todo caso tem um painel com conteúdo.
+var paneState = (recording, hasRecordings, status) => {
+    if (!hasRecordings)
+        return 'empty-library';
+    if (!recording)
+        return 'no-selection';
+    return Object.hasOwn(STATUS_PANES, status) ? STATUS_PANES[status] : 'not-transcribed';
+};

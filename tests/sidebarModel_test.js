@@ -61,4 +61,46 @@ test('sidebarModel: entradas ausentes ficam bem formadas', () => {
     assert.equal(M.recordingMatches('reuniao', 'Reunião', {}), true);
 });
 
+const PANE_STATES = ['empty-library', 'no-selection', 'not-transcribed', 'running', 'error', 'ready'];
+
+test('paneState: sem gravações → empty-library (seleção e status não importam)', () => {
+    assert.equal(M.paneState(null, false, 'none'), 'empty-library');
+    assert.equal(M.paneState({ name: 'x' }, false, 'ready'), 'empty-library');
+    assert.equal(M.paneState({ name: 'x' }, false, 'running'), 'empty-library');
+});
+
+test('paneState: há gravações e nenhuma selecionada → no-selection', () => {
+    assert.equal(M.paneState(null, true, 'none'), 'no-selection');
+    assert.equal(M.paneState(null, true, 'ready'), 'no-selection');
+    assert.equal(M.paneState(undefined, true, 'error'), 'no-selection');
+});
+
+test('paneState: gravação selecionada → pelo status', () => {
+    const r = { name: 'Daily' };
+    assert.equal(M.paneState(r, true, 'none'), 'not-transcribed');
+    assert.equal(M.paneState(r, true, 'running'), 'running');
+    assert.equal(M.paneState(r, true, 'error'), 'error');
+    assert.equal(M.paneState(r, true, 'ready'), 'ready');
+});
+
+test('paneState: status desconhecido ou ausente → not-transcribed (nunca painel vazio)', () => {
+    const r = { name: 'Daily' };
+    assert.equal(M.paneState(r, true, undefined), 'not-transcribed');
+    assert.equal(M.paneState(r, true, null), 'not-transcribed');
+    assert.equal(M.paneState(r, true, 'whatever'), 'not-transcribed');
+    assert.equal(M.paneState(r, true, 'toString'), 'not-transcribed');
+});
+
+test('paneState: toda combinação cai num estado com painel definido', () => {
+    for (const recording of [null, undefined, {}, { name: 'a' }]) {
+        for (const has of [true, false, undefined]) {
+            for (const status of ['none', 'running', 'error', 'ready', undefined, 'x']) {
+                const s = M.paneState(recording, has, status);
+                if (!PANE_STATES.includes(s))
+                    throw new Error(`estado sem painel: ${s}`);
+            }
+        }
+    }
+});
+
 finish();

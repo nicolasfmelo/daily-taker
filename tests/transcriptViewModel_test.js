@@ -195,4 +195,25 @@ test('shouldSeekOnClick: botões, popover, seleção ou sem press não pulam', (
     assert.equal(VM.shouldSeekOnClick(), false);
 });
 
+test('findCounterText: "n de m" com o ativo a partir de 1', () => {
+    assert.equal(VM.findCounterText(5, 1), '2 de 5');
+    assert.equal(VM.findCounterText(5, 0), '1 de 5');
+    assert.equal(VM.findCounterText(1, 0), '1 de 1');
+    assert.equal(VM.findCounterText(5, 4), '5 de 5');
+});
+
+test('findCounterText: sem resultados', () => {
+    assert.equal(VM.findCounterText(0, -1), 'Nenhum resultado');
+    assert.equal(VM.findCounterText(0, 0), 'Nenhum resultado');
+});
+
+test('findCounterText: entradas inválidas ficam bem formadas', () => {
+    assert.equal(VM.findCounterText(undefined, undefined), 'Nenhum resultado');
+    assert.equal(VM.findCounterText(NaN, 0), 'Nenhum resultado');
+    assert.equal(VM.findCounterText(-3, 0), 'Nenhum resultado');
+    assert.equal(VM.findCounterText(3, -1), '3 resultados');
+    assert.equal(VM.findCounterText(1, 7), '1 resultado');
+    assert.equal(VM.findCounterText(3, 1.5), '3 resultados');
+});
+
 finish();
