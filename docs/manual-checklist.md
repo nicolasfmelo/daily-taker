@@ -181,7 +181,9 @@ fone de ouvido.
 - [ ] **Preservar.** Renomear locutor/gravação ou regenerar a transcrição mantém
   resumo e histórico. Gerar outro resumo arquiva o anterior.
 - [ ] **Versões.** Abrir Versões anteriores, selecionar, copiar e restaurar:
-  a atual é arquivada, a restaurada aparece como atual sem perder as demais.
+  a atual é arquivada sem perder as demais; timestamps iguais usam também o
+  índice. Versão removida/alterada avisa para reabrir a lista, sem modificar dados.
+  Versões legadas sem data continuam restauráveis.
 - [ ] **Busca.** Termo exclusivo do resumo atual aparece na busca da sidebar;
   termo exclusivo de versão antiga não aparece.
 - [ ] **Texto longo/hostil.** Resumo longo rola, títulos e listas são legíveis;

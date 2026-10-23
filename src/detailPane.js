@@ -62,7 +62,7 @@ var DetailPane = GObject.registerClass({
         'summary-requested': { param_types: [GObject.TYPE_BOOLEAN] },
         'summary-retry-requested': {},
         'summary-copy-requested': {},
-        'summary-restore-requested': { param_types: [GObject.TYPE_STRING] },
+        'summary-restore-requested': { param_types: [GObject.TYPE_INT, GObject.TYPE_STRING] },
     },
 }, class DetailPane extends Gtk.Box {
     _init(params) {
@@ -316,9 +316,9 @@ var DetailPane = GObject.registerClass({
         this._summaryHistoryBanner.margin_end = 28;
         this._summaryHistoryBanner.connect('button-clicked', () => {
             const generatedAt = this.displayedSummary?.generated_at;
-            if (this._summaryVersion !== null && typeof generatedAt === 'string' && generatedAt &&
+            if (this._summaryVersion !== null && this.displayedSummary &&
                 this._summaryStatus !== 'running' && this._status !== 'running')
-                this.emit('summary-restore-requested', generatedAt);
+                this.emit('summary-restore-requested', this._summaryVersion, generatedAt ?? '');
         });
         ready.append(this._summaryHistoryBanner);
         this._summaryBackButton = button('Voltar à atual', () => {
@@ -353,7 +353,7 @@ var DetailPane = GObject.registerClass({
         this._summaryBanner.button_label = this._summaryStatus === 'error' ? 'Tentar de novo' : null;
         this._summaryBanner.sensitive = !busy;
         this._summaryHistoryBanner.revealed = this._summaryVersion !== null;
-        this._summaryHistoryBanner.sensitive = !busy && Boolean(shown?.generated_at);
+        this._summaryHistoryBanner.sensitive = !busy && Boolean(shown);
         this._summaryBackButton.visible = this._summaryVersion !== null;
         if (shown) {
             const meta = summaryMetadata(shown);

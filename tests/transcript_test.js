@@ -224,16 +224,16 @@ test('substituir resumo arquiva sem mutar e limita às vinte versões recentes',
 
 test('restaurar troca versão sem perda; limpar mantém histórico; índices inválidos são inertes', () => {
     const t = { ...makeTranscript([]), summary: summary('C'), summary_history: [summary('B'), summary('A')] };
-    const restored = T.restoreSummary(t, 1);
+    const restored = T.restoreSummary(t, { index: 1, generated_at: summary('A').generated_at });
     assert.equal(T.getSummary(restored).text, 'A');
     assert.deepEqual(T.getSummaryHistory(restored).map(s => s.text), ['C', 'B']);
     assert.equal(T.getSummary(t).text, 'C');
     for (const index of [-1, 2, 0.5, NaN, '0'])
-        assert.equal(T.restoreSummary(t, index), t);
+        assert.equal(T.restoreSummary(t, { index, generated_at: summary('A').generated_at }), t);
     const cleared = T.clearSummary(t);
     assert.equal(T.getSummary(cleared), null);
     assert.deepEqual(T.getSummaryHistory(cleared), t.summary_history);
-    assert.equal(T.getSummary(T.restoreSummary(cleared, 0)).text, 'B');
+    assert.equal(T.getSummary(T.restoreSummary(cleared, { index: 0, generated_at: summary('B').generated_at })).text, 'B');
 });
 
 test('leitores de resumo ignoram lixo e texto vazio', () => {
@@ -242,6 +242,17 @@ test('leitores de resumo ignoram lixo e texto vazio', () => {
     assert.equal(T.getSummary(null), null);
     assert.deepEqual(T.getSummaryHistory({ summary_history: {} }), []);
     assert.deepEqual(T.getSummaryHistory({ summary_history: [null, {}, summary('válido')] }), [summary('válido')]);
+});
+
+test('restaurar exige índice e timestamp: duplicados, removida e legado', () => {
+    const t = { ...makeTranscript([]), summary: summary('C'), summary_history: [summary('B'), summary('A')] };
+    const ref = { index: 1, generated_at: summary('A').generated_at };
+    assert.equal(T.restoreSummary(t, ref).summary.text, 'A');
+    assert.equal(T.restoreSummary(t, { index: 1, generated_at: 'mudou' }), t);
+    const removed = { ...t, summary_history: [summary('B')] };
+    assert.equal(T.restoreSummary(removed, ref), removed);
+    const legacy = { ...t, summary_history: [{ text: 'Legado' }] };
+    assert.equal(T.restoreSummary(legacy, { index: 0, generated_at: '' }).summary.text, 'Legado');
 });
 
 finish();

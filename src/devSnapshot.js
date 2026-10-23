@@ -1064,6 +1064,32 @@ const checkWindowSummary = async (window, { check, select, daily, sem, copyFixtu
         'resumo: restaurar troca atual/histórico e relê a aba');
         check(imports.transcriptViewModel.exportContent(daily.file, 'md').includes('## Resumo'),
             'resumo: exportação Markdown relê o disco');
+        const restoreFixture = disk;
+        const duplicate = output('## Resumo\n\nDuplicado A');
+        Store.saveTranscript(daily.file, { ...disk, summary_history: [
+            duplicate, { ...duplicate, text: '## Resumo\n\nDuplicado B' },
+        ] });
+        window._onSummaryDone(daily.file);
+        pane.showSummaryVersion(1);
+        pane._summaryHistoryBanner.emit('button-clicked');
+        check(Store.loadTranscript(daily.file).summary.text.includes('Duplicado B'),
+            'restaurar timestamp duplicado usa também o índice, não a primeira ocorrência');
+        pane.showSummaryVersion(0);
+        const removedVersion = { ...Store.loadTranscript(daily.file), summary_history: [] };
+        Store.saveTranscript(daily.file, removedVersion);
+        pane._summaryHistoryBanner.emit('button-clicked');
+        check(same(Store.loadTranscript(daily.file), removedVersion) && lastToast().title ===
+            'Não foi possível restaurar: a versão mudou. Abra a lista de versões de novo.' && !lastToast().use_markup,
+        'versão removida não muda disco e avisa para reabrir a lista em texto puro');
+        Store.saveTranscript(daily.file, { ...disk, summary_history: [{ text: '## Resumo\n\nLegado sem data' }] });
+        window._onSummaryDone(daily.file);
+        pane.showSummaryVersion(0);
+        check(pane._summaryHistoryBanner.sensitive, 'versão legada sem data permite Restaurar');
+        pane._summaryHistoryBanner.emit('button-clicked');
+        check(Store.loadTranscript(daily.file).summary.text.includes('Legado sem data'),
+            'versão legada sem timestamp é restaurada pelo índice');
+        Store.saveTranscript(daily.file, restoreFixture);
+        window._onSummaryDone(daily.file);
 
         const movedName = daily.name;
         check(window._renameRecording(daily, 'Atlas com resumo') &&

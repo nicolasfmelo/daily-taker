@@ -54,8 +54,16 @@ const updateTranscript = (recordingFile, update) => {
 var saveSummary = (file, summary) =>
     updateTranscript(file, t => Transcript.withSummary(t, summary));
 
-var restoreSummaryAt = (file, version) =>
-    updateTranscript(file, t => Transcript.restoreSummary(t, version));
+var restoreSummaryAt = (file, version) => {
+    const current = readForUpdate(file);
+    if (!current)
+        return null;
+    const next = Transcript.restoreSummary(current, version);
+    if (next === current)
+        return null;
+    saveTranscript(file, next);
+    return next;
+};
 
 var saveSpeakers = (file, speakers) =>
     updateTranscript(file, t => ({ ...t, speakers: { ...speakers } }));

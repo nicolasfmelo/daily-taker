@@ -122,10 +122,10 @@ var clearSummary = t => {
     return rest;
 };
 
-var restoreSummary = (t, version) => {
+var restoreSummary = (t, { index, generated_at } = {}) => {
     const history = getSummaryHistory(t);
-    const index = typeof version === 'string' ? history.findIndex(s => s.generated_at === version) : version;
-    if (!Number.isInteger(index) || index < 0 || index >= history.length)
+    if (!Number.isInteger(index) || index < 0 || index >= history.length ||
+        (history[index].generated_at && history[index].generated_at !== generated_at))
         return t;
     const current = getSummary(t);
     const restored = history[index];

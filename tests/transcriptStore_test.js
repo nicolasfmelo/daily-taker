@@ -184,7 +184,7 @@ test('resumo, locutores, regeneração e mudança de nome preservam dados recent
     const summary = text => ({ text, model: 'm', generated_at: '2026-10-22T12:00:00Z', cost_usd: 0.02 });
     assert.equal(S.saveSummary(rec, summary('ausente')), null);
     assert.equal(S.saveSpeakers(rec, { 0: 'Ana' }), null);
-    assert.equal(S.restoreSummaryAt(rec, 0), null);
+    assert.equal(S.restoreSummaryAt(rec, { index: 0 }), null);
     S.saveTranscript(rec, makeTranscript());
     S.saveSummary(rec, summary('A'));
     S.saveSummary(rec, summary('B'));
@@ -198,7 +198,7 @@ test('resumo, locutores, regeneração e mudança de nome preservam dados recent
     assert.deepEqual(regenerated.summary_history, [summary('A')]);
     const dest = dir.get_child('Renomeada');
     S.renameRecordingFiles(rec, dest);
-    const restored = S.restoreSummaryAt(dest, 0);
+    const restored = S.restoreSummaryAt(dest, { index: 0, generated_at: summary('A').generated_at });
     assert.deepEqual(restored.summary, summary('A'));
     assert.deepEqual(S.loadTranscript(dest).summary_history, [summary('B')]);
 }));
@@ -211,7 +211,7 @@ for (const invalid of ['{"privado":', JSON.stringify({ ...makeTranscript(), vers
         for (const update of [
             () => S.saveSummary(rec, { text: 'Pago' }),
             () => S.saveSpeakers(rec, { 0: 'Ana' }),
-            () => S.restoreSummaryAt(rec, 0),
+            () => S.restoreSummaryAt(rec, { index: 0 }),
         ]) {
             sidecar.replace_contents(invalid, null, false, Gio.FileCreateFlags.NONE, null);
             let failed = false;
@@ -243,7 +243,7 @@ for (const invalid of ['{"privado":', JSON.stringify({ ...makeTranscript(), vers
     }));
 }
 
-test('restaurar por data seleciona a mesma versão mesmo após novo resumo e persiste truncated', () => withDir(dir => {
+test('restaurar exige identidade ainda presente e preserva truncated', () => withDir(dir => {
     const rec = touch(dir, 'Daily');
     S.saveTranscript(rec, makeTranscript());
     const summary = (text, generated_at) => ({ text, generated_at, truncated: true, cost_usd: null });
@@ -251,12 +251,14 @@ test('restaurar por data seleciona a mesma versão mesmo após novo resumo e per
     S.saveSummary(rec, summary('B', '2026-10-22T11:00:00Z'));
     const shown = S.loadTranscript(rec).summary_history[0];
     S.saveSummary(rec, summary('C', '2026-10-22T12:00:00Z'));
-    const restored = S.restoreSummaryAt(rec, shown.generated_at);
+    assert.equal(S.restoreSummaryAt(rec, { index: 0, generated_at: shown.generated_at }), null);
+    assert.equal(S.loadTranscript(rec).summary.text, 'C');
+    const restored = S.restoreSummaryAt(rec, { index: 1, generated_at: shown.generated_at });
     assert.equal(restored.summary.text, 'A');
     assert.equal(restored.summary.truncated, true);
     assert.equal(restored.summary.cost_usd, null);
     assert.deepEqual(restored.summary_history.map(s => s.text), ['C', 'B']);
-    assert.deepEqual(S.restoreSummaryAt(rec, 'não existe'), restored);
+    assert.equal(S.restoreSummaryAt(rec, { index: 0, generated_at: 'não existe' }), null);
 }));
 
 test('rename não sobrescreve sidecar órfão do destino', () => withDir(dir => {

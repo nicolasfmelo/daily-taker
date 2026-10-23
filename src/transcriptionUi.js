@@ -84,7 +84,7 @@ var guardedSave = (save, { isRemoved = () => false } = {}) => (recordingFile, tr
             'A gravação foi excluída antes de a transcrição terminar.');
     }
     try {
-        save(recordingFile, transcript);
+        return save(recordingFile, transcript);
     } catch (e) {
         throw new TranscribeError('saveFailed', 0,
             'A transcrição foi feita, mas não foi possível salvá-la no disco.');

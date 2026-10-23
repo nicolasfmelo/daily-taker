@@ -448,7 +448,8 @@ var Window = GObject.registerClass({
             if (this._selected)
                 this._summary.retry(this._selected);
         });
-        pane.connect('summary-restore-requested', (_p, generatedAt) => this._restoreSummary(generatedAt));
+        pane.connect('summary-restore-requested', (_p, index, generated_at) =>
+            this._restoreSummary({ index, generated_at }));
         pane.connect('new-recording-requested', () => this.recorderWidget.actionsGroup.activate_action('start', null));
         pane.view.connect('seek-requested', (_v, seconds) => this._seekAndPlay(seconds));
     }
@@ -748,16 +749,19 @@ var Window = GObject.registerClass({
         this._syncCost();
     }
 
-    _restoreSummary(generatedAt) {
+    _restoreSummary(version) {
         const recording = this._selected;
         if (!recording || this._isTranscribing(recording) ||
             this.summaryService.status(recording.file) === 'running')
             return;
         try {
-            guardedSave((file, i) => restoreSummaryAt(file, i), {
+            const restored = guardedSave((file, ref) => restoreSummaryAt(file, ref), {
                 isRemoved: file => this._deleteQueue.pending().some(r => r.file.equal(file)),
-            })(recording.file, generatedAt);
-            this._onSummaryDone(recording.file);
+            })(recording.file, version);
+            if (restored)
+                this._onSummaryDone(recording.file);
+            else
+                this.addToast('Não foi possível restaurar: a versão mudou. Abra a lista de versões de novo.');
         } catch (e) {
             this.addToast('Não foi possível restaurar a versão do resumo.');
         }
