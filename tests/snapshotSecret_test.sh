@@ -36,13 +36,14 @@ expected="snapshot-fake-""never-a-key"
 [ ! -e "$1" ] || exit 37
 printf "received; removed before exec\\n" > "$DAILY_TAKER_SNAPSHOT"
 sleep 1
+case "$DAILY_TAKER_SNAPSHOT" in *late.png) exit 139 ;; esac
 '\'' probe "$key_file"
 ''')
     stub.chmod(0o700)
     env = dict(os.environ, PATH=str(work) + ':' + os.environ['PATH'],
                DAILY_TAKER_OP_KEY=secret, SNAPSHOT_TIMEOUT='15')
     started = time.time_ns()
-    for mode in ['normal', 'exit', 'term', 'int']:
+    for mode in ['normal', 'exit', 'term', 'int', 'late']:
         out = work / (mode + '.png')
         proc = subprocess.Popen(['bash', 'tools/snapshot.sh', str(out), '--component', 'summarycheck'],
                                 cwd=repo, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)

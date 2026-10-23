@@ -116,6 +116,8 @@ bash tools/snapshot.sh OUT.png [--component window|windowcheck|summarycheck|pref
     cancelar no encerramento não chama `close()`/`destroy()` após `response()`.
     O `detailpanecheck` responde no mesmo frame de abertura, sem fechamento
     redundante: esse fechamento duplicado reproduziu SIGSEGV no callback Wayland/GTK.
+    PNG existente não mascara falha do processo: saída não zero após a captura
+    também falha (teste do transporte simula saída 139 após escrever o PNG).
     `DAILY_TAKER_SNAPSHOT_SABOTAGE=summary bash tools/snapshot.sh OUT.png --component windowcheck`
     remove o resumo só da visão no primeiro passo: deve imprimir uma `FAIL` e não gerar PNG.
     Imprime `PASS`/`FAIL` por verificação: depois do primeiro map a sidebar aquece o

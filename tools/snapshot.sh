@@ -235,4 +235,5 @@ fi
 if grep -q '^FAIL ' "$work/run.log"; then
     die "verificação falhou depois da captura (ver FAIL acima)"
 fi
+[ "$status" -eq 0 ] || die "processo terminou com saída $status após gerar o PNG"
 echo "snapshot: $out"
