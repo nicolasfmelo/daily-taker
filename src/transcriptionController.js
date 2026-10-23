@@ -31,11 +31,17 @@ var TranscriptionController = class TranscriptionController {
         this._closed = false;
         // uri → { plan, message, options } da última falha (some ao tentar de novo).
         this._failures = new Map();
+        this._dialogs = new Map();
     }
 
     // A janela fechou: nada de diálogos nem toasts depois disso.
     close() {
+        if (this._closed)
+            return;
         this._closed = true;
+        for (const dialog of [...this._dialogs.values()])
+            dialog.response('cancel');
+        this._dialogs.clear();
     }
 
     // Mensagem da última falha da gravação (para o painel), ou ''.
@@ -83,7 +89,9 @@ var TranscriptionController = class TranscriptionController {
             return;
         }
 
-        if (this._service.status(recording.file) === 'running')
+        const file = recording.file;
+        const uri = file.get_uri();
+        if (this._service.status(file) === 'running' || this._dialogs.has(uri))
             return;
 
         const { heading, body } = confirmMessage(recording.duration / 1e9, options);
@@ -100,9 +108,16 @@ var TranscriptionController = class TranscriptionController {
         dialog.set_response_appearance('transcribe', Adw.ResponseAppearance.SUGGESTED);
         dialog.default_response = 'transcribe';
         dialog.close_response = 'cancel';
+        this._dialogs.set(uri, dialog);
         dialog.connect('response', (_dialog, response) => {
-            if (response === 'transcribe' && !this._closed)
+            this._dialogs.delete(uri);
+            dialog.visible = false;
+            if (response === 'transcribe' && !this._closed && recording.file.equal(file))
                 this._run(recording, options);
+        });
+        dialog.connect('destroy', () => {
+            if (this._dialogs.get(uri) === dialog)
+                this._dialogs.delete(uri);
         });
         dialog.present();
     }

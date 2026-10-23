@@ -20,9 +20,11 @@ var SummaryController = class SummaryController {
     }
 
     close() {
+        if (this._closed)
+            return;
         this._closed = true;
-        for (const dialog of this._dialogs.values())
-            dialog.destroy();
+        for (const dialog of [...this._dialogs.values()])
+            dialog.response('cancel');
         this._dialogs.clear();
     }
 
@@ -77,8 +79,13 @@ var SummaryController = class SummaryController {
         this._dialogs.set(uri, dialog);
         dialog.connect('response', (_dialog, response) => {
             this._dialogs.delete(uri);
+            dialog.visible = false;
             if (response === 'summarize' && !this._closed && recording.file.equal(file))
                 this._run(recording, options, transcript, model);
+        });
+        dialog.connect('destroy', () => {
+            if (this._dialogs.get(uri) === dialog)
+                this._dialogs.delete(uri);
         });
         dialog.present();
     }

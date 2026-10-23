@@ -569,6 +569,7 @@ var TranscriptView = GObject.registerClass({
         const transcript = this._transcript;
         const recordingFile = this._recordingFile;
         dialog.connect('response', (_dialog, response) => {
+            dialog.visible = false;
             if (response === 'rename' && transcript === this._transcript && !this._running)
                 this._applySpeakerName(recordingFile, speaker, entry.text);
         });

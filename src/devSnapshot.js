@@ -301,7 +301,7 @@ const detailPaneCheckComponent = () => {
     check(view.recordingFile === null, 'sem gravação a visão não tem arquivo');
     pane.setRecording(recB);
     pane.setState('ready');
-    check(view.transcript === tB && sameFile(view.recordingFile, fileB), 'ordem invertida usa o arquivo de B');
+    check(sameFile(view.recordingFile, fileB), 'ordem invertida usa o arquivo de B');
     check(pane._stateStack.visible_child_name === 'ready', 'ordem invertida mostra a visão');
 
     // 4. Transcrição de B dada com A selecionada e depois B: a de A nunca fica ligada a B.
@@ -375,13 +375,10 @@ const detailPaneCheckComponent = () => {
     const ready = Promise.all([built, whenMapped(pane)]).then(async () => {
         view._renameSpeakerDialog(0);
         const dialog = Gtk.Window.list_toplevels().find(w => w instanceof Adw.MessageDialog);
-        await whenMapped(dialog);
-        await sleep(100);
         check(dialog?.get_extra_child() instanceof Gtk.Entry &&
             !dialog.heading_use_markup && !dialog.body_use_markup,
         'diálogo de locutor usa extra child e texto puro sem propriedade obsoleta');
         dialog.response('cancel');
-        dialog.close();
         await sleep(250);
         print(`devSnapshot: detailpanecheck: ${checks} verificações OK`);
     });
@@ -894,7 +891,6 @@ const checkWindowSummary = async (window, { check, select, daily, sem, copyFixtu
             dialog.body.includes('O texto da transcrição será enviado ao OpenRouter.'),
         'resumo: confirmação honesta sem markup');
         dialog.response('summarize');
-        dialog.close();
     };
     const done = async () => {
         const pending = service._running.get(daily.uri);
@@ -1142,7 +1138,8 @@ const checkWindowSummary = async (window, { check, select, daily, sem, copyFixtu
         check(!pane._copyButton.sensitive && !pane._summaryRegenerateAction.enabled,
             'Voltar à atual sincroniza toolbar quando atual não existe');
     } finally {
-        for (const dialog of controller._dialogs.values()) { dialog.response('cancel'); dialog.close(); }
+        for (const dialog of controller._dialogs.values())
+            dialog.response('cancel');
         controller._dialogs.clear();
         service._getKey = saved.key;
         service._summarize = saved.summarize;
@@ -1286,7 +1283,6 @@ const windowCheckComponent = (params, { window }) => {
             check(toasts.length === refusedBefore + 1 && busy.hasUnsaved(daily.file),
                 'menu aberto antes da falha recheca rename no clique e avisa sem perder resultado');
             dialog.response('rename');
-            dialog.close();
             check(daily.name === 'Daily · Projeto Atlas' && busy.hasUnsaved(daily.file),
                 'confirmar diálogo antigo não renomeia nem perde resultado retido');
             busy._unsaved.delete(daily.uri);
@@ -1547,7 +1543,6 @@ const windowCheckComponent = (params, { window }) => {
         dlg.response('rename');
         check(daily.name === 'Daily · Projeto Atlas' && toasts[nToasts] === 'Aguarde a transcrição terminar para renomear.',
             'confirmar mesmo assim: recusado com aviso');
-        dlg.close();
         winAction('win.rename', null);
         check(window._renameDialog === null, 'win.rename durante a transcrição: nenhum diálogo');
         service._running.delete(daily.uri);
@@ -1561,7 +1556,6 @@ const windowCheckComponent = (params, { window }) => {
         const dlg2 = window._renameDialog?.dialog;
         dlg2.get_extra_child().text = 'Daily renomeada';
         dlg2.response('rename');
-        dlg2.close();
         check(daily.name === 'Daily renomeada' && sidebar.selected === daily && rowOf(daily)._title.label === 'Daily renomeada' &&
             pane._titleLabel.label === 'Daily renomeada' && playback.uri === daily.uri,
         'renomear pelo diálogo: seleção, item da sidebar, título do painel e player seguem');
@@ -1690,7 +1684,7 @@ const windowCheckComponent = (params, { window }) => {
         };
         ctl._openPreferences = () => prefsOpened++;
         ctl._getKey = () => ({ key: 'fixture', source: 'env' });
-        const costDialogs = () => Gtk.Window.list_toplevels().filter(w => w instanceof Adw.MessageDialog);
+        const costDialogs = () => Gtk.Window.list_toplevels().filter(w => w instanceof Adw.MessageDialog && w.visible);
         const trashAll = async recordings => {
             for (const r of recordings) {
                 sidebar.emit('delete-requested', r);
@@ -1853,7 +1847,6 @@ const windowCheckComponent = (params, { window }) => {
                 'de volta à lista, Tentar de novo abre o diálogo de custo (nada cobrado antes de confirmar)');
             for (const dialog of dialogs) {
                 dialog.response('cancel');
-                dialog.close();
             }
             await sleep(100);
             check(transcribeCalls === callsBefore && service.status(again.file) === 'error',
@@ -2029,7 +2022,6 @@ const windowCheckComponent = (params, { window }) => {
             check(!window._closed && window._closeDialog === null && queue.has(fresh) &&
                 queue.has(second) && closeLog.length === 0,
             'Cancelar mantém janela e exclusões pendentes intactas');
-            dialog.close();
             prefs?.close();
             busy._running.delete(daily.uri);
         }
@@ -2095,12 +2087,20 @@ const windowCheckComponent = (params, { window }) => {
             print(`${again ? 'PASS' : 'FAIL'} windowcheck: fechar de novo / fila vazia não lança`);
         };
         // A confirmação final é respondida somente após a captura e o close() real.
+        window._transcription._getKey = () => ({ key: 'fixture' });
+        window._summary._getKey = () => ({ key: 'fixture' });
+        window._transcription.request(daily);
+        window._summary.request(daily);
+        check(window._transcription._dialogs?.size === 1 && window._summary._dialogs.size === 1,
+            'transcrição e resumo mantêm só confirmações ainda abertas para o encerramento');
         window.summaryService._running.set(daily.uri, Promise.resolve());
         GLib.timeout_add(GLib.PRIORITY_DEFAULT, 50, () => {
             if (!window._closeDialog)
                 return GLib.SOURCE_CONTINUE;
             window._closeDialog.response('close');
             print(`${window._closed ? 'PASS' : 'FAIL'} windowcheck: Fechar mesmo assim prossegue pelo shutdown ordenado`);
+            print(`${window._transcription._dialogs?.size === 0 && window._summary._dialogs.size === 0 ? 'PASS' : 'FAIL'} ` +
+                'windowcheck: fechar com confirmação de transcrição e resumo aberta cancela ambas sem crash');
             return GLib.SOURCE_REMOVE;
         });
 

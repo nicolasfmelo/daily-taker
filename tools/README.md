@@ -111,6 +111,11 @@ bash tools/snapshot.sh OUT.png [--component window|windowcheck|summarycheck|pref
     app.quit com Preferências ativa/null; backups ilegíveis fora da biblioteca;
     Delete auto-repeat, título pós-rename, exportação sem disco, retry bloqueado,
     opção regenerate e rodapé truncado/custo desconhecido.
+    Confere ainda shutdown com confirmações de transcrição e resumo abertas.
+    Os controladores retiram respostas/destruições do registro de diálogos ativos;
+    cancelar no encerramento não chama `close()`/`destroy()` após `response()`.
+    O `detailpanecheck` responde no mesmo frame de abertura, sem fechamento
+    redundante: esse fechamento duplicado reproduziu SIGSEGV no callback Wayland/GTK.
     `DAILY_TAKER_SNAPSHOT_SABOTAGE=summary bash tools/snapshot.sh OUT.png --component windowcheck`
     remove o resumo só da visão no primeiro passo: deve imprimir uma `FAIL` e não gerar PNG.
     Imprime `PASS`/`FAIL` por verificação: depois do primeiro map a sidebar aquece o

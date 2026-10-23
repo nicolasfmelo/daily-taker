@@ -248,7 +248,7 @@ var Window = GObject.registerClass({
         this._discardDialog = dialog;
         dialog.connect('response', (_dialog, response) => {
             this._discardDialog = null;
-            dialog.destroy();
+            dialog.visible = false;
             if (response === 'discard' && !this._closed && recording.file.equal(file) &&
                 controller._service.status(file) !== 'running')
                 controller.discardUnsaved(recording);
@@ -296,6 +296,7 @@ var Window = GObject.registerClass({
             this._closeDialog = dialog;
             dialog.connect('response', (_dialog, response) => {
                 this._closeDialog = null;
+                dialog.visible = false;
                 if (response === 'close')
                     this.shutdown();
             });
@@ -863,6 +864,7 @@ var Window = GObject.registerClass({
         const state = { recording, validate, dialog };
         this._renameDialog = state;
         dialog.connect('response', (_dialog, response) => {
+            dialog.visible = false;
             if (this._renameDialog === state)
                 this._renameDialog = null;
             if (response === 'rename' && !this._closed)
