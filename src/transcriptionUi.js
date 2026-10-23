@@ -63,9 +63,9 @@ var confirmMessage = (seconds, { regenerate = false, namedSpeakers = false } = {
 // o serviço grava ao lado do arquivo antigo e a transcrição paga se perderia.
 // Abrir vale sempre que há transcrição no disco e nada em andamento: uma nova
 // execução que falhou ('error') não apaga a transcrição anterior.
-var rowActions = ({ status, seconds, editMode, hasTranscript = false }) => ({
+var rowActions = ({ status, seconds, editMode, hasTranscript = false, hasUnsaved = false }) => ({
     transcribe: !editMode && status !== 'running' && Number.isFinite(seconds) && seconds > 0,
-    rename: !editMode && status !== 'running',
+    rename: !editMode && status !== 'running' && !hasUnsaved,
     open: !editMode && status !== 'running' && (status === 'ready' || hasTranscript),
 });
 

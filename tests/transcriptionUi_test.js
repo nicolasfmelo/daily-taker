@@ -192,6 +192,11 @@ test('rowActions: transcrever exige duração conhecida e nada em andamento', ()
     assert.deepEqual(U.rowActions({ status: 'error', seconds: 60, editMode: false }), { transcribe: true, rename: true, open: false });
 });
 
+test('rowActions: resultado pago não salvo bloqueia renomear sem impedir salvar novamente', () => {
+    assert.deepEqual(U.rowActions({ status: 'error', seconds: 60, editMode: false, hasUnsaved: true }),
+        { transcribe: true, rename: false, open: false });
+});
+
 test('rowActions: em andamento bloqueia transcrever, renomear e abrir', () => {
     assert.deepEqual(U.rowActions({ status: 'running', seconds: 60, editMode: false }), { transcribe: false, rename: false, open: false });
 });

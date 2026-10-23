@@ -129,6 +129,7 @@ var Sidebar = GObject.registerClass({
         // Escolha explícita de uma linha (clique, Enter): na janela estreita abre o painel.
         'recording-activated': { param_types: [GObject.TYPE_OBJECT] },
         'rename-requested': { param_types: [GObject.TYPE_OBJECT] },
+        'rename-refused': { param_types: [GObject.TYPE_OBJECT] },
         'delete-requested': { param_types: [GObject.TYPE_OBJECT] },
         // Excluir pedido durante a transcrição da gravação: recusado (a janela avisa).
         'delete-refused': { param_types: [GObject.TYPE_OBJECT] },
@@ -473,6 +474,7 @@ var Sidebar = GObject.registerClass({
             status: this._summaryBlocked(recording) ? 'running' : this._service.status(recording.file),
             seconds: recording.duration / 1e9,
             editMode: false,
+            hasUnsaved: this._service.hasUnsaved(recording.file),
         });
     }
 
@@ -543,6 +545,8 @@ var Sidebar = GObject.registerClass({
         add('rename', r => {
             if (this._allowed(r).rename)
                 this.emit('rename-requested', r);
+            else
+                this.emit('rename-refused', r);
         });
         add('transcribe', r => {
             if (!this._allowed(r).transcribe)

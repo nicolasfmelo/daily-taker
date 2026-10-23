@@ -342,6 +342,8 @@ var Window = GObject.registerClass({
             });
         });
         sidebar.connect('rename-requested', (_s, recording) => this._showRenameDialog(recording));
+        sidebar.connect('rename-refused', (_s, recording) =>
+            this.addToast(this._renameRefusal(recording) ?? RENAME_BUSY_MESSAGE));
         sidebar.connect('delete-requested', (_s, recording) => this._deleteRecording(recording));
         sidebar.connect('delete-refused', (_s, recording) =>
             this.addToast(this._deleteRefusal(recording) ?? DELETE_BUSY_MESSAGE));
@@ -794,6 +796,8 @@ var Window = GObject.registerClass({
     _renameRefusal(recording) {
         if (this._isTranscribing(recording))
             return RENAME_BUSY_MESSAGE;
+        if (this.transcriptionService.hasUnsaved(recording.file))
+            return 'Há uma transcrição paga ainda não salva. Toque em Tentar de novo antes de renomear.';
         if (this.summaryService.status(recording.file) === 'running')
             return 'Aguarde o resumo terminar para renomear.';
         if (this.summaryService.hasUnsaved(recording.file))

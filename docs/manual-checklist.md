@@ -204,6 +204,10 @@ fone de ouvido.
 - [ ] **Nome com caracteres especiais.** Renomear uma gravação para
   `Reunião P&D <revisão>` e excluí-la. Esperado: o aviso de exclusão mostra o
   nome inteiro e legível (sem ficar vazio).
+- [ ] **Renomear após falha ao salvar.** Com transcrição ou resumo pago retido,
+  renomear pela janela, F2 e menu é recusado; um diálogo já aberto se bloqueia.
+  Após Tentar de novo salvar, renomear leva o resultado ao nome novo sem cobrar.
+
 - [ ] **JSON corrompido.** Estragar um `.transcript.json` (por exemplo, apagar
   metade do arquivo) e reabrir o app. Esperado: o arquivo é ignorado (a gravação
   aparece sem transcrição), o app não trava e o stderr não mostra exceções.
@@ -215,9 +219,6 @@ fone de ouvido.
 - `Adw.MessageDialog` e `Adw.PreferencesWindow` estão marcados como obsoletos na
   libadwaita 1.9 (ainda funcionam; devem ser trocados por `Adw.AlertDialog` e
   `Adw.PreferencesDialog`).
-- Se a gravação for renomeada logo depois de uma falha ao salvar a transcrição
-  (dentro da janela do aviso "Tentar de novo"), a transcrição paga não pode mais
-  ser salva e se perde. Raro; a guarda fica para o redesenho.
 - O envio do áudio que não recebe resposta (rede travada) é interrompido após
   10 minutos sem atividade e tentado de novo até 3 vezes; em reunião longa com
   conexão ruim isso pode levar muito tempo e gerar mais de uma cobrança.

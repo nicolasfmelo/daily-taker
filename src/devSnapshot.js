@@ -1498,6 +1498,13 @@ const windowCheckComponent = (params, { window }) => {
                 failToast.title.includes('só salva'),
             `toast da falha: "Tentar de novo" com o plano só-salvar (${failToast?.title})`);
             await select(unsaved);
+            const retainedName = unsaved.name;
+            check(!window._renameRecording(unsaved, 'Não perder resultado') && unsaved.name === retainedName &&
+                service.hasUnsaved(unsaved.file) && !sidebar._allowed(unsaved).rename,
+            'transcrição não salva: renomear recusado na janela e no menu, resultado retido');
+            window._showRenameDialog(unsaved);
+            check(window._renameDialog === null && !window.lookup_action('rename').enabled,
+                'transcrição não salva: diálogo e F2 bloqueados');
             const unsavedMessage = 'Há uma transcrição paga que ainda não foi salva. ' +
                 'Toque em Tentar de novo antes de excluir.';
             const refused = () => list.getIndex(unsaved.file) >= 0 && queue.pending().length === 0 &&
@@ -1554,6 +1561,9 @@ const windowCheckComponent = (params, { window }) => {
                 list.getIndex(unsaved.file) >= 0,
             'Desfazer + Tentar de novo: a transcrição retida é salva, com UMA única chamada à API no total');
             check(ctl.failureMessage(unsaved) === '', 'depois de salvar, a falha some do painel');
+            check(window._renameRecording(unsaved, 'Transcrição salva renomeada') &&
+                loadTranscript(unsaved.file)?.text === 'olá',
+            'retrySave concluído: renomear funciona e leva a transcrição paga');
 
             // Parte C: salva, excluir volta a funcionar.
             sidebar.emit('delete-requested', unsaved);
