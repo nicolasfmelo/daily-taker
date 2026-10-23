@@ -164,4 +164,22 @@ test('componente sidebar registrado; --query lido do ambiente', () => {
     }
 });
 
+test('estado e versão do resumo são lidos e validados', () => {
+    GLib.setenv('DAILY_TAKER_SNAPSHOT', '/nonexistent/out.png', true);
+    GLib.setenv('DAILY_TAKER_SNAPSHOT_SUMMARY', 'ready', true);
+    GLib.setenv('DAILY_TAKER_SNAPSHOT_SUMMARY_VERSION', '1', true);
+    try {
+        assert.equal(snapshotParams().summaryState, 'ready');
+        assert.equal(snapshotParams().summaryVersion, 1);
+        assert.equal(stateError({ component: 'detailpane', summaryState: 'ready' }), null);
+        assert.equal(typeof stateError({ component: 'detailpane', summaryState: 'x' }), 'string');
+        assert.equal(typeof stateError({ component: 'detailpane', summaryVersion: -1 }), 'string');
+        assert.equal(typeof stateError({ component: 'detailpane', summaryVersion: 0.5 }), 'string');
+    } finally {
+        GLib.unsetenv('DAILY_TAKER_SNAPSHOT');
+        GLib.unsetenv('DAILY_TAKER_SNAPSHOT_SUMMARY');
+        GLib.unsetenv('DAILY_TAKER_SNAPSHOT_SUMMARY_VERSION');
+    }
+});
+
 finish();

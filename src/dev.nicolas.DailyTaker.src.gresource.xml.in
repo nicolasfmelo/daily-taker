@@ -33,6 +33,7 @@
     <file>summaryController.js</file>
     <file>summaryService.js</file>
     <file>summaryUi.js</file>
+    <file>summaryView.js</file>
     <file>transcriber.js</file>
     <file>transcript.js</file>
     <file>transcriptFormat.js</file>

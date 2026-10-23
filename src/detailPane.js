@@ -3,13 +3,17 @@
 // Transcrição/Resumo e os botões Buscar/Copiar/Exportar; abaixo, o painel do estado
 // atual (sem gravações, sem seleção, sem transcrição, gerando, erro ou a transcrição).
 // Não chama a API nem abre diálogos de arquivo: pede ao dono (a janela) por sinais.
-const { Gdk, Gio, GLib, GObject, Gtk } = imports.gi;
+const { Adw, Gdk, Gio, GLib, GObject, Gtk } = imports.gi;
 
 const { detailSubtitle, itemDate } = imports.recordingGroups;
 const { generateCard, paneActions, paneBanner, paneState } = imports.sidebarModel;
 const { buildBlocks } = imports.transcript;
 const { findCounterText } = imports.transcriptViewModel;
 const { TranscriptView } = imports.transcriptView;
+const { SummaryView } = imports.summaryView;
+const { getSummaryHistory } = imports.transcript;
+const { formatDateTime } = imports.transcriptFormat;
+const { formatUsd } = imports.transcriptionUi;
 
 const TABS = ['transcricao', 'resumo'];
 const STATUSES = ['none', 'running', 'error', 'ready'];
@@ -48,6 +52,10 @@ var DetailPane = GObject.registerClass({
         'copy-requested': { param_types: [GObject.TYPE_BOOLEAN] },
         'retry-requested': {},
         'new-recording-requested': {},
+        'summary-requested': { param_types: [GObject.TYPE_BOOLEAN] },
+        'summary-retry-requested': {},
+        'summary-copy-requested': {},
+        'summary-restore-requested': { param_types: [GObject.TYPE_INT] },
     },
 }, class DetailPane extends Gtk.Box {
     _init(params) {
@@ -62,6 +70,13 @@ var DetailPane = GObject.registerClass({
         this._syncingTabs = false;
         this._errorMessage = '';
         this._state = 'no-selection';
+        this._summary = null;
+        this._summaryHistory = [];
+        this._summaryStatus = 'none';
+        this._summaryError = '';
+        this._summaryVersion = null;
+        this._summaryRendered = null;
+        this._buildSummary();
 
         // Margens laterais (+ 8 px dos blocos): a borda do bloco alinha com o título e o
         // divisor à esquerda e fica mais perto da borda à direita (como na mockup).
@@ -158,6 +173,11 @@ var DetailPane = GObject.registerClass({
                 this._view.setRecordingFile(next.file);
             } else {
                 this._transcript = null;
+                this._summary = null;
+                this._summaryHistory = [];
+                this._summaryStatus = 'none';
+                this._summaryError = '';
+                this._summaryVersion = null;
                 this._status = 'none';
                 this._view.clear();
                 this._view.running = false;
@@ -198,6 +218,153 @@ var DetailPane = GObject.registerClass({
         this._costLabel.visible = Boolean(text);
     }
 
+    setSummary(summary) {
+        this._summary = summary;
+        this._summaryVersion = null;
+        this._syncSummary();
+        this._syncToolbar();
+    }
+
+    setSummaryHistory(list) {
+        this._summaryHistory = getSummaryHistory({ summary_history: list });
+        this._summaryVersion = null;
+        this._syncSummary();
+        this._syncToolbar();
+    }
+
+    setSummaryState(state) {
+        this._summaryStatus = ['none', 'running', 'error'].includes(state) ? state : 'none';
+        this._syncSummary();
+        this._syncToolbar();
+    }
+
+    setSummaryError(message) {
+        this._summaryError = message ?? '';
+        this._summaryErrorLabel.label = this._summaryError;
+        this._syncSummary();
+    }
+
+    setSummaryCost(text) {
+        this._summaryCostLabel.label = text ?? '';
+    }
+
+    get displayedSummary() {
+        return this._summaryVersion === null ? this._summary : this._summaryHistory[this._summaryVersion] ?? null;
+    }
+
+    showSummaryVersion(index) {
+        if (!Number.isInteger(index) || !this._summaryHistory[index] ||
+            this._summaryStatus === 'running' || this._status === 'running')
+            return;
+        this._summaryVersion = index;
+        this.tab = 'resumo';
+        this._syncSummary();
+        this._syncToolbar();
+    }
+
+    _buildSummary() {
+        const column = () => new Gtk.Box({ orientation: Gtk.Orientation.VERTICAL, spacing: 14 });
+        const label = text => new Gtk.Label({ label: text, use_markup: false, wrap: true, xalign: 0.5 });
+        const button = (text, fn) => {
+            const b = new Gtk.Button({ label: text, halign: Gtk.Align.CENTER });
+            b.connect('clicked', fn);
+            return b;
+        };
+        const card = (title, content) => {
+            const page = new Adw.StatusPage({ title, icon_name: 'view-list-bullet-symbolic', child: content });
+            return page;
+        };
+        const empty = column();
+        this._summaryCostLabel = label('');
+        empty.append(this._summaryCostLabel);
+        this._summaryGenerateButton = button('Gerar resumo', () => this.emit('summary-requested', false));
+        this._summaryGenerateButton.add_css_class('suggested-action');
+        this._summaryGenerateButton.add_css_class('pill');
+        empty.append(this._summaryGenerateButton);
+        this._summaryStack.add_named(card('Ainda não há resumo', empty), 'none');
+
+        this._summarySpinner = new Gtk.Spinner({ halign: Gtk.Align.CENTER, width_request: 32, height_request: 32 });
+        this._summaryStack.add_named(card('Gerando resumo…', this._summarySpinner), 'running');
+        const failed = column();
+        this._summaryErrorLabel = label('');
+        failed.append(this._summaryErrorLabel);
+        this._summaryRetryButton = button('Tentar de novo', () => this.emit('summary-retry-requested'));
+        failed.append(this._summaryRetryButton);
+        this._summaryStack.add_named(card('Não foi possível gerar o resumo', failed), 'error');
+
+        const ready = column();
+        ready.spacing = 0;
+        this._summaryBanner = new Adw.Banner({ use_markup: false });
+        this._summaryBanner.connect('button-clicked', () => this.emit('summary-retry-requested'));
+        ready.append(this._summaryBanner);
+        this._summaryHistoryBanner = new Adw.Banner({ use_markup: false, button_label: 'Restaurar esta versão' });
+        this._summaryHistoryBanner.connect('button-clicked', () => {
+            if (this._summaryVersion !== null && this._summaryStatus !== 'running' && this._status !== 'running')
+                this.emit('summary-restore-requested', this._summaryVersion);
+        });
+        ready.append(this._summaryHistoryBanner);
+        this._summaryBackButton = button('Voltar à atual', () => {
+            this._summaryVersion = null;
+            this._syncSummary();
+        });
+        ready.append(this._summaryBackButton);
+        this._summaryView = new SummaryView();
+        ready.append(this._summaryView);
+        this._summaryFooter = label('');
+        this._summaryFooter.margin_top = 12;
+        this._summaryFooter.margin_bottom = 12;
+        this._summaryFooter.add_css_class('dim-label');
+        ready.append(this._summaryFooter);
+        this._summaryToastOverlay = new Adw.ToastOverlay({ child: ready });
+        this._summaryStack.add_named(this._summaryToastOverlay, 'ready');
+    }
+
+    _syncSummary() {
+        const shown = this.displayedSummary;
+        const state = !this._transcript ? 'no-transcript'
+            : shown ? 'ready' : this._summaryStatus;
+        this._summaryStack.visible_child_name = state;
+        const busy = this._summaryStatus === 'running' || this._status === 'running';
+        this._summaryGenerateButton.sensitive = Boolean(this._transcript) && !busy;
+        this._summaryRetryButton.sensitive = !busy;
+        this._summarySpinner.spinning = state === 'running';
+        this._summaryBanner.revealed = Boolean(shown) && this._summaryStatus !== 'none';
+        this._summaryBanner.title = this._summaryStatus === 'running' ? 'Gerando novamente…' : this._summaryError;
+        this._summaryBanner.button_label = this._summaryStatus === 'error' ? 'Tentar de novo' : null;
+        this._summaryBanner.sensitive = !busy;
+        this._summaryHistoryBanner.revealed = this._summaryVersion !== null;
+        this._summaryHistoryBanner.sensitive = !busy;
+        this._summaryBackButton.visible = this._summaryVersion !== null;
+        if (shown) {
+            this._summaryHistoryBanner.title = `Versão de ${formatDateTime(shown.generated_at)}`;
+            this._summaryFooter.label = `Gerado por ${shown.model} em ${formatDateTime(shown.generated_at)} · ${formatUsd(shown.cost_usd)}`;
+        }
+        if (shown?.text !== this._summaryRendered) {
+            this._summaryRendered = shown?.text ?? null;
+            this._summaryView.setText(shown?.text ?? '');
+        }
+    }
+
+    _showSummaryHistory() {
+        if (!this._historyAction.enabled)
+            return;
+        this._moreButton.popdown();
+        const list = new Gtk.Box({ orientation: Gtk.Orientation.VERTICAL, spacing: 6, margin_start: 8, margin_end: 8,
+            margin_top: 8, margin_bottom: 8 });
+        const scroll = new Gtk.ScrolledWindow({ child: list, max_content_height: 420,
+            propagate_natural_height: true, hscrollbar_policy: Gtk.PolicyType.NEVER });
+        const popover = new Gtk.Popover({ child: scroll });
+        popover.set_parent(this._moreButton);
+        this._summaryHistory.forEach((s, index) => {
+            const text = `${formatDateTime(s.generated_at)} • ${s.model} • ${formatUsd(s.cost_usd)}`;
+            const row = new Gtk.Button({ child: new Gtk.Label({ label: text, use_markup: false, wrap: true }) });
+            row.connect('clicked', () => { this.showSummaryVersion(index); popover.popdown(); });
+            list.append(row);
+        });
+        popover.connect('closed', () => popover.unparent());
+        popover.popup();
+    }
+
     // Abre a busca com `query` e aplica já (sem esperar o atraso do campo de busca).
     // Devolve { count, index } como TranscriptView.setFindQuery; null sem transcrição pronta.
     search(query) {
@@ -232,6 +399,25 @@ var DetailPane = GObject.registerClass({
         this._regenerateAction.connect('activate', () => this.emit('generate-requested', true));
         group.add_action(this._regenerateAction);
 
+
+        this._transcriptCopyMenu = this._copyButton.menu_model;
+        this._summaryCopyMenu = new Gio.Menu();
+        this._summaryCopyMenu.append('Copiar resumo', 'pane.summary-copy');
+        this._summaryCopyAction = new Gio.SimpleAction({ name: 'summary-copy' });
+        this._summaryCopyAction.connect('activate', () => {
+            if (!this.displayedSummary)
+                return;
+            this.get_clipboard().set(this.displayedSummary.text);
+            this._summaryToastOverlay.add_toast(new Adw.Toast({ title: 'Resumo copiado', use_markup: false, timeout: 2 }));
+            this.emit('summary-copy-requested');
+        });
+        group.add_action(this._summaryCopyAction);
+        this._summaryRegenerateAction = new Gio.SimpleAction({ name: 'summary-regenerate' });
+        this._summaryRegenerateAction.connect('activate', () => this.emit('summary-requested', true));
+        group.add_action(this._summaryRegenerateAction);
+        this._historyAction = new Gio.SimpleAction({ name: 'summary-history' });
+        this._historyAction.connect('activate', () => this._showSummaryHistory());
+        group.add_action(this._historyAction);
         this.insert_action_group('pane', group);
     }
 
@@ -345,7 +531,7 @@ var DetailPane = GObject.registerClass({
         }
         this._spinner.spinning = state === 'running';
         this._generateTitleLabel.label = generateCard(this._status).title;
-        this._summaryStack.visible_child_name = this._transcript ? 'coming-soon' : 'no-transcript';
+        this._syncSummary();
         this._state = state;
         this._syncBanner();
         this._syncTabs();
@@ -366,15 +552,23 @@ var DetailPane = GObject.registerClass({
     }
 
     _syncToolbar() {
-        const actions = paneActions({ state: this._state, status: this._status, tab: this._tab });
+        const summary = this._summaryStatus === 'running' ? 'running' : this.displayedSummary ? 'ready' : this._summaryStatus;
+        const actions = paneActions({ state: this._state, status: this._status, tab: this._tab,
+            summary, hasHistory: this._summaryHistory.length > 0 });
         if (!actions.search)
             this._closeSearch();
         this._searchButton.sensitive = actions.search;
         this._copyButton.sensitive = actions.copy;
-        this._copyAction.enabled = actions.copy;
+        this._copyAction.enabled = actions.copy && this._tab === 'transcricao';
+        this._summaryCopyAction.enabled = actions.copy && this._tab === 'resumo';
+        const menu = this._tab === 'resumo' ? this._summaryCopyMenu : this._transcriptCopyMenu;
+        if (this._copyButton.menu_model !== menu)
+            this._copyButton.menu_model = menu;
         this._exportButton.sensitive = actions.export;
         this._exportAction.enabled = actions.export;
         this._regenerateAction.enabled = actions.regenerate;
-        this._moreButton.sensitive = actions.regenerate;
+        this._summaryRegenerateAction.enabled = actions.summaryRegenerate;
+        this._historyAction.enabled = actions.history;
+        this._moreButton.sensitive = actions.regenerate || actions.summaryRegenerate || actions.history;
     }
 });

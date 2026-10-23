@@ -47,13 +47,16 @@ var paneBanner = (status, hasTranscript) =>
 
 // Botões do cabeçalho: tudo depende de a transcrição estar visível (state ready); Buscar
 // só na aba Transcrição; Gerar novamente bloqueado durante uma geração.
-var paneActions = ({ state, status, tab } = {}) => {
+var paneActions = ({ state, status, tab, summary = 'none', hasHistory = false } = {}) => {
     const ready = state === 'ready';
+    const idle = status !== 'running' && summary !== 'running';
     return {
         search: ready && tab === 'transcricao',
-        copy: ready,
+        copy: ready && (tab === 'transcricao' || summary === 'ready'),
         export: ready,
-        regenerate: ready && status !== 'running',
+        regenerate: ready && idle,
+        summaryRegenerate: ready && idle && summary === 'ready',
+        history: ready && idle && Boolean(hasHistory),
     };
 };
 

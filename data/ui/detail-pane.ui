@@ -482,28 +482,6 @@
                                 </property>
                               </object>
                             </child>
-                            <child>
-                              <object class="GtkStackPage">
-                                <property name="name">coming-soon</property>
-                                <property name="child">
-                                  <object class="AdwStatusPage">
-                                    <property name="icon_name">view-list-bullet-symbolic</property>
-                                    <property name="title">Resumo em breve</property>
-                                    <property name="description">O resumo da reunião com IA chega em uma próxima versão.</property>
-                                    <property name="child">
-                                      <object class="GtkButton">
-                                        <property name="label">Gerar resumo</property>
-                                        <property name="halign">center</property>
-                                        <property name="sensitive">False</property>
-                                        <style>
-                                          <class name="pill"/>
-                                        </style>
-                                      </object>
-                                    </property>
-                                  </object>
-                                </property>
-                              </object>
-                            </child>
                           </object>
                         </property>
                       </object>
@@ -522,6 +500,14 @@
       <item>
         <attribute name="label">Gerar novamente</attribute>
         <attribute name="action">pane.regenerate</attribute>
+      </item>
+      <item>
+        <attribute name="label">Gerar resumo novamente</attribute>
+        <attribute name="action">pane.summary-regenerate</attribute>
+      </item>
+      <item>
+        <attribute name="label">Versões anteriores…</attribute>
+        <attribute name="action">pane.summary-history</attribute>
       </item>
     </section>
   </menu>

@@ -160,6 +160,23 @@ const transcriptViewComponent = params => {
 // Exemplo de erro mostrado no cartão de erro (--state error).
 const SAMPLE_ERROR = 'Sem conexão com o serviço de transcrição. Verifique a internet e tente de novo.';
 
+const applySummaryParams = (pane, transcript, params) => {
+    const { getSummary, getSummaryHistory } = imports.transcript;
+    const { DEFAULT_SUMMARY_MODEL } = imports.summarizer;
+    const { summaryConfirmMessage } = imports.summaryUi;
+    const state = params.summaryState;
+    pane.setSummary(state && state !== 'ready' ? null : getSummary(transcript));
+    pane.setSummaryHistory(getSummaryHistory(transcript));
+    pane.setSummaryState(state === 'ready' ? 'none' : state ?? 'none');
+    pane.setSummaryError('Sem conexão com o serviço de resumo. Verifique a internet e tente de novo.');
+    pane.setSummaryCost(summaryConfirmMessage(transcript, DEFAULT_SUMMARY_MODEL).body);
+    if (params.summaryVersion !== null && params.summaryVersion !== undefined) {
+        if (!getSummaryHistory(transcript)[params.summaryVersion - 1])
+            throw new Error('versão de resumo inexistente');
+        pane.showSummaryVersion(params.summaryVersion - 1);
+    }
+};
+
 // Painel de detalhe com a gravação --select N (padrão 1; 0 = nenhuma selecionada) e a
 // transcrição dela, se houver. --empty 1 = biblioteca vazia. --state força o estado
 // (padrão: ready com transcrição, none sem); --tab escolhe a aba; --at SEG posiciona o
@@ -198,6 +215,7 @@ const detailPaneComponent = params => {
     const built = transcript ? nextSignal(pane.view, 'blocks-built') : Promise.resolve();
     pane.setTranscript(transcript);
     pane.setState(state);
+    applySummaryParams(pane, transcript, params);
     if (params.tab)
         pane.tab = params.tab;
 
@@ -1630,6 +1648,13 @@ var SIDEBAR_STATES = ['running', 'error'];
 
 // Mensagem de erro para um --state inválido, ou null.
 var stateError = params => {
+    if (params.summaryState && !['none', 'running', 'error', 'ready'].includes(params.summaryState))
+        return 'estado do resumo inválido';
+    if (params.summaryVersion !== null && params.summaryVersion !== undefined &&
+        (!Number.isInteger(params.summaryVersion) || params.summaryVersion < 1))
+        return 'versão do resumo inválida';
+    if ((params.summaryState || params.summaryVersion) && !['window', 'detailpane'].includes(params.component))
+        return 'parâmetros do resumo só valem com window ou detailpane';
     if (!params.state)
         return null;
     const available = {
@@ -1666,6 +1691,8 @@ var snapshotParams = () => {
         tab: env('DAILY_TAKER_SNAPSHOT_TAB'),
         at: intOrNull(env('DAILY_TAKER_SNAPSHOT_AT')),
         state: env('DAILY_TAKER_SNAPSHOT_STATE'),
+        summaryState: env('DAILY_TAKER_SNAPSHOT_SUMMARY'),
+        summaryVersion: intOrNull(env('DAILY_TAKER_SNAPSHOT_SUMMARY_VERSION')),
         find: env('DAILY_TAKER_SNAPSHOT_FIND'),
         query: env('DAILY_TAKER_SNAPSHOT_QUERY'),
         empty: env('DAILY_TAKER_SNAPSHOT_EMPTY') === '1',

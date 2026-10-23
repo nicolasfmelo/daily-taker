@@ -53,6 +53,7 @@ bash tools/snapshot.sh OUT.png [--component window|windowcheck|playerbar|transcr
                        [--select N] [--tab transcricao|resumo] [--at SEG] [--size LxA]
                        [--state recorder|none|running|error|ready]
                        [--find TEXTO] [--empty 0|1] [--query TEXTO]
+                       [--summary-state none|running|error|ready] [--summary-version N]
 ```
 
 - `--component` (padrão `window`): `window` é a janela principal real. Os
@@ -167,6 +168,10 @@ bash tools/snapshot.sh OUT.png [--component window|windowcheck|playerbar|transcr
     busca do painel. Espera `blocks-built`, a posição e a duração da gravação.
     Tamanho padrão 1100x760.
     Ex.: `bash tools/snapshot.sh /tmp/d.png --component detailpane --select 4`
+    Com `--tab resumo`, `--summary-state` força o cartão/resultado (padrão:
+    resumo salvo da fixture ou cartão vazio). `--summary-version 1` abre a primeira
+    versão anterior, com banner, Restaurar e Voltar à atual. Copiar usa o resumo
+    exibido; Exportar continua sendo a transcrição, com resumo no Markdown.
   - `detailpanecheck`: verificação do `DetailPane` na cópia temporária das fixtures
     (troca de gravação, ordem invertida setTranscript/setRecording, renomear a
     gravação e salvar nome de locutor no arquivo novo, banner de erro/geração).

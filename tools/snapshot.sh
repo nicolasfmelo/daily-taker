@@ -33,7 +33,7 @@ case "$1" in -*) usage ;; esac
 out="$(realpath -m -- "$1")"
 shift
 
-component='window' select='' tab='' at='' size='' state='' find='' empty='' query=''
+component='window' select='' tab='' at='' size='' state='' find='' empty='' query='' summary='' summary_version=''
 while [ $# -gt 0 ]; do
     [ $# -ge 2 ] || die "falta o valor de $1"
     case "$1" in
@@ -46,6 +46,8 @@ while [ $# -gt 0 ]; do
         --find) find="$2" ;;
         --empty) empty="$2" ;;
         --query) query="$2" ;;
+        --summary-state) summary="$2" ;;
+        --summary-version) summary_version="$2" ;;
         *) die "opção desconhecida: $1" ;;
     esac
     shift 2
@@ -68,6 +70,8 @@ fi
 [ -z "$state" ] || [[ "$state" =~ ^(recorder|none|running|error|ready)$ ]] ||
     die "--state espera recorder (window), none|running|error|ready (detailpane) ou running|error (sidebar)"
 [ -z "$empty" ] || [[ "$empty" =~ ^[01]$ ]] || die "--empty espera 0 ou 1"
+[ -z "$summary" ] || [[ "$summary" =~ ^(none|running|error|ready)$ ]] || die "--summary-state espera none|running|error|ready"
+[ -z "$summary_version" ] || [[ "$summary_version" =~ ^[1-9][0-9]*$ ]] || die "--summary-version espera N a partir de 1"
 [[ "$size" =~ ^([1-9][0-9]*)x([1-9][0-9]*)$ ]] || die "--size espera LxA, por exemplo 1536x1024"
 [ -d "$(dirname -- "$out")" ] || die "diretório de saída não existe: $(dirname -- "$out")"
 [ -f "$build/build.ninja" ] || die "configure antes: meson setup build --prefix \$HOME/.local"
@@ -181,6 +185,8 @@ env -i \
     DAILY_TAKER_SNAPSHOT_FIND="$find" \
     DAILY_TAKER_SNAPSHOT_EMPTY="$empty" \
     DAILY_TAKER_SNAPSHOT_QUERY="$query" \
+    DAILY_TAKER_SNAPSHOT_SUMMARY="$summary" \
+    DAILY_TAKER_SNAPSHOT_SUMMARY_VERSION="$summary_version" \
     setsid --wait timeout --kill-after=5 "$timeout_s" \
         dbus-run-session -- "${command[@]}" \
         >"$work/run.log" 2>&1 &

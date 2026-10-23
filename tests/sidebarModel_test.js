@@ -130,26 +130,28 @@ test('paneBanner: só com transcrição e status running/error', () => {
     assert.equal(M.paneBanner('error'), 'none');
 });
 
-test('paneActions: tabela verdade', () => {
-    const off = { search: false, copy: false, export: false, regenerate: false };
-    for (const state of ['empty-library', 'no-selection', 'not-transcribed', 'running', 'error']) {
+test('paneActions: todas as combinações respeitam transcrição, aba e estado do resumo', () => {
+    for (const state of ['empty-library', 'no-selection', 'not-transcribed', 'running', 'error', 'ready']) {
         for (const status of STATUSES) {
-            for (const tab of ['transcricao', 'resumo'])
-                assert.deepEqual(M.paneActions({ state, status, tab }), off);
+            for (const tab of ['transcricao', 'resumo']) {
+                for (const summary of ['none', 'running', 'error', 'ready']) {
+                    for (const hasHistory of [false, true]) {
+                        const actions = M.paneActions({ state, status, tab, summary, hasHistory });
+                        const ready = state === 'ready';
+                        const idle = status !== 'running' && summary !== 'running';
+                        assert.deepEqual(actions, {
+                            search: ready && tab === 'transcricao',
+                            copy: ready && (tab === 'transcricao' || summary === 'ready'),
+                            export: ready,
+                            regenerate: ready && idle,
+                            summaryRegenerate: ready && idle && summary === 'ready',
+                            history: ready && idle && hasHistory,
+                        });
+                    }
+                }
+            }
         }
     }
-    assert.deepEqual(M.paneActions({ state: 'ready', status: 'ready', tab: 'transcricao' }),
-        { search: true, copy: true, export: true, regenerate: true });
-    assert.deepEqual(M.paneActions({ state: 'ready', status: 'error', tab: 'transcricao' }),
-        { search: true, copy: true, export: true, regenerate: true });
-    assert.deepEqual(M.paneActions({ state: 'ready', status: 'running', tab: 'transcricao' }),
-        { search: true, copy: true, export: true, regenerate: false });
-    assert.deepEqual(M.paneActions({ state: 'ready', status: 'ready', tab: 'resumo' }),
-        { search: false, copy: true, export: true, regenerate: true });
-    assert.deepEqual(M.paneActions({ state: 'ready', status: 'running', tab: 'resumo' }),
-        { search: false, copy: true, export: true, regenerate: false });
-    assert.deepEqual(M.paneActions({}), off);
-    assert.deepEqual(M.paneActions(), off);
 });
 
 test('generateCard: "pronta" sem transcrição pede para gerar de novo (com confirmação)', () => {
