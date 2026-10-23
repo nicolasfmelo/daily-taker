@@ -182,4 +182,17 @@ test('estado e versão do resumo são lidos e validados', () => {
     }
 });
 
+test('summarycheck recusa execução fora do sandbox antes de acessar janela ou chave', () => {
+    const sandbox = GLib.getenv('DAILY_TAKER_SNAPSHOT_SANDBOX');
+    GLib.unsetenv('DAILY_TAKER_SNAPSHOT_SANDBOX');
+    try {
+        assert.equal(typeof COMPONENTS.summarycheck, 'function');
+        assert.equal(MUTATING_COMPONENTS.includes('summarycheck'), true);
+        assert.throws(() => COMPONENTS.summarycheck({}, {}));
+    } finally {
+        if (sandbox !== null)
+            GLib.setenv('DAILY_TAKER_SNAPSHOT_SANDBOX', sandbox, true);
+    }
+});
+
 finish();

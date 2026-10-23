@@ -49,7 +49,7 @@ Cria `DIR/daily-taker/` (o `XDG_DATA_HOME` do app aponta para `DIR`):
 ## `snapshot.sh` — captura da janela
 
 ```sh
-bash tools/snapshot.sh OUT.png [--component window|windowcheck|playerbar|transcriptview|detailpane|detailpanecheck|sidebar|sidebarcheck]
+bash tools/snapshot.sh OUT.png [--component window|windowcheck|summarycheck|preferences|playerbar|transcriptview|detailpane|detailpanecheck|sidebar|sidebarcheck]
                        [--select N] [--tab transcricao|resumo] [--at SEG] [--size LxA]
                        [--state recorder|none|running|error|ready]
                        [--find TEXTO] [--empty 0|1] [--query TEXTO]
@@ -63,6 +63,14 @@ bash tools/snapshot.sh OUT.png [--component window|windowcheck|playerbar|transcr
   - `preferences`: Preferências reais, sem chave e com GSettings em memória;
     confere edição adiada, Enter e modelo inválido antes da captura.
     Ex.: `bash tools/snapshot.sh OUT.png --component preferences --size 680x800`.
+  - `summarycheck`: **API real, cobrada**, somente com autorização explícita.
+    Passa `DAILY_TAKER_OP_KEY` exclusivamente a esse componente e executa o
+    SummaryService/summarizer/save reais na cópia isolada da fixture Atlas.
+    Confere resumo salvo, palavras/histórico preservados, aba atualizada e custo
+    até US$ 0,03. Imprime apenas tamanho/custo/modelo/seções e resultados.
+    No fish, com a variável já configurada, executar uma vez:
+    `SNAPSHOT_TIMEOUT=360 bash tools/snapshot.sh OUT.png --component summarycheck`.
+    Os demais componentes nunca recebem a chave nem chamam a API.
   - `window`: a janela mestre-detalhe real (`src/window.js`) com a biblioteca das
     fixtures. Espera a varredura da pasta (`RecordingList.loaded`) e as durações.
     `--select N` seleciona a gravação N da lista (1 = "Daily · Projeto Atlas"; 4 =
@@ -218,7 +226,7 @@ bash tools/snapshot.sh OUT.png [--component window|windowcheck|playerbar|transcr
   `1100x760` para `detailpane`; `360x900` para `sidebar`/`sidebarcheck`): tamanho do monitor
   virtual e da janela.
 - Componentes que alteram dados (`MUTATING_COMPONENTS` em `src/devSnapshot.js`:
-  `detailpanecheck`, `sidebarcheck`, `windowcheck`): o `snapshot.sh` exporta
+  `detailpanecheck`, `sidebarcheck`, `windowcheck`, `summarycheck`): o `snapshot.sh` exporta
   `DAILY_TAKER_SNAPSHOT_SANDBOX=1` e `DAILY_TAKER_SNAPSHOT_ROOT=<raiz temporária>`;
   antes de construir o componente (e de novo no início dele), `devSnapshot.js`
   exige a marca e que `GLib.get_user_data_dir()` esteja dentro dessa raiz
@@ -266,7 +274,8 @@ bash tools/snapshot.sh OUT.png [--component window|windowcheck|playerbar|transcr
 
    - Sem `DISPLAY`/`WAYLAND_DISPLAY`/`DBUS_SESSION_BUS_ADDRESS` do usuário:
      nada aparece na tela e o app não fala com a sessão real (nem com o
-     chaveiro; `DAILY_TAKER_OP_KEY` também não passa).
+     chaveiro). `DAILY_TAKER_OP_KEY` só passa no `summarycheck` explicitamente
+     solicitado; não é escrita em arquivo ou log.
    - `XDG_RUNTIME_DIR` temporário: o socket Wayland fica nele e os servidores
      PipeWire/Pulse reais (em `/run/user/…`) ficam inalcançáveis — nenhum som
      sai e o microfone não é aberto (o `Recorder` só é construído).

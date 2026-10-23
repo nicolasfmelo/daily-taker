@@ -88,3 +88,18 @@ fora do padrão.
   volume) têm traço diferente dos da mockup; a engrenagem contornada foi desenhada para o
   app.
 - **Sombra e moldura da janela**: são do compositor, não do app.
+
+## Aba Resumo — Plano B
+
+A aba antes reservada agora usa o mesmo cabeçalho, abas e player. O conteúdo
+tem títulos de 24/20 px, corpo/listas de 18 px, seleção e rolagem; o rodapé
+mostra modelo, data e custo. Os cartões de ausência/geração/erro ficam definidos,
+e a versão anterior usa banner com Restaurar/Voltar. Conferência reproduzível:
+
+```sh
+bash tools/snapshot.sh OUT.png --select 1 --tab resumo --summary-state ready
+bash tools/snapshot.sh OUT.png --component detailpane --select 1 --tab resumo --summary-version 1
+```
+
+Capturas somente no compositor isolado; sem alterações de escala em relação
+ao Plano A. O Markdown é escapado para Pango, não HTML interpretado.

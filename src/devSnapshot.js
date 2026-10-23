@@ -21,7 +21,7 @@ const nextSignal = (obj, signal, pred = () => true) => new Promise(resolve => {
 
 // Componentes que alteram arquivos (renomeiam, reescrevem transcrições): só rodam no
 // ambiente isolado do tools/snapshot.sh, conferido ANTES de qualquer alteração.
-var MUTATING_COMPONENTS = ['detailpanecheck', 'sidebarcheck', 'windowcheck'];
+var MUTATING_COMPONENTS = ['detailpanecheck', 'sidebarcheck', 'windowcheck', 'summarycheck'];
 
 const hasDotSegment = path => path.split('/').some(part => part === '.' || part === '..');
 const trimSlashes = path => path.replace(/\/+$/, '');
@@ -1827,6 +1827,42 @@ const windowCheckComponent = (params, { window }) => {
 // simples do tamanho pedido. `ready` (Promise) adia a captura até o componente terminar
 // de carregar (ex.: picos da onda); `cleanup` roda antes de sair.
 var COMPONENTS = {
+    summarycheck: (_params, { window }) => {
+        assertSandboxed();
+        if (!GLib.getenv('DAILY_TAKER_OP_KEY'))
+            throw new Error('summarycheck exige DAILY_TAKER_OP_KEY e autorização explícita para API real');
+        const ready = libraryReady(window._recordingList).then(async items => {
+            assertSandboxed();
+            const { loadTranscript } = imports.transcriptStore;
+            const { getSummary } = imports.transcript;
+            const recording = items[0];
+            if (recording?.name !== 'Daily · Projeto Atlas')
+                throw new Error('summarycheck exige a fixture Atlas isolada');
+            await selectInWindow(window, recording);
+            const before = loadTranscript(recording.file);
+            const summary = await window.summaryService.run({ file: recording.file, transcript: before });
+            const after = loadTranscript(recording.file);
+            if (JSON.stringify(after.words) !== JSON.stringify(before.words) ||
+                getSummary(after)?.text !== summary.text ||
+                after.summary_history[0]?.text !== getSummary(before)?.text ||
+                window._detailPane.displayedSummary?.text !== summary.text)
+                throw new Error('summarycheck: persistência ou atualização da aba falhou');
+            if (summary.cost_usd > 0.03)
+                throw new Error(`summarycheck: custo excedeu US$ 0,03 (${summary.cost_usd})`);
+            window._detailPane.tab = 'resumo';
+            window._splitView.show_content = true;
+            await durationKnown(window.playback);
+            await whenMapped(window);
+            window.set_focus(null);
+            print('devSnapshot: summarycheck: ' + JSON.stringify({
+                length: summary.text.length, cost_usd: summary.cost_usd, model: summary.model,
+                sections: Object.fromEntries(['Resumo', 'Decisões', 'Próximos passos', 'Pontos de atenção']
+                    .map(s => [s, summary.text.includes(`## ${s}`)])),
+                persisted: true, words_preserved: true, history_preserved: true, rendered: true,
+            }));
+        });
+        return { widget: window, ready };
+    },
     preferences: (_params, { app }) => {
         assertSandboxed();
         const { PreferencesWindow } = imports.preferences;
@@ -2009,9 +2045,11 @@ var maybeSnapshot = (window, params = snapshotParams()) => {
         target = new Adw.ApplicationWindow({ application: app, content: target });
     target.set_default_size(params.width, params.height);
 
+    const readyTimeoutMs = params.component === 'summarycheck'
+        ? imports.summarizer.SUMMARY_TIMEOUT_SEC * 1000 + READY_TIMEOUT_MS : READY_TIMEOUT_MS;
     const timeout = new Promise((_resolve, reject) => {
-        GLib.timeout_add(GLib.PRIORITY_DEFAULT, READY_TIMEOUT_MS, () => {
-            reject(new Error(`componente não ficou pronto em ${READY_TIMEOUT_MS} ms`));
+        GLib.timeout_add(GLib.PRIORITY_DEFAULT, readyTimeoutMs, () => {
+            reject(new Error(`componente não ficou pronto em ${readyTimeoutMs} ms`));
             return GLib.SOURCE_REMOVE;
         });
     });

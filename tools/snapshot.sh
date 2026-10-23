@@ -150,6 +150,11 @@ optional=()
 for v in TZ GSK_RENDERER DAILY_TAKER_SNAPSHOT_SABOTAGE; do
     [ -z "${!v:-}" ] || optional+=("$v=${!v}")
 done
+# Só este componente explicitamente autorizado recebe a chave; nunca nos logs ou em disco.
+if [ "$component" = 'summarycheck' ]; then
+    [ -n "${DAILY_TAKER_OP_KEY:-}" ] || die "summarycheck exige DAILY_TAKER_OP_KEY"
+    optional+=("DAILY_TAKER_OP_KEY=$DAILY_TAKER_OP_KEY")
+fi
 set +e
 env -i \
     PATH="$PATH" \

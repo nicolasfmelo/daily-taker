@@ -13,6 +13,8 @@ quando você pede, gera a transcrição com separação de locutores.
   selecionada na lista ao parar.
 - **Gerar transcrição** (sob demanda): envia o áudio ao OpenRouter e salva o
   resultado ao lado do áudio, em `<gravação>.transcript.json`.
+- **Gerar resumo** (sob demanda): resume o texto da transcrição com
+  `anthropic/claude-sonnet-5.5`, após confirmar custo e envio ao OpenRouter.
 - Ouve a gravação com a transcrição sincronizada, renomeia, exporta e exclui
   (com desfazer).
 
@@ -22,8 +24,8 @@ Janela única, tema escuro com acento laranja:
 
 - **Cabeçalho**: ícone e "Daily Taker", **Nova gravação** (Ctrl+R),
   **Preferências** (Ctrl+,) e o menu (atalhos de teclado, Sobre).
-- **Sidebar "Gravações"** (à esquerda): busca **por nome e pelo conteúdo da
-  transcrição** (sem diferenciar acentos nem maiúsculas), lista agrupada por data
+- **Sidebar "Gravações"** (à esquerda): busca **por nome, transcrição e resumo
+  atual** (sem diferenciar acentos nem maiúsculas), lista agrupada por data
   (HOJE, ONTEM, ESTA SEMANA, …) com o selo da transcrição (● Transcrita,
   Transcrevendo…, ● Erro), menu ⋮ por item (Renomear, Gerar/Gerar novamente,
   Exportar áudio, Excluir) e o botão de exportar o áudio da selecionada.
@@ -33,7 +35,13 @@ Janela única, tema escuro com acento laranja:
   só o texto) e Exportar (`.md`/`.txt`). Clicar num bloco pula o áudio para ele
   e toca; o nome do locutor é clicável para renomear. Sem transcrição, um cartão
   mostra o custo estimado e o botão **Gerar transcrição**.
-- **Aba Resumo**: ainda "em breve" (o resumo com IA é o próximo plano).
+- **Aba Resumo**: títulos, listas e negrito com renderização segura; texto
+  selecionável, modelo/data/custo no rodapé e **Copiar resumo** (Markdown).
+  O menu ⋮ permite gerar novamente e abrir **Versões anteriores…**, consultar,
+  copiar e restaurar uma versão. A atual vai para o histórico (até 20 anteriores).
+  Exportar `.md` inclui o resumo atual; `.txt` continua sendo a transcrição.
+  Renomear locutor/gravação e regenerar transcrição preservam resumo e histórico,
+  mas não atualizam automaticamente seu conteúdo.
 - **Player único** (embaixo do painel): play/pausa, onda clicável e arrastável,
   posição/duração, velocidade (0,75x a 2x), volume (clique no ícone = mudo) e
   **Acompanhar áudio** (rola a transcrição junto). Velocidade, volume e o toggle
@@ -41,7 +49,8 @@ Janela única, tema escuro com acento laranja:
 - **Excluir** manda a gravação (áudio, transcrição e forma de onda) para a
   **lixeira do sistema** depois de 8 s, com **Desfazer** no aviso; várias
   exclusões seguidas têm cada uma o seu Desfazer. Fechar o app confirma as
-  pendentes. Excluir e renomear ficam bloqueados durante a transcrição.
+  pendentes. Excluir e renomear ficam bloqueados durante a transcrição ou o
+  resumo; um resumo pago ainda não salvo também precisa ser salvo antes disso.
 - **Janela estreita**: abaixo de 1000 px a sidebar fica com 300 px (o selo
   mostra só o ponto) e o painel compacto; abaixo de 720 px a sidebar recolhe:
   escolher uma gravação abre o painel, com o botão Voltar para a lista.
@@ -98,16 +107,29 @@ correspondente; o áudio não é afetado.
 
 ## Chave da API
 
-A transcrição usa o [OpenRouter](https://openrouter.ai/). Informe sua chave em
+A transcrição e o resumo usam o [OpenRouter](https://openrouter.ai/). Informe sua chave em
 **Menu > Preferências** (ela fica no chaveiro do sistema e nunca é exibida de
 volta), ou defina a variável de ambiente `DAILY_TAKER_OP_KEY` antes de abrir o
 aplicativo. Em Preferências também é possível testar e remover a chave.
+
+O **Modelo do resumo** é configurável em Preferências (padrão:
+`anthropic/claude-sonnet-5.5`). O custo típico de uma reunião de 1 h fica em torno
+de US$ 0,02–0,05, dependendo do tamanho do texto e da saída. A confirmação
+estima a entrada e até 2.000 tokens de saída; para outro modelo, mostra
+“Custo estimado indisponível” em vez de aplicar o preço do modelo padrão.
 
 ## Privacidade
 
 Nada sai do seu computador por conta própria. O áudio de uma gravação só é
 enviado ao OpenRouter quando você clica em **Gerar transcrição** (ou
 **Gerar novamente**), e cada geração é cobrada pelo OpenRouter na sua conta.
+O texto da transcrição só é enviado ao OpenRouter ao pedir **Gerar resumo**
+e confirmar o diálogo de custo/privacidade. Nada é enviado ao trocar de aba.
+Falhas de rede/timeout do resumo não têm retentativa automática; “Tentar de novo”
+exige nova confirmação. Há retry automático apenas em 429/502/503/504.
+Se o resumo já foi pago e só a gravação em disco falhou, o texto fica em memória
+e tentar de novo **só salva**, sem nova cobrança. Essa cópia não salva é perdida
+ao fechar o app.
 
 ## Testes
 

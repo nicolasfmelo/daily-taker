@@ -161,6 +161,32 @@ fone de ouvido.
 - [ ] **Português.** Menu, *Sobre*, atalhos (Ctrl+?), cartões, avisos e dicas dos
   botões. Esperado: tudo em português com acentos corretos.
 
+## Resumo da reunião
+
+- [ ] **Gerar e confirmar.** Com transcrição, abrir Resumo e Gerar resumo.
+  Conferir modelo, custo e “O texto da transcrição será enviado ao OpenRouter.”
+  Cancelar não envia nada; confirmar gera uma vez, mesmo após clique duplo.
+- [ ] **Sem chave.** Gerar resumo abre Preferências sem chamada à API.
+- [ ] **Modelo configurável.** Alterar Modelo do resumo: só grava ao Enter ou
+  sair do foco. Vazio, `abc def` ou `x<y>` voltam ao padrão. Outro modelo válido
+  informa custo indisponível e continua exigindo confirmação.
+- [ ] **Rede indisponível.** Sem retentativa automática por rede/timeout.
+  “Tentar de novo” reabre a confirmação; sem isso, nenhuma nova cobrança.
+- [ ] **Falha no disco.** Resumo pago retido e exclusão/renomeação bloqueadas;
+  retry só salva sem chamar API. Ao trocar de gravação e voltar, erro e retry
+  continuam disponíveis.
+- [ ] **Copiar e exportar.** Copiar resumo cola Markdown da versão exibida;
+  `.md` inclui o resumo atual salvo e `.txt` continua só com a transcrição.
+- [ ] **Preservar.** Renomear locutor/gravação ou regenerar a transcrição mantém
+  resumo e histórico. Gerar outro resumo arquiva o anterior.
+- [ ] **Versões.** Abrir Versões anteriores, selecionar, copiar e restaurar:
+  a atual é arquivada, a restaurada aparece como atual sem perder as demais.
+- [ ] **Busca.** Termo exclusivo do resumo atual aparece na busca da sidebar;
+  termo exclusivo de versão antiga não aparece.
+- [ ] **Texto longo/hostil.** Resumo longo rola, títulos e listas são legíveis;
+  `<b>&` não é interpretado como markup cru; não há conteúdo vazio por falha
+  de Pango. Conferir também em janela estreita.
+
 ## Gravações com transcrição
 
 - [ ] **Renomear.** Renomear uma gravação que tem transcrição. Esperado: o
