@@ -83,8 +83,14 @@ bash tools/snapshot.sh OUT.png [--component window|windowcheck|playerbar|transcr
     proporção use `--size 1160x766` e amplie 1,3×. Ex.:
     `bash tools/snapshot.sh /tmp/a.png --select 1 --at 34` (o alvo da mockup) e
     `bash tools/snapshot.sh /tmp/n.png --select 1 --size 600x900` (recolhida).
-  - `windowcheck`: verificação da janela inteira na cópia das fixtures. Imprime
-    `PASS`/`FAIL` por verificação: depois do primeiro map a sidebar aquece o
+  - `windowcheck`: verificação da janela inteira na cópia das fixtures.
+    Também confere resumo salvo/sem transcrição, confirmação única sem markup,
+    geração falsa sem rede, troca de seleção, retry de rede e de disco (sem nova
+    cobrança), preservação ao editar/regenerar/mover, lista real de versões,
+    clipboard, restauração, exportação do disco, busca e remoção externa.
+    `DAILY_TAKER_SNAPSHOT_SABOTAGE=summary bash tools/snapshot.sh OUT.png --component windowcheck`
+    remove o resumo só da visão no primeiro passo: deve imprimir uma `FAIL` e não gerar PNG.
+    Imprime `PASS`/`FAIL` por verificação: depois do primeiro map a sidebar aquece o
     cache da busca (a primeira busca não lê transcrição nenhuma); estado do painel de cada fixture (3 prontas, a
     4ª sem transcrição, com custo estimado); trocar de gravação com outra tocando
     para o áudio anterior (e continua parado 400 ms depois); clique num bloco

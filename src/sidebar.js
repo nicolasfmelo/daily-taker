@@ -145,10 +145,11 @@ var Sidebar = GObject.registerClass({
 }, class Sidebar extends Gtk.Box {
     // `warmSearch` (padrão true): depois do primeiro `map`, lê em segundo plano as
     // transcrições da lista para a primeira busca não travar (ver warmSearchCache).
-    _init({ recordingList, transcriptionService, settings = null, warmSearch = true, ...params } = {}) {
+    _init({ recordingList, transcriptionService, summaryService = null, settings = null, warmSearch = true, ...params } = {}) {
         super._init(params);
         this._store = recordingList;
         this._service = transcriptionService;
+        this._summaryService = summaryService;
         this._settings = settings;
         this._selected = null;
         this._query = '';
@@ -270,8 +271,12 @@ var Sidebar = GObject.registerClass({
     // Reavalia o selo do item da gravação `uri` (se estiver visível).
     refreshStatus(uri) {
         const recording = this._visible.find(r => r.uri === uri);
-        if (recording)
-            this._rowFor(recording)?.setBadge(statusBadge(this._statusOf(recording)));
+        if (recording) {
+            const row = this._rowFor(recording);
+            row?.setBadge(statusBadge(this._statusOf(recording)));
+            if (row?.menuButton.active && row.menuButton.menu_model)
+                this._fillMenu(row.menuButton, recording);
+        }
     }
 
     // A transcrição de `uri` mudou no disco: relê quando precisar (selo e busca).
@@ -465,14 +470,20 @@ var Sidebar = GObject.registerClass({
     // transcrição; gerar também enquanto a duração não é conhecida (rowActions).
     _allowed(recording) {
         return rowActions({
-            status: this._service.status(recording.file),
+            status: this._summaryBlocked(recording) ? 'running' : this._service.status(recording.file),
             seconds: recording.duration / 1e9,
             editMode: false,
         });
     }
 
+    _summaryBlocked(recording) {
+        return this._summaryService?.status(recording.file) === 'running' ||
+            Boolean(this._summaryService?.hasUnsaved(recording.file));
+    }
+
     _deleteBlocked(recording) {
-        return this._service.status(recording.file) === 'running' || this._service.hasUnsaved(recording.file);
+        return this._service.status(recording.file) === 'running' || this._service.hasUnsaved(recording.file) ||
+            this._summaryBlocked(recording);
     }
 
     _fillMenu(button, recording) {

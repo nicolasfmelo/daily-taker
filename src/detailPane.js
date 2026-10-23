@@ -15,6 +15,13 @@ const { getSummaryHistory } = imports.transcript;
 const { formatDateTime } = imports.transcriptFormat;
 const { formatUsd } = imports.transcriptionUi;
 
+const summaryMetadata = summary => ({
+    model: typeof summary.model === 'string' && summary.model ? summary.model : 'modelo desconhecido',
+    date: formatDateTime(summary.generated_at) || 'data desconhecida',
+    cost: Number.isFinite(summary.cost_usd) && summary.cost_usd >= 0
+        ? formatUsd(summary.cost_usd) : 'custo indisponível',
+});
+
 const TABS = ['transcricao', 'resumo'];
 const STATUSES = ['none', 'running', 'error', 'ready'];
 
@@ -226,6 +233,7 @@ var DetailPane = GObject.registerClass({
     }
 
     setSummaryHistory(list) {
+        this._summaryHistoryPopover?.popdown();
         this._summaryHistory = getSummaryHistory({ summary_history: list });
         this._summaryVersion = null;
         this._syncSummary();
@@ -233,6 +241,8 @@ var DetailPane = GObject.registerClass({
     }
 
     setSummaryState(state) {
+        if (state === 'running')
+            this._summaryHistoryPopover?.popdown();
         this._summaryStatus = ['none', 'running', 'error'].includes(state) ? state : 'none';
         this._syncSummary();
         this._syncToolbar();
@@ -336,8 +346,9 @@ var DetailPane = GObject.registerClass({
         this._summaryHistoryBanner.sensitive = !busy;
         this._summaryBackButton.visible = this._summaryVersion !== null;
         if (shown) {
-            this._summaryHistoryBanner.title = `Versão de ${formatDateTime(shown.generated_at)}`;
-            this._summaryFooter.label = `Gerado por ${shown.model} em ${formatDateTime(shown.generated_at)} · ${formatUsd(shown.cost_usd)}`;
+            const meta = summaryMetadata(shown);
+            this._summaryHistoryBanner.title = `Versão de ${meta.date}`;
+            this._summaryFooter.label = `Gerado por ${meta.model} em ${meta.date} · ${meta.cost}`;
         }
         if (shown?.text !== this._summaryRendered) {
             this._summaryRendered = shown?.text ?? null;
@@ -354,14 +365,20 @@ var DetailPane = GObject.registerClass({
         const scroll = new Gtk.ScrolledWindow({ child: list, max_content_height: 420,
             propagate_natural_height: true, hscrollbar_policy: Gtk.PolicyType.NEVER });
         const popover = new Gtk.Popover({ child: scroll });
+        this._summaryHistoryPopover = popover;
         popover.set_parent(this._moreButton);
         this._summaryHistory.forEach((s, index) => {
-            const text = `${formatDateTime(s.generated_at)} • ${s.model} • ${formatUsd(s.cost_usd)}`;
+            const meta = summaryMetadata(s);
+            const text = `${meta.date} • ${meta.model} • ${meta.cost}`;
             const row = new Gtk.Button({ child: new Gtk.Label({ label: text, use_markup: false, wrap: true }) });
             row.connect('clicked', () => { this.showSummaryVersion(index); popover.popdown(); });
             list.append(row);
         });
-        popover.connect('closed', () => popover.unparent());
+        popover.connect('closed', () => {
+            if (this._summaryHistoryPopover === popover)
+                this._summaryHistoryPopover = null;
+            popover.unparent();
+        });
         popover.popup();
     }
 

@@ -788,6 +788,8 @@ const windowComponent = (params, { window }) => {
             if (!recording)
                 throw new Error(`não há gravação ${n} nas fixtures (há ${items.length})`);
             await selectInWindow(window, recording);
+            if (params.summaryState || params.summaryVersion)
+                applySummaryParams(window._detailPane, imports.transcriptStore.loadTranscript(recording.file), params);
         }
         if (params.tab)
             window._detailPane.tab = params.tab;
@@ -822,6 +824,228 @@ const windowComponent = (params, { window }) => {
             `painel: ${window._detailPane._state}; recolhida: ${window._splitView.collapsed}`);
     });
     return { widget: window, ready };
+};
+
+const checkWindowSummary = async (window, { check, select, daily, sem, copyFixture }) => {
+    assertSandboxed();
+    const Store = imports.transcriptStore;
+    const { getSummary, getSummaryHistory } = imports.transcript;
+    const { TranscribeError } = imports.transcriber;
+    const pane = window._detailPane;
+    const original = Store.loadTranscript(daily.file);
+    const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+    await select(daily);
+    pane.tab = 'resumo';
+    if (GLib.getenv('DAILY_TAKER_SNAPSHOT_SABOTAGE') === 'summary')
+        pane.setSummary(null);
+    check(pane._summaryStack.visible_child_name === 'ready' &&
+        pane.displayedSummary?.text === original.summary.text, 'resumo: seleção lê resultado salvo');
+    await select(sem);
+    check(pane._summaryStack.visible_child_name === 'no-transcript' && !pane._copyButton.sensitive,
+        'resumo: sem transcrição orienta e bloqueia copiar');
+    const service = window.summaryService;
+    if (!service)
+        throw new Error('SummaryService não ligado à janela');
+    const controller = window._summary;
+    const transcriber = window.transcriptionService;
+    const saved = { key: service._getKey, summarize: service._summarize, save: service._save,
+        controllerKey: controller._getKey, prefs: controller._openPreferences,
+        transcribe: transcriber._transcribe, transcriberKey: transcriber._getKey };
+    let calls = 0;
+    let prefs = 0;
+    let result = null;
+    const output = text => ({ text, model: 'modelo-fixture', generated_at: new Date().toISOString(), cost_usd: 0.02 });
+    const confirm = () => {
+        const dialog = controller._dialogs.get(daily.uri);
+        if (!dialog)
+            throw new Error('confirmação do resumo ausente');
+        check(!dialog.heading_use_markup && !dialog.body_use_markup &&
+            dialog.body.includes('O texto da transcrição será enviado ao OpenRouter.'),
+        'resumo: confirmação honesta sem markup');
+        dialog.response('summarize');
+        dialog.close();
+    };
+    const done = async () => {
+        const pending = service._running.get(daily.uri);
+        if (pending)
+            await pending.catch(() => {});
+        await sleep(10);
+    };
+    try {
+        service._getKey = () => ({ key: 'fixture' });
+        controller._getKey = () => null;
+        controller._openPreferences = () => { prefs++; };
+        controller.request(sem);
+        check(prefs === 1 && calls === 0, 'resumo: sem chave abre Preferências sem API');
+        controller._getKey = () => ({ key: 'fixture' });
+        controller.request(sem);
+        check(controller._dialogs.size === 0, 'resumo: sem transcrição não abre confirmação');
+        await select(daily);
+        let release;
+        service._summarize = () => {
+            calls++;
+            return new Promise(resolve => { release = resolve; });
+        };
+        pane.emit('summary-requested', true);
+        pane.emit('summary-requested', true);
+        check(controller._dialogs.size === 1 && calls === 0, 'resumo: duplo clique abre só um diálogo, não envia antes de confirmar');
+        confirm();
+        await sleep(0);
+        check(service.status(daily.file) === 'running' && calls === 1 &&
+            pane._summaryStack.visible_child_name === 'ready' && pane._summaryBanner.revealed &&
+            !pane._summaryRegenerateAction.enabled && !pane._historyAction.enabled,
+        'resumo: running mantém anterior e bloqueia ações pagas/histórico');
+        window._deleteRecording(daily);
+        check(window._indexOf(daily) >= 0 && !window._deleteQueue.has(daily) &&
+            window._deleteRefusal(daily)?.includes('resumo'),
+        'resumo: excluir durante geração é recusado');
+        check(!window._renameRecording(daily, 'Não renomear resumo'), 'resumo: renomear durante geração é recusado');
+        await select(sem);
+        check(pane._summaryStack.visible_child_name === 'no-transcript', 'resumo: trocar seleção não vaza resultado');
+        await select(daily);
+        check(pane._summaryBanner.revealed, 'resumo: voltar à geração restaura banner');
+        result = output('## Resumo\n\nResultado exclusivoresumo **seguro** <b>&"x"\n\n## Decisões\n\n- Testar.');
+        release(result);
+        await done();
+        let disk = Store.loadTranscript(daily.file);
+        check(same(disk.words, original.words) && same(disk.summary, result) &&
+            same(disk.summary_history[0], original.summary) && pane.displayedSummary.text === result.text,
+        'resumo: geração salva, arquiva anterior e mantém palavras');
+
+        service._summarize = async () => { calls++; throw new TranscribeError('network'); };
+        pane.emit('summary-requested', true);
+        confirm();
+        await done();
+        check(service.status(daily.file) === 'error' && pane._summaryBanner.revealed &&
+            pane._summaryBanner.button_label === 'Tentar de novo',
+        'resumo: erro preserva anterior e oferece retry');
+        const beforeRetry = calls;
+        pane._summaryBanner.emit('button-clicked');
+        service._summarize = async () => { calls++; return output('## Resumo\n\nApós retry'); };
+        confirm();
+        await done();
+        check(calls === beforeRetry + 1 && service.status(daily.file) === 'none',
+            'resumo: retry de rede exige confirmação e chama API de novo uma vez');
+
+        service._save = () => { throw new Error('disco simulado'); };
+        pane.emit('summary-requested', true);
+        confirm();
+        await done();
+        const paidCalls = calls;
+        window._deleteRecording(daily);
+        check(service.hasUnsaved(daily.file) && window._indexOf(daily) >= 0 &&
+            window._deleteRefusal(daily)?.includes('resumo pago'),
+        'resumo: pago não salvo impede exclusão');
+        service._save = saved.save;
+        pane._summaryBanner.emit('button-clicked');
+        await done();
+        check(calls === paidCalls && !service.hasUnsaved(daily.file) && controller._dialogs.size === 0,
+            'resumo: retry de disco só salva, sem diálogo nem nova cobrança');
+
+        disk = Store.loadTranscript(daily.file);
+        const summary = disk.summary;
+        const history = disk.summary_history;
+        pane.view._applySpeakerName(daily.file, 0, 'Ana <&');
+        disk = Store.loadTranscript(daily.file);
+        check(same(disk.summary, summary) && same(disk.summary_history, history) && disk.speakers['0'] === 'Ana <&',
+            'resumo: renomear locutor preserva resumo e histórico do disco');
+        transcriber._getKey = () => ({ key: 'fixture' });
+        transcriber._transcribe = async () => ({ ...original, text: 'Transcrição regenerada', words: original.words });
+        window._transcription._run(daily, { regenerate: true });
+        await transcriber._running.get(daily.uri);
+        await sleep(10);
+        disk = Store.loadTranscript(daily.file);
+        check(same(disk.summary, summary) && same(disk.summary_history, history) &&
+            disk.text === 'Transcrição regenerada', 'resumo: regenerar transcrição preserva ambas as versões');
+
+        pane._historyAction.activate(null);
+        const versions = pane._summaryHistoryPopover;
+        check(Boolean(versions?.get_visible()), 'resumo: menu Versões anteriores abre lista real');
+        const findButton = widget => {
+            if (widget instanceof Gtk.Button)
+                return widget;
+            for (let child = widget.get_first_child(); child; child = child.get_next_sibling()) {
+                const found = findButton(child);
+                if (found)
+                    return found;
+            }
+            return null;
+        };
+        findButton(versions).emit('clicked');
+        await sleep(200);
+        const previous = history[0];
+        check(pane.displayedSummary.text === previous.text && pane._summaryHistoryBanner.revealed,
+            'resumo: selecionar versão mostra banner e texto anterior');
+        pane._summaryCopyAction.activate(null);
+        const copied = await new Promise((resolve, reject) => pane.get_clipboard().read_text_async(null, (clipboard, res) => {
+            try { resolve(clipboard.read_text_finish(res)); } catch (e) { reject(e); }
+        }));
+        check(copied === previous.text, 'resumo: clipboard recebe a versão exibida em Markdown');
+        pane._summaryHistoryBanner.emit('button-clicked');
+        disk = Store.loadTranscript(daily.file);
+        check(same(disk.summary, previous) && same(disk.summary_history[0], summary) &&
+            pane.displayedSummary.text === previous.text && !pane._summaryHistoryBanner.revealed,
+        'resumo: restaurar troca atual/histórico e relê a aba');
+        check(imports.transcriptViewModel.exportContent(daily.file, 'md').includes('## Resumo'),
+            'resumo: exportação Markdown relê o disco');
+
+        const movedName = daily.name;
+        check(window._renameRecording(daily, 'Atlas com resumo') &&
+            same(Store.loadTranscript(daily.file).summary, previous) &&
+            same(Store.loadTranscript(daily.file).summary_history, disk.summary_history),
+        'resumo: renomear gravação move resumo/histórico sem perda');
+        window._renameRecording(daily, movedName);
+        Store.saveSummary(daily.file, output('## Resumo\n\nBusca exclusivoresumo.'));
+        window._onSummaryDone(daily.file);
+        window._sidebar.setQuery('exclusivoresumo');
+        check(window._sidebar._visible.length === 1 && window._sidebar._visible[0] === daily,
+            'resumo: busca da sidebar encontra termo exclusivo');
+        window._sidebar.setQuery('');
+        pane.setSummaryHistory([]);
+        check(!pane._historyAction.enabled, 'resumo: sem histórico desabilita versões anteriores');
+
+        const gone = copyFixture(daily, 'Resumo removido externamente', true);
+        if (!(gone.duration > 0))
+            await nextSignal(gone, 'notify::duration');
+        let finishGone;
+        service._summarize = () => new Promise(resolve => { finishGone = resolve; });
+        const pending = service.run({ file: gone.file, transcript: Store.loadTranscript(gone.file) }).catch(e => e);
+        await sleep(0);
+        gone.file.trash(null);
+        Store.transcriptFileFor(gone.file).trash(null);
+        window._recordingList.remove(window._indexOf(gone));
+        finishGone(output('Não salvar órfão'));
+        const error = await pending;
+        check(error.kind === 'recordingGone' && !Store.transcriptFileFor(gone.file).query_exists(null) &&
+            !service.hasUnsaved(gone.file), 'resumo: remoção externa durante geração não cria JSON órfão');
+        gone.cancelDiscovery();
+
+        pane.setSummary(output('## ' + 'x'.repeat(10000) + '\n\n<script>&"x"\n\n**sem fechar\n\n- `código`'));
+        const labels = pane._summaryView._blocks;
+        check(labels.get_first_child().label.length <= 2001 &&
+            labels.get_first_child().get_next_sibling().label === '&lt;script&gt;&amp;&quot;x&quot;',
+        'resumo: superfície real escapa saída hostil e limita títulos enormes');
+        pane.setSummary({ text: 'Resumo antigo sem metadados' });
+        check(pane._summaryFooter.label.includes('custo indisponível') &&
+            !pane._summaryFooter.label.includes('undefined'),
+        'resumo: metadados incompletos não quebram a aba nem prometem custo zero');
+    } finally {
+        for (const dialog of controller._dialogs.values()) { dialog.response('cancel'); dialog.close(); }
+        controller._dialogs.clear();
+        service._getKey = saved.key;
+        service._summarize = saved.summarize;
+        service._save = saved.save;
+        controller._getKey = saved.controllerKey;
+        controller._openPreferences = saved.prefs;
+        transcriber._transcribe = saved.transcribe;
+        transcriber._getKey = saved.transcriberKey;
+        service._failed.clear();
+        Store.saveTranscript(daily.file, original);
+        window._sidebar.invalidateTranscript(daily.uri);
+        await select(sem);
+        await select(daily);
+        pane.tab = 'transcricao';
+    }
 };
 
 // Verificação da janela inteira na cópia das fixtures (renomeia, manda para a lixeira do
@@ -912,6 +1136,7 @@ const windowCheckComponent = (params, { window }) => {
         }
         check(pane._costLabel.visible && pane._costLabel.label.startsWith('Custo estimado'),
             `sem transcrição: custo estimado no cartão ("${pane._costLabel.label}")`);
+        await checkWindowSummary(window, { check, select, daily, sem, copyFixture });
 
         // 2. Trocar de gravação com outra tocando: o áudio anterior para.
         await select(daily);

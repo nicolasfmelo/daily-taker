@@ -38,6 +38,13 @@ const { defaultKeyStore } = imports.secrets;
 const { transcribeFile } = imports.transcriber;
 const { exportFileName } = imports.transcriptFormat;
 const { loadTranscript, saveTranscriptKeepingSummary, transcriptFileFor } = imports.transcriptStore;
+const { getSummary, getSummaryHistory } = imports.transcript;
+const { saveSummary, restoreSummaryAt } = imports.transcriptStore;
+const { summarizeTranscript } = imports.summarizer;
+const { SummaryService } = imports.summaryService;
+const { SummaryController } = imports.summaryController;
+const { summaryConfirmMessage } = imports.summaryUi;
+const { normalizeSummaryModel } = imports.preferencesLogic;
 const { exportContent, exportExtension } = imports.transcriptViewModel;
 const { TranscriptionService } = imports.transcriptionService;
 const { TranscriptionController } = imports.transcriptionController;
@@ -127,12 +134,36 @@ var Window = GObject.registerClass({
             onDone: file => this._onTranscriptionDone(file),
             onFailed: (recording, message) => this._onTranscriptionFailed(recording, message),
         });
+        this.summaryService = new SummaryService({
+            getKey: () => defaultKeyStore().get(),
+            getModel: () => this._summaryModel(),
+            summarize: summarizeTranscript,
+            save: guardedSave((file, summary) => {
+                if (!saveSummary(file, summary))
+                    throw new Error('Transcrição ausente');
+            }, { isRemoved: file => this._deleteQueue.pending().some(r => r.file.equal(file)) }),
+            now: () => new Date(),
+        });
+        this._summary = new SummaryController({
+            parent: this, service: this.summaryService, getModel: () => this._summaryModel(),
+            showToast: toast => this._toastOverlay.add_toast(toast),
+            openPreferences: () => this.application.activate_action('preferences', null),
+            hasRecording: recording => this._indexOf(recording) >= 0,
+            canRequest: recording => !this._isTranscribing(recording),
+            getTranscript: recording => loadTranscript(recording.file),
+            onDone: file => this._onSummaryDone(file),
+            onFailed: (recording, message) => {
+                if (recording === this._selected)
+                    this._detailPane.setSummaryError(message);
+            },
+        });
 
         // Player único: criado uma vez; velocidade e volume salvos são aplicados pelo bind.
         this.playback = new Playback(playbackOptions);
         this._sidebar = new Sidebar({
             recordingList: this._recordingList,
             transcriptionService: this.transcriptionService,
+            summaryService: this.summaryService,
         });
         this._sidebarPage.child = this._sidebar;
         this._detailPane = new DetailPane();
@@ -160,6 +191,7 @@ var Window = GObject.registerClass({
         this._track(this._recordingList, 'notify::loaded', () => this._syncLibrary());
         // Um único ouvinte do serviço na janela (a sidebar cuida dos próprios selos).
         this.transcriptionService.connectChange((uri, status) => this._onTranscriptionChanged(uri, status));
+        this.summaryService.connectChange((uri, status) => this._onSummaryChanged(uri, status));
         this._setupDates();
         this._setupHeaderLayout();
 
@@ -221,6 +253,7 @@ var Window = GObject.registerClass({
         this._teardown('formas de onda', () => this._cancelPeaks());
         // Uma transcrição em andamento não segura o fechamento: é simplesmente abandonada.
         this._teardown('transcrição', () => this._transcription.close());
+        this._teardown('resumo', () => this._summary.close());
         this._teardown('temporizador', () => {
             if (this._midnightId) {
                 GLib.source_remove(this._midnightId);
@@ -301,6 +334,8 @@ var Window = GObject.registerClass({
         const sidebar = this._sidebar;
         sidebar.connect('recording-selected', (_s, recording) => this._onRecordingSelected(recording));
         sidebar.connect('transcribe-requested', (_s, recording, regenerate) => {
+            if (this.summaryService.status(recording.file) === 'running')
+                return;
             this._transcription.request(recording, {
                 regenerate,
                 namedSpeakers: regenerate && hasNamedSpeakers(loadTranscript(recording.file)),
@@ -316,6 +351,8 @@ var Window = GObject.registerClass({
     _connectPane() {
         const pane = this._detailPane;
         pane.connect('generate-requested', (_p, regenerate) => {
+            if (this._selected && this.summaryService.status(this._selected.file) === 'running')
+                return;
             if (this._selected)
                 this._transcription.request(this._selected, this._generateOptions(regenerate));
         });
@@ -324,6 +361,15 @@ var Window = GObject.registerClass({
                 this._transcription.retry(this._selected, this._generateOptions(pane.view.transcript !== null));
         });
         pane.connect('export-requested', (_p, ext) => this._exportTranscript(ext));
+        pane.connect('summary-requested', (_p, regenerate) => {
+            if (this._selected)
+                this._summary.request(this._selected, { regenerate });
+        });
+        pane.connect('summary-retry-requested', () => {
+            if (this._selected)
+                this._summary.retry(this._selected);
+        });
+        pane.connect('summary-restore-requested', (_p, index) => this._restoreSummary(index));
         pane.connect('new-recording-requested', () => this.recorderWidget.actionsGroup.activate_action('start', null));
         pane.view.connect('seek-requested', (_v, seconds) => this._seekAndPlay(seconds));
     }
@@ -394,7 +440,12 @@ var Window = GObject.registerClass({
         const pane = this._detailPane;
         // Ordem do painel: setRecording → setTranscript → setState.
         pane.setRecording(next);
-        pane.setTranscript(next ? loadTranscript(next.file) : null);
+        const transcript = next ? loadTranscript(next.file) : null;
+        pane.setTranscript(transcript);
+        pane.setSummary(getSummary(transcript));
+        pane.setSummaryHistory(getSummaryHistory(transcript));
+        pane.setSummaryState(next ? this.summaryService.status(next.file) : 'none');
+        pane.setSummaryError(next ? this._summary.failureMessage(next) : '');
         pane.setErrorMessage(next ? this._transcription.failureMessage(next) : '');
         pane.setState(next ? this._statusOf(next) : 'none');
         this._syncCost();
@@ -481,6 +532,8 @@ var Window = GObject.registerClass({
     _syncCost() {
         const recording = this._selected;
         this._detailPane.setCostText(recording ? confirmMessage(recording.duration / 1e9).body : '');
+        this._detailPane.setSummaryCost(recording
+            ? summaryConfirmMessage(this._detailPane.view.transcript, this._summaryModel()).body : '');
     }
 
     // --- Biblioteca ---
@@ -569,7 +622,11 @@ var Window = GObject.registerClass({
         const recording = this._selected;
         if (!recording || !recording.file.equal(file))
             return;
-        this._detailPane.setTranscript(loadTranscript(recording.file));
+        const transcript = loadTranscript(recording.file);
+        this._detailPane.setTranscript(transcript);
+        this._detailPane.setSummary(getSummary(transcript));
+        this._detailPane.setSummaryHistory(getSummaryHistory(transcript));
+        this._syncCost();
         this._detailPane.setState(this._statusOf(recording));
     }
 
@@ -578,10 +635,60 @@ var Window = GObject.registerClass({
             this._detailPane.setErrorMessage(message);
     }
 
+    _summaryModel() {
+        return normalizeSummaryModel(Settings.get_string('summary-model'));
+    }
+
+    _onSummaryChanged(uri, status) {
+        if (this._closed)
+            return;
+        this._sidebar.refreshStatus(uri);
+        if (this._renameDialog?.recording.uri === uri)
+            this._renameDialog.validate();
+        this._syncActions();
+        if (this._selected?.uri === uri)
+            this._detailPane.setSummaryState(status);
+        if (status === 'none') {
+            const recording = this._selected;
+            this._sidebar.invalidateTranscript(uri);
+            if (recording?.uri === uri)
+                this._onSummaryDone(recording.file);
+        }
+    }
+
+    _onSummaryDone(file) {
+        if (this._closed)
+            return;
+        this._sidebar.invalidateTranscript(file.get_uri());
+        if (!this._selected?.file.equal(file))
+            return;
+        const transcript = loadTranscript(file);
+        this._detailPane.setSummary(getSummary(transcript));
+        this._detailPane.setSummaryHistory(getSummaryHistory(transcript));
+        this._detailPane.setSummaryState(this.summaryService.status(file));
+        this._syncCost();
+    }
+
+    _restoreSummary(index) {
+        const recording = this._selected;
+        if (!recording || this._isTranscribing(recording) ||
+            this.summaryService.status(recording.file) === 'running')
+            return;
+        try {
+            guardedSave((file, i) => restoreSummaryAt(file, i), {
+                isRemoved: file => this._deleteQueue.pending().some(r => r.file.equal(file)),
+            })(recording.file, index);
+            this._onSummaryDone(recording.file);
+        } catch (e) {
+            this.addToast('Não foi possível restaurar a versão do resumo.');
+        }
+    }
+
     // --- Exportar, renomear, excluir ---
 
     _exportTranscript(ext) {
-        const transcript = this._detailPane.view.transcript;
+        const recording = this._selected;
+        const transcript = recording ? loadTranscript(recording.file) : null;
         if (!transcript)
             return;
         const dialog = new Gtk.FileDialog({
@@ -599,7 +706,7 @@ var Window = GObject.registerClass({
                 return;
             }
             try {
-                const content = exportContent(transcript, exportExtension(file.get_basename(), ext));
+                const content = exportContent(recording.file, exportExtension(file.get_basename(), ext));
                 file.replace_contents(new TextEncoder().encode(content), null, false,
                     Gio.FileCreateFlags.REPLACE_DESTINATION, null);
                 this.addToast('Transcrição exportada');
@@ -637,8 +744,9 @@ var Window = GObject.registerClass({
     _showRenameDialog(recording) {
         if (this._closed || !recording || this._indexOf(recording) < 0)
             return;
-        if (this._isTranscribing(recording)) {
-            this.addToast(RENAME_BUSY_MESSAGE);
+        const refusal = this._renameRefusal(recording);
+        if (refusal) {
+            this.addToast(refusal);
             return;
         }
         const entry = new Gtk.Entry({ text: recording.name, activates_default: true, hexpand: true });
@@ -657,8 +765,7 @@ var Window = GObject.registerClass({
         dialog.default_response = 'rename';
         dialog.close_response = 'cancel';
         const validate = () => {
-            const problem = this._isTranscribing(recording)
-                ? RENAME_BUSY_MESSAGE : recordingNameProblem(entry.text);
+            const problem = this._renameRefusal(recording) ?? recordingNameProblem(entry.text);
             dialog.body = problem ?? '';
             dialog.set_response_enabled('rename', !problem && entry.text.trim() !== '');
             if (problem)
@@ -684,6 +791,16 @@ var Window = GObject.registerClass({
         return this.transcriptionService.status(recording.file) === 'running';
     }
 
+    _renameRefusal(recording) {
+        if (this._isTranscribing(recording))
+            return RENAME_BUSY_MESSAGE;
+        if (this.summaryService.status(recording.file) === 'running')
+            return 'Aguarde o resumo terminar para renomear.';
+        if (this.summaryService.hasUnsaved(recording.file))
+            return 'Há um resumo pago que ainda não foi salvo. Toque em Tentar de novo antes de renomear.';
+        return null;
+    }
+
     // Devolve true se renomeou. Vazio ou igual: nada. O player (recarregado na URI nova,
     // pausado na mesma posição), o painel e a sidebar seguem a gravação (notify::name).
     _renameRecording(recording, text) {
@@ -696,8 +813,9 @@ var Window = GObject.registerClass({
             return false;
         }
         // O serviço grava ao lado do arquivo antigo: renomear durante a transcrição a perderia.
-        if (this._isTranscribing(recording)) {
-            this.addToast(RENAME_BUSY_MESSAGE);
+        const refusal = this._renameRefusal(recording);
+        if (refusal) {
+            this.addToast(refusal);
             return false;
         }
         try {
@@ -720,6 +838,10 @@ var Window = GObject.registerClass({
             return DELETE_BUSY_MESSAGE;
         if (this.transcriptionService.hasUnsaved(recording.file))
             return DELETE_UNSAVED_MESSAGE;
+        if (this.summaryService.status(recording.file) === 'running')
+            return 'Aguarde o resumo terminar para excluir.';
+        if (this.summaryService.hasUnsaved(recording.file))
+            return 'Há um resumo pago que ainda não foi salvo. Toque em Tentar de novo antes de excluir.';
         return null;
     }
 
@@ -885,7 +1007,7 @@ var Window = GObject.registerClass({
         }) : { rename: false };
         for (const name of ['play-pause', 'seek-backward', 'seek-forward', 'delete', 'export-audio'])
             this._actions[name].enabled = on;
-        this._actions.rename.enabled = on && allowed.rename;
+        this._actions.rename.enabled = on && allowed.rename && !this._renameRefusal(recording);
     }
 
     _togglePlay(recording) {

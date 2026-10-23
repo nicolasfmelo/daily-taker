@@ -147,7 +147,7 @@ else
         --virtual-monitor "$size" -- "$gjs_bin" "$work/launcher")
 fi
 optional=()
-for v in TZ GSK_RENDERER; do
+for v in TZ GSK_RENDERER DAILY_TAKER_SNAPSHOT_SABOTAGE; do
     [ -z "${!v:-}" ] || optional+=("$v=${!v}")
 done
 set +e

@@ -4,17 +4,21 @@
 const { blockIndexAt } = imports.transcript;
 const { copyText, toMarkdown } = imports.transcriptFormat;
 const { normalize } = imports.transcriptSearch;
+const { loadTranscript } = imports.transcriptStore;
 
 const EXPORTERS = {
     md: t => toMarkdown(t),
     txt: t => copyText(t, { withSpeakers: true }),
 };
 
-var exportContent = (t, ext) => {
+var exportContent = (recordingFile, ext) => {
     const exporter = EXPORTERS[ext];
     if (!exporter)
         throw new Error(`Formato de exportação desconhecido: ${ext}`);
-    return exporter(t);
+    const transcript = loadTranscript(recordingFile);
+    if (!transcript)
+        throw new Error('Não foi possível ler a transcrição para exportar.');
+    return exporter(transcript);
 };
 
 // O nome escolhido no diálogo manda quando termina em .md/.txt; senão vale o item do menu.

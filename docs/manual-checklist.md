@@ -136,9 +136,17 @@ fone de ouvido.
   excluir e renomear aquela gravação. Esperado: aviso "Aguarde a transcrição
   terminar para excluir." / "… para renomear."; nada muda; depois de terminar,
   funciona.
-- [ ] **Aba Resumo.** Clicar em *Resumo*. Esperado: "Resumo em breve" com o botão
-  *Gerar resumo* desligado (sem transcrição: "Gere a transcrição primeiro"); as
-  abas têm o mesmo peso de fonte ao passar o mouse e com o foco.
+- [ ] **Aba Resumo.** Clicar em *Resumo*. Sem transcrição: "Gere a transcrição
+  primeiro". Com transcrição: custo estimado e aviso de privacidade antes de
+  *Gerar resumo*; nada enviado até confirmar. Depois: títulos, listas, negrito,
+  modelo/data/custo e texto selecionável; cópia usa o Markdown do resumo.
+- [ ] **Histórico do resumo.** Gerar outro, abrir ⋮ → *Versões anteriores…*,
+  selecionar uma e copiar. *Restaurar esta versão* a torna atual e arquiva a
+  anterior; *Voltar à atual* não altera o disco.
+- [ ] **Resumo pago protegido.** Durante a geração e após falha ao salvar,
+  excluir é recusado. Retry de salvamento não chama API nem cobra de novo.
+  Renomear locutor, regenerar transcrição e renomear gravação preservam resumo
+  e histórico. A busca da sidebar encontra texto exclusivo do resumo atual.
 - [ ] **Gerar novamente.** ⋮ do painel → *Gerar novamente*. Esperado: o diálogo
   avisa a nova cobrança e a perda dos nomes de locutor; durante a geração um
   aviso escuro "Gerando novamente…" fica sobre a transcrição antiga; em falha,

@@ -23,22 +23,32 @@ const makeTranscript = (extra, words) => Object.assign({
     ],
 }, extra);
 
-const { toMarkdown, copyText } = imports.transcriptFormat;
+const { Gio, GLib } = imports.gi;
+const Store = imports.transcriptStore;
 
-test('exportContent: md usa o Markdown e txt o texto com locutores', () => {
-    const t = makeTranscript();
-    assert.equal(VM.exportContent(t, 'md'), toMarkdown(t));
-    assert.equal(VM.exportContent(t, 'txt'), copyText(t, { withSpeakers: true }));
-});
-
-test('exportContent: ambos começam pelo cabeçalho com data e hora', () => {
-    const t = makeTranscript();
-    assert.equal(VM.exportContent(t, 'md').startsWith('# Daily 22/10\n\n- 22/10/2026 · 14:30'), true);
-    assert.equal(VM.exportContent(t, 'txt').startsWith('Daily 22/10\n22/10/2026 · 14:30'), true);
-});
-
-test('exportContent: extensão desconhecida é erro', () => {
-    assert.throws(() => VM.exportContent(makeTranscript(), 'pdf'));
+test('exportação relê resumo pago salvo depois da abertura da visão; txt continua só transcrição', () => {
+    const root = Gio.File.new_for_path(GLib.Dir.make_tmp('daily-taker-export-test-XXXXXX'));
+    const file = root.get_child('fixture');
+    try {
+        Store.saveTranscript(file, makeTranscript());
+        const staleView = Store.loadTranscript(file);
+        Store.saveSummary(file, { text: 'Decisão posterior', model: 'fixture',
+            generated_at: '2026-10-22T18:00:00Z', cost_usd: 0.02 });
+        const md = VM.exportContent(file, 'md');
+        assert.equal(staleView.summary, undefined);
+        assert.equal(md.includes('## Resumo\n\nDecisão posterior'), true);
+        assert.equal(md.indexOf('## Resumo') < md.indexOf('### Ana'), true);
+        const txt = VM.exportContent(file, 'txt');
+        assert.equal(txt.includes('Decisão posterior'), false);
+        assert.equal(txt.includes('Ana · 00:00:01\nBom dia'), true);
+        assert.throws(() => VM.exportContent(file, 'pdf'));
+        Store.transcriptFileFor(file).delete(null);
+        assert.throws(() => VM.exportContent(file, 'md'));
+    } finally {
+        if (Store.transcriptFileFor(file).query_exists(null))
+            Store.transcriptFileFor(file).delete(null);
+        root.delete(null);
+    }
 });
 
 test('exportExtension: a extensão do nome escolhido vence a do menu', () => {
