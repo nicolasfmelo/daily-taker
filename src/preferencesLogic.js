@@ -1,7 +1,8 @@
-/* exported describeKeySource removeOutcome languageToIndex indexToLanguage */
+/* exported describeKeySource removeOutcome languageToIndex indexToLanguage normalizeSummaryModel */
 // Lógica pura (sem GTK) da tela de preferências, para ser testável em gjs puro.
 // Nada aqui devolve ou inclui a chave da API.
 
+const { DEFAULT_SUMMARY_MODEL } = imports.summarizer;
 var LANGUAGES = ['pt', 'auto'];
 
 // info: resultado de KeyStore.get() ({key, source}) ou null.
@@ -32,3 +33,8 @@ var languageToIndex = language => {
 };
 
 var indexToLanguage = index => LANGUAGES[index] ?? LANGUAGES[0];
+
+var normalizeSummaryModel = text => {
+    const value = typeof text === 'string' ? text.trim() : '';
+    return /^[A-Za-z0-9._:/-]+$/.test(value) ? value : DEFAULT_SUMMARY_MODEL;
+};

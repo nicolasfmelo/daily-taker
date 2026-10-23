@@ -1584,6 +1584,26 @@ const windowCheckComponent = (params, { window }) => {
 // simples do tamanho pedido. `ready` (Promise) adia a captura até o componente terminar
 // de carregar (ex.: picos da onda); `cleanup` roda antes de sair.
 var COMPONENTS = {
+    preferences: (_params, { app }) => {
+        assertSandboxed();
+        const { PreferencesWindow } = imports.preferences;
+        const { Settings } = imports.application;
+        const prefs = new PreferencesWindow({ application: app });
+        const row = prefs._summaryModelRow;
+        const model = Settings.get_string('summary-model');
+        row.text = 'openai/gpt-5';
+        if (Settings.get_string('summary-model') !== model)
+            throw new Error('modelo foi salvo a cada tecla');
+        row.emit('entry-activated');
+        if (Settings.get_string('summary-model') !== 'openai/gpt-5')
+            throw new Error('Enter não salvou o modelo');
+        row.text = 'x<y>';
+        row.emit('entry-activated');
+        if (Settings.get_string('summary-model') !== 'anthropic/claude-sonnet-5.5')
+            throw new Error('modelo inválido não voltou ao padrão');
+        print('devSnapshot: preferences: edição adiada, Enter e normalização OK');
+        return prefs;
+    },
     window: windowComponent,
     windowcheck: windowCheckComponent,
     playerbar: playerBarComponent,

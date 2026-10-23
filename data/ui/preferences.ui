@@ -10,7 +10,7 @@
         <child>
           <object class="AdwPreferencesGroup" id="keyGroup">
             <property name="title">Chave da API do OpenRouter</property>
-            <property name="description">A chave é usada para transcrever as gravações. Ela nunca é exibida aqui.</property>
+            <property name="description">A chave é usada para transcrever e resumir. Ela nunca é exibida aqui.</property>
             <child>
               <object class="AdwActionRow" id="envRow">
                 <property name="visible">False</property>
@@ -85,6 +85,19 @@
                     </items>
                   </object>
                 </property>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
+          <object class="AdwPreferencesGroup">
+            <property name="title">Resumo</property>
+            <property name="description">Padrão: anthropic/claude-sonnet-5.5</property>
+            <child>
+              <object class="AdwEntryRow" id="summaryModelRow">
+                <property name="title">Modelo do resumo</property>
+                <property name="use_markup">False</property>
+                <property name="tooltip_text">Padrão: anthropic/claude-sonnet-5.5</property>
               </object>
             </child>
           </object>

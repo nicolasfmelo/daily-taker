@@ -69,4 +69,11 @@ test('languageToIndex / indexToLanguage', () => {
     assert.equal(P.indexToLanguage(7), 'pt');
 });
 
+test('modelo do resumo aceita identificadores, rejeita espaços internos e markup', () => {
+    const model = 'anthropic/claude-sonnet-5.5';
+    for (const text of [null, '', '  ', 'abc def', 'x<y>', ' a\tb ', ` ${model} `])
+        assert.equal(P.normalizeSummaryModel(text), model);
+    assert.equal(P.normalizeSummaryModel('openai/gpt-5'), 'openai/gpt-5');
+});
+
 finish();

@@ -1,10 +1,10 @@
 /* exported PreferencesWindow */
-const { Adw, GObject } = imports.gi;
+const { Adw, GObject, Gtk } = imports.gi;
 
 const { Settings } = imports.application;
 const { defaultKeyStore } = imports.secrets;
 const { checkApiKey } = imports.transcriber;
-const { describeKeySource, removeOutcome, languageToIndex, indexToLanguage } = imports.preferencesLogic;
+const { describeKeySource, removeOutcome, languageToIndex, indexToLanguage, normalizeSummaryModel } = imports.preferencesLogic;
 
 // A chave nunca é exibida, registrada em log nem colocada em toast: o campo de entrada
 // começa sempre vazio e só serve para digitar uma chave nova.
@@ -12,7 +12,7 @@ var PreferencesWindow = GObject.registerClass({
     Template: 'resource:///dev/nicolas/DailyTaker/ui/preferences.ui',
     InternalChildren: [
         'envRow', 'saveEnvButton', 'keyRow', 'statusRow', 'spinner',
-        'removeButton', 'testButton', 'saveButton', 'languageRow',
+        'removeButton', 'testButton', 'saveButton', 'languageRow', 'summaryModelRow',
     ],
 }, class PreferencesWindow extends Adw.PreferencesWindow {
 
@@ -30,6 +30,17 @@ var PreferencesWindow = GObject.registerClass({
         this._languageRow.connect('notify::selected', row => {
             Settings.set_string('language', indexToLanguage(row.selected));
         });
+
+        this._summaryModelRow.text = normalizeSummaryModel(Settings.get_string('summary-model'));
+        const saveModel = () => {
+            const model = normalizeSummaryModel(this._summaryModelRow.text);
+            this._summaryModelRow.text = model;
+            Settings.set_string('summary-model', model);
+        };
+        this._summaryModelRow.connect('entry-activated', saveModel);
+        const focus = new Gtk.EventControllerFocus();
+        focus.connect('leave', saveModel);
+        this._summaryModelRow.add_controller(focus);
 
         this._keyRow.connect('changed', () => this._updateSensitivity());
         this._keyRow.connect('entry-activated', () => this._onSave());

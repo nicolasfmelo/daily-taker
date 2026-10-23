@@ -59,6 +59,9 @@ bash tools/snapshot.sh OUT.png [--component window|windowcheck|playerbar|transcr
   demais são renderizados sozinhos numa janela simples, com dados de fixture;
   são registrados em `COMPONENTS` em `src/devSnapshot.js`. Um nome não
   registrado falha com mensagem clara e sem PNG.
+  - `preferences`: Preferências reais, sem chave e com GSettings em memória;
+    confere edição adiada, Enter e modelo inválido antes da captura.
+    Ex.: `bash tools/snapshot.sh OUT.png --component preferences --size 680x800`.
   - `window`: a janela mestre-detalhe real (`src/window.js`) com a biblioteca das
     fixtures. Espera a varredura da pasta (`RecordingList.loaded`) e as durações.
     `--select N` seleciona a gravação N da lista (1 = "Daily · Projeto Atlas"; 4 =

@@ -19,6 +19,11 @@
       <summary>Idioma da transcrição</summary>
       <description>Idioma enviado ao serviço de transcrição: "pt" para português ou "auto" para detecção automática.</description>
     </key>
+    <key name="summary-model" type="s">
+      <default>'anthropic/claude-sonnet-5.5'</default>
+      <summary>Modelo do resumo</summary>
+      <description>Modelo do OpenRouter usado ao gerar o resumo sob demanda.</description>
+    </key>
     <key name="playback-rate" type="d">
       <range min="0.75" max="2"/>
       <default>1.0</default>
