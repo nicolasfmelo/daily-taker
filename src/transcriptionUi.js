@@ -112,8 +112,8 @@ var failureMessage = (error, plan) => {
     return plan === 'save' ? `${message} Tentar de novo só salva, sem nova cobrança.` : message;
 };
 
-// Um nome terminado em .transcript.json esconderia o áudio da lista (seria lido como
-// transcrição) na próxima abertura.
-var recordingNameProblem = name => isTranscriptFileName(name)
-    ? 'O nome da gravação não pode terminar em ".transcript.json".'
-    : null;
+// Os dois formatos reservados são filtrados da biblioteca na próxima abertura.
+var recordingNameProblem = name => !isTranscriptFileName(name) ? null
+    : name.includes('.transcript.json.unreadable-')
+        ? 'O nome da gravação não pode conter ".transcript.json.unreadable-".'
+        : 'O nome da gravação não pode terminar em ".transcript.json".';

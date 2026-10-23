@@ -48,7 +48,7 @@ const { normalizeSummaryModel } = imports.preferencesLogic;
 const { exportContent, exportExtension } = imports.transcriptViewModel;
 const { TranscriptionService } = imports.transcriptionService;
 const { TranscriptionController } = imports.transcriptionController;
-const { confirmMessage, guardedSave, hasNamedSpeakers, recordingNameProblem, rowActions, rowStatus } =
+const { confirmMessage, guardedSave, hasNamedSpeakers, recordingNameProblem, rowStatus } =
     imports.transcriptionUi;
 const { DeleteQueue } = imports.deleteQueue;
 const { stripIconFromLayout } = imports.headerLayout;
@@ -232,12 +232,14 @@ var Window = GObject.registerClass({
     }
 
     _confirmDiscard(recording, controller) {
-        if (this._closed || this._discardDialog)
+        if (this._closed || this._discardDialog || !controller._service.hasUnsaved(recording.file) ||
+            controller._service.status(recording.file) === 'running')
             return;
         const file = recording.file;
+        const result = controller === this._transcription ? 'a transcrição paga não salva' : 'o resumo pago não salvo';
         const dialog = new Adw.MessageDialog({
-            transient_for: this, modal: true, heading: 'Descartar resultado pago?',
-            body: 'Descartar o resultado pago que não foi salvo? Isso não pode ser desfeito.',
+            transient_for: this, modal: true, heading: `Descartar ${result}?`,
+            body: `Descartar ${result}? Isso não pode ser desfeito.`,
             heading_use_markup: false, body_use_markup: false,
         });
         dialog.add_response('cancel', 'Cancelar');
@@ -879,14 +881,14 @@ var Window = GObject.registerClass({
     }
 
     _renameRefusal(recording) {
-        if (this._isTranscribing(recording))
-            return RENAME_BUSY_MESSAGE;
         if (this.transcriptionService.hasUnsaved(recording.file))
             return 'Há uma transcrição paga ainda não salva. Toque em Tentar de novo antes de renomear.';
-        if (this.summaryService.status(recording.file) === 'running')
-            return 'Aguarde o resumo terminar para renomear.';
         if (this.summaryService.hasUnsaved(recording.file))
             return 'Há um resumo pago que ainda não foi salvo. Toque em Tentar de novo antes de renomear.';
+        if (this._isTranscribing(recording))
+            return RENAME_BUSY_MESSAGE;
+        if (this.summaryService.status(recording.file) === 'running')
+            return 'Aguarde o resumo terminar para renomear.';
         return null;
     }
 
@@ -925,14 +927,14 @@ var Window = GObject.registerClass({
     // com Desfazer): excluir espera ela terminar. Paga e ainda não salva (o disco falhou): só
     // existe na memória; excluir a perderia ao confirmar: o usuário salva antes ("Tentar de novo").
     _deleteRefusal(recording) {
-        if (this._isTranscribing(recording))
-            return DELETE_BUSY_MESSAGE;
         if (this.transcriptionService.hasUnsaved(recording.file))
             return DELETE_UNSAVED_MESSAGE;
-        if (this.summaryService.status(recording.file) === 'running')
-            return 'Aguarde o resumo terminar para excluir.';
         if (this.summaryService.hasUnsaved(recording.file))
             return 'Há um resumo pago que ainda não foi salvo. Toque em Tentar de novo antes de excluir.';
+        if (this._isTranscribing(recording))
+            return DELETE_BUSY_MESSAGE;
+        if (this.summaryService.status(recording.file) === 'running')
+            return 'Aguarde o resumo terminar para excluir.';
         return null;
     }
 
@@ -1105,14 +1107,9 @@ var Window = GObject.registerClass({
         const recording = this._closed ? null : this._selected;
         const browsing = this._state !== WindowState.RECORDER;
         const on = browsing && recording !== null;
-        const allowed = recording ? rowActions({
-            status: this.transcriptionService.status(recording.file),
-            seconds: recording.duration / 1e9,
-            editMode: false,
-        }) : { rename: false };
         for (const name of ['play-pause', 'seek-backward', 'seek-forward', 'delete', 'export-audio'])
             this._actions[name].enabled = on;
-        this._actions.rename.enabled = on && allowed.rename && !this._renameRefusal(recording);
+        this._actions.rename.enabled = on;
     }
 
     _togglePlay(recording) {

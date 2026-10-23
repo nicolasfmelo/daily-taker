@@ -245,6 +245,9 @@ test('recordingNameProblem: recusa nome que termina em .transcript.json', () => 
     assert.equal(U.recordingNameProblem('Daily'), null);
     assert.equal(U.recordingNameProblem('notas.json'), null);
     assert.equal(U.recordingNameProblem('Reunião P&D <revisão>'), null);
+    const backupProblem = U.recordingNameProblem('Daily.transcript.json.unreadable-123');
+    assert.equal(backupProblem.includes('conter'), true);
+    assert.equal(backupProblem.includes('.transcript.json.unreadable-'), true);
 });
 
 finish();

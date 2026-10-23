@@ -207,8 +207,8 @@ fone de ouvido.
   transcrição, o item da sidebar e o nome sugerido na exportação passam a usar
   "Daily 22/10"; a busca por "daily" encontra a gravação.
 - [ ] **Nome inválido.** Tentar renomear uma gravação para um nome que termine em
-  `.transcript.json`. Esperado: o nome é recusado com um aviso curto e a
-  gravação não é renomeada.
+  `.transcript.json` ou contenha `.transcript.json.unreadable-`. Esperado: aviso
+  explica o formato reservado correto e a gravação não é renomeada.
 - [ ] **Colisão de transcrição.** Se o destino já tem sidecar ou backup ilegível,
   renomear é recusado com aviso; áudio, transcrição original e órfão ficam intactos.
   Uma falha ao mover o áudio reverte o sidecar ao caminho original.
@@ -222,12 +222,14 @@ fone de ouvido.
 - [ ] **Launcher repetido.** Ativar o launcher duas vezes durante uma operação:
   a mesma janela é apresentada, sem criar outra ou interromper o trabalho.
 - [ ] **Renomear após falha ao salvar.** Com transcrição ou resumo pago retido,
-  renomear pela janela, F2 e menu é recusado; um diálogo já aberto se bloqueia.
+  renomear pela janela, F2 e menu é recusado com aviso (F2 continua acionável);
+  um diálogo já aberto se bloqueia.
   Após Tentar de novo salvar, renomear leva o resultado ao nome novo sem cobrar.
 
 - [ ] **Descartar resultado pago retido.** Recusar excluir/renomear oferece
-  Descartar…; Cancelar mantém resultado, confirmar descarta só a memória e libera
-  as operações. Resumo sem transcrição salvável oferece descarte, não retry infinito.
+  Descartar…; toast e confirmação nomeiam exatamente a mesma transcrição/resumo,
+  mesmo se o outro serviço estiver rodando. Cancelar mantém resultado; confirmar
+  descarta só o nomeado. Resumo sem transcrição salvável não oferece retry infinito.
 - [ ] **JSON corrompido.** Regenerar sobre JSON corrompido ou versão inválida.
   Esperado: transcrição completa salva; bytes antigos preservados em
   `.transcript.json.unreadable-<timestamp>`, invisível na biblioteca. Alterações

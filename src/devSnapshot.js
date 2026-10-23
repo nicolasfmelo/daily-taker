@@ -1275,9 +1275,9 @@ const windowCheckComponent = (params, { window }) => {
             dialog.get_extra_child().text = 'Não perder dados';
             busy._unsaved.set(daily.uri, {});
             busy._emit(daily.uri, 'error');
-            check(!dialog.get_response_enabled('rename') && !window.lookup_action('rename').enabled &&
+            check(!dialog.get_response_enabled('rename') && window.lookup_action('rename').enabled &&
                 !sidebar._allowed(daily).rename,
-            'resultado retido com diálogo aberto bloqueia validação, F2 e menu');
+            'resultado retido bloqueia confirmação/menu, mas mantém F2 acionável para explicar recusa');
             const refusedBefore = toasts.length;
             sidebar.activate_action('sidebar.rename', new GLib.Variant('s', daily.uri));
             check(toasts.length === refusedBefore + 1 && busy.hasUnsaved(daily.file),
@@ -1289,6 +1289,35 @@ const windowCheckComponent = (params, { window }) => {
             busy._emit(daily.uri, 'none');
         }
         const disk = loadTranscript(daily.file);
+        for (const [retained, running, noun] of [
+            [window.transcriptionService, window.summaryService, 'a transcrição paga não salva'],
+            [window.summaryService, window.transcriptionService, 'o resumo pago não salvo'],
+        ]) {
+            retained._unsaved.set(daily.uri, { text: 'resultado pago retido' });
+            running._running.set(daily.uri, Promise.resolve());
+            retained._emit(daily.uri, 'error');
+            for (const action of ['rename', 'delete']) {
+                window.lookup_action(action).activate(null);
+                const toast = lastToast();
+                check(toast.title.includes(noun.includes('transcrição') ? 'transcrição paga' : 'resumo pago') &&
+                    toast.button_label === 'Descartar…' && !toast.use_markup,
+                'recusa nomeia o mesmo resultado retido do botão, mesmo com outro serviço rodando');
+                toast.emit('button-clicked');
+                const dialog = window._discardDialog;
+                check(dialog.body === `Descartar ${noun}? Isso não pode ser desfeito.` &&
+                    !dialog.body_use_markup && dialog.default_response === 'cancel',
+                'confirmação de descarte nomeia exatamente o resultado anunciado no toast');
+                dialog.response('cancel');
+                check(retained.hasUnsaved(daily.file) && running.hasRunning(),
+                    'cancelar descarte preserva resultado nomeado e operação do outro serviço');
+            }
+            lastToast().emit('button-clicked');
+            window._discardDialog.response('discard');
+            check(!retained.hasUnsaved(daily.file) && running.hasRunning(),
+                'confirmar descarta só o resultado nomeado, sem tocar a outra operação');
+            running._running.delete(daily.uri);
+            running._emit(daily.uri, 'none');
+        }
         const summaryCtl = window._summary;
         const originalTranscript = summaryCtl._getTranscript;
         const originalKey = summaryCtl._getKey;
@@ -1538,13 +1567,14 @@ const windowCheckComponent = (params, { window }) => {
         service._running.set(daily.uri, new Promise(() => {}));
         window._onTranscriptionChanged(daily.uri, 'running');
         check(!dlg.get_response_enabled('rename') && dlg.body === 'Aguarde a transcrição terminar para renomear.' &&
-            !window.lookup_action('rename').enabled, 'transcrição começou com o diálogo aberto: Renomear desligado');
+            window.lookup_action('rename').enabled, 'transcrição começou: confirmação bloqueada e ação F2 disponível para feedback');
         const nToasts = toasts.length;
         dlg.response('rename');
         check(daily.name === 'Daily · Projeto Atlas' && toasts[nToasts] === 'Aguarde a transcrição terminar para renomear.',
             'confirmar mesmo assim: recusado com aviso');
         winAction('win.rename', null);
-        check(window._renameDialog === null, 'win.rename durante a transcrição: nenhum diálogo');
+        check(window._renameDialog === null && toasts[toasts.length - 1] === 'Aguarde a transcrição terminar para renomear.',
+            'win.rename durante transcrição: nenhum diálogo e toast de recusa');
         service._running.delete(daily.uri);
         window._onTranscriptionChanged(daily.uri, 'none');
         check(window.lookup_action('rename').enabled, 'transcrição terminou: renomear ligado de novo');
@@ -1713,9 +1743,11 @@ const windowCheckComponent = (params, { window }) => {
             check(!window._renameRecording(unsaved, 'Não perder resultado') && unsaved.name === retainedName &&
                 service.hasUnsaved(unsaved.file) && !sidebar._allowed(unsaved).rename,
             'transcrição não salva: renomear recusado na janela e no menu, resultado retido');
-            window._showRenameDialog(unsaved);
-            check(window._renameDialog === null && !window.lookup_action('rename').enabled,
-                'transcrição não salva: diálogo e F2 bloqueados');
+            rowOf(unsaved).grab_focus();
+            window.handleShortcutKey(Gdk.KEY_F2, 0);
+            check(window._renameDialog === null && window.lookup_action('rename').enabled &&
+                lastToast().button_label === 'Descartar…' && lastToast().title.includes('transcrição paga'),
+            'F2 com transcrição retida avisa a recusa e oferece descarte confirmado');
             const unsavedMessage = 'Há uma transcrição paga que ainda não foi salva. ' +
                 'Toque em Tentar de novo antes de excluir.';
             const refused = () => list.getIndex(unsaved.file) >= 0 && queue.pending().length === 0 &&
