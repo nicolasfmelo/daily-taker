@@ -1783,6 +1783,19 @@ const windowCheckComponent = (params, { window }) => {
         sidebar.emit('delete-requested', second);
         check(queue.has(fresh) && queue.has(second) && fresh.file.query_exists(null) && second.file.query_exists(null),
             'duas exclusões pendentes antes de fechar');
+        for (const busy of [window.transcriptionService, window.summaryService]) {
+            busy._running.set(daily.uri, Promise.resolve());
+            window.vfunc_close_request();
+            const dialog = window._closeDialog;
+            check(Boolean(dialog) && dialog.default_response === 'cancel' &&
+                dialog.close_response === 'cancel' && !dialog.body_use_markup,
+            'fechar com operação paga pede confirmação segura, Cancelar é padrão');
+            dialog.response('cancel');
+            check(!window._closed && window._closeDialog === null && queue.has(fresh) &&
+                queue.has(second) && closeLog.length === 0,
+            'Cancelar mantém janela e exclusões pendentes intactas');
+            busy._running.delete(daily.uri);
+        }
         const shutdown = window.shutdown;
         window.shutdown = function () {
             const pending = queue.has(fresh) && queue.has(second);
@@ -1824,6 +1837,15 @@ const windowCheckComponent = (params, { window }) => {
             }
             print(`${again ? 'PASS' : 'FAIL'} windowcheck: fechar de novo / fila vazia não lança`);
         };
+        // A confirmação final é respondida somente após a captura e o close() real.
+        window.summaryService._running.set(daily.uri, Promise.resolve());
+        GLib.timeout_add(GLib.PRIORITY_DEFAULT, 50, () => {
+            if (!window._closeDialog)
+                return GLib.SOURCE_CONTINUE;
+            window._closeDialog.response('close');
+            print(`${window._closed ? 'PASS' : 'FAIL'} windowcheck: Fechar mesmo assim prossegue pelo shutdown ordenado`);
+            return GLib.SOURCE_REMOVE;
+        });
 
         // Captura: daily no 00:34.
         await select(daily);

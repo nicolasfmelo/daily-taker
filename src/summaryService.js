@@ -16,6 +16,10 @@ var SummaryService = class SummaryService {
         this._listeners = [];
     }
 
+    hasRunning() {
+        return this._running.size > 0;
+    }
+
     status(file) {
         const uri = file.get_uri();
         return this._running.has(uri) ? 'running' : this._failed.has(uri) ? 'error' : 'none';

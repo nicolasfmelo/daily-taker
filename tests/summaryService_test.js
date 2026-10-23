@@ -88,4 +88,15 @@ testAsync('erro inesperado é sanitizado também no log', async () => {
         assert.equal(logged.length, 1);
     } finally { globalThis.logError = log; }
 });
+testAsync('hasRunning acompanha geração até salvar ou falhar', async () => {
+    let release;
+    const { service } = setup({ summarize: () => new Promise(resolve => { release = resolve; }) });
+    assert.equal(service.hasRunning(), false);
+    const pending = service.run({ file, transcript: {} });
+    assert.equal(service.hasRunning(), true);
+    await Promise.resolve();
+    release(summary);
+    await pending;
+    assert.equal(service.hasRunning(), false);
+});
 finish();

@@ -223,9 +223,35 @@ var Window = GObject.registerClass({
         this._syncActions();
     }
 
-    // Fechar = shutdown(), que destrói a janela e sai num ocioso: a janela não é destruída
-    // pelo caminho padrão (true), então há um único caminho de encerramento.
+    // X e Ctrl+Q passam pela mesma confirmação; cancelar não confirma exclusões.
     vfunc_close_request() {
+        if (this._closed)
+            return true;
+        if (this._closeDialog) {
+            this._closeDialog.present();
+            return true;
+        }
+        if (this.transcriptionService.hasRunning() || this.summaryService.hasRunning()) {
+            const dialog = new Adw.MessageDialog({
+                transient_for: this, modal: true,
+                heading: 'Fechar durante uma operação paga?',
+                body: 'Há uma transcrição (ou resumo) em andamento. Se fechar agora, o resultado já cobrado será perdido. Fechar mesmo assim?',
+                heading_use_markup: false, body_use_markup: false,
+            });
+            dialog.add_response('cancel', 'Cancelar');
+            dialog.add_response('close', 'Fechar mesmo assim');
+            dialog.default_response = 'cancel';
+            dialog.close_response = 'cancel';
+            dialog.set_response_appearance('close', Adw.ResponseAppearance.DESTRUCTIVE);
+            this._closeDialog = dialog;
+            dialog.connect('response', (_dialog, response) => {
+                this._closeDialog = null;
+                if (response === 'close')
+                    this.shutdown();
+            });
+            dialog.present();
+            return true;
+        }
         this.shutdown();
         return true;
     }

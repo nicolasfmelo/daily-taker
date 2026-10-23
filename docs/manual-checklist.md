@@ -204,6 +204,9 @@ fone de ouvido.
 - [ ] **Nome com caracteres especiais.** Renomear uma gravação para
   `Reunião P&D <revisão>` e excluí-la. Esperado: o aviso de exclusão mostra o
   nome inteiro e legível (sem ficar vazio).
+- [ ] **Fechar durante transcrição/resumo.** X e Ctrl+Q pedem confirmação, com
+  Cancelar padrão. Cancelar mantém janela e exclusões pendentes; Fechar mesmo assim
+  confirma exclusões antes de parar os serviços e abandonar o resultado em andamento.
 - [ ] **Launcher repetido.** Ativar o launcher duas vezes durante uma operação:
   a mesma janela é apresentada, sem criar outra ou interromper o trabalho.
 - [ ] **Renomear após falha ao salvar.** Com transcrição ou resumo pago retido,

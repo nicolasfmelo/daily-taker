@@ -19,6 +19,10 @@ var TranscriptionService = class TranscriptionService {
         this._listeners = [];
     }
 
+    hasRunning() {
+        return this._running.size > 0;
+    }
+
     status(recordingFile) {
         const uri = recordingFile.get_uri();
         if (this._running.has(uri))

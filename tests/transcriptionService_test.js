@@ -447,6 +447,17 @@ testAsync('connectChange: listener que lança não quebra a execução nem os ou
     assert.equal(logged.length, 2);
 });
 
+testAsync('hasRunning acompanha operações em qualquer arquivo até sucesso ou falha', async () => {
+    const d = deferred();
+    const { service } = setup({ transcribe: () => d.promise });
+    assert.equal(service.hasRunning(), false);
+    const pending = service.run(args(fakeFile('file:///outro')));
+    assert.equal(service.hasRunning(), true);
+    d.reject(new TranscribeError('network'));
+    await rejection(pending);
+    assert.equal(service.hasRunning(), false);
+});
+
 test('construtor não exige GTK: módulo carrega em gjs puro', () => {
     assert.equal(typeof TranscriptionService, 'function');
 });
