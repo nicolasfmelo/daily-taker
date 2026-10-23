@@ -1307,6 +1307,12 @@ const windowCheckComponent = (params, { window }) => {
                 check(dialog.body === `Descartar ${noun}? Isso não pode ser desfeito.` &&
                     !dialog.body_use_markup && dialog.default_response === 'cancel',
                 'confirmação de descarte nomeia exatamente o resultado anunciado no toast');
+                if (action === 'rename') {
+                    await whenMapped(dialog);
+                    await sleep(100);
+                    const kind = retained === window.transcriptionService ? 'transcription' : 'summary';
+                    savePng(dialog, `${params.output}.discard-${kind}.png`);
+                }
                 dialog.response('cancel');
                 check(retained.hasUnsaved(daily.file) && running.hasRunning(),
                     'cancelar descarte preserva resultado nomeado e operação do outro serviço');
@@ -2069,6 +2075,11 @@ const windowCheckComponent = (params, { window }) => {
                     dialog.default_response === 'cancel' && dialog.close_response === 'cancel' &&
                     !dialog.body_use_markup && !dialog.heading_use_markup,
                 'fechamento com resultado retido, com/sem geração, pede confirmação em texto puro');
+                if (retained === window.transcriptionService) {
+                    await whenMapped(dialog);
+                    await sleep(100);
+                    savePng(dialog, `${params.output}.close-${alsoRunning ? 'combined' : 'unsaved'}.png`);
+                }
                 dialog.response('cancel');
                 check(!window._closed && retained.hasUnsaved(daily.file) &&
                     queue.has(fresh) && queue.has(second) && closeLog.length === 0,
@@ -2126,6 +2137,7 @@ const windowCheckComponent = (params, { window }) => {
         check(window._transcription._dialogs?.size === 1 && window._summary._dialogs.size === 1,
             'transcrição e resumo mantêm só confirmações ainda abertas para o encerramento');
         window.summaryService._running.set(daily.uri, Promise.resolve());
+        window.summaryService._unsaved.set(daily.uri, { text: 'resultado pago retido até confirmar fechamento' });
         GLib.timeout_add(GLib.PRIORITY_DEFAULT, 50, () => {
             if (!window._closeDialog)
                 return GLib.SOURCE_CONTINUE;
