@@ -213,9 +213,11 @@ fone de ouvido.
   renomear pela janela, F2 e menu é recusado; um diálogo já aberto se bloqueia.
   Após Tentar de novo salvar, renomear leva o resultado ao nome novo sem cobrar.
 
-- [ ] **JSON corrompido.** Estragar um `.transcript.json` (por exemplo, apagar
-  metade do arquivo) e reabrir o app. Esperado: o arquivo é ignorado (a gravação
-  aparece sem transcrição), o app não trava e o stderr não mostra exceções.
+- [ ] **JSON corrompido.** Regenerar sobre JSON corrompido ou versão inválida.
+  Esperado: transcrição completa salva; bytes antigos preservados em
+  `.transcript.json.unreadable-<timestamp>`, invisível na biblioteca. Alterações
+  parciais (resumo/locutores/restauração) recusam sem sobrescrever o ilegível.
+  Backups ficam preservados sob o nome original ao renomear/excluir o áudio.
 
 ## Pendências conhecidas
 

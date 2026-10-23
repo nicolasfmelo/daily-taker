@@ -1112,6 +1112,18 @@ const windowCheckComponent = (params, { window }) => {
             app.get_windows().length === 1,
         'reativar launcher duas vezes apresenta a mesma janela principal, sem criar outra');
         const [daily, ideias, notas, sem] = items;
+        const backup = RecordingsDir.get_child('Arquivo.transcript.json.unreadable-123');
+        backup.replace_contents('{ilegível', null, false, Gio.FileCreateFlags.NONE, null);
+        list.dirMonitor.emit_event(backup, null, Gio.FileMonitorEvent.MOVED_IN);
+        const { RecordingList } = imports.recordingList;
+        const rescanned = new RecordingList();
+        await libraryReady(rescanned);
+        check(list.get_n_items() === 4 && rescanned.get_n_items() === 4,
+            'backup unreadable é ignorado pelo monitor e pela varredura da biblioteca');
+        for (let i = 0; i < rescanned.get_n_items(); i++)
+            rescanned.get_item(i).cancelDiscovery();
+        rescanned.cancellable.cancel();
+        rescanned.dirMonitor.cancel();
 
         // 0a. Depois do primeiro map a sidebar aquece o cache da busca em segundo plano: a
         // primeira busca não lê nenhuma transcrição.

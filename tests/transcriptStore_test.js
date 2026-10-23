@@ -199,4 +199,44 @@ test('resumo, locutores, regeneração e mudança de nome preservam dados recent
     assert.deepEqual(S.loadTranscript(dest).summary_history, [summary('B')]);
 }));
 
+for (const invalid of ['{"privado":', JSON.stringify({ ...makeTranscript(), version: 2 })]) {
+    test('atualizações parciais preservam bytes de sidecar inválido: ' + invalid.slice(0, 12), () => withDir(dir => {
+        const rec = touch(dir, 'Daily');
+        const sidecar = S.transcriptFileFor(rec);
+        const bytes = () => imports.byteArray.toString(sidecar.load_contents(null)[1]);
+        for (const update of [
+            () => S.saveSummary(rec, { text: 'Pago' }),
+            () => S.saveSpeakers(rec, { 0: 'Ana' }),
+            () => S.restoreSummaryAt(rec, 0),
+        ]) {
+            sidecar.replace_contents(invalid, null, false, Gio.FileCreateFlags.NONE, null);
+            let failed = false;
+            try { update(); } catch (e) { failed = true; }
+            assert.equal(failed, true);
+            assert.equal(bytes(), invalid);
+        }
+    }));
+    test('transcrição completa recupera sidecar inválido sem perder bytes: ' + invalid.slice(0, 12), () => withDir(dir => {
+        const rec = touch(dir, 'Daily');
+        S.transcriptFileFor(rec).replace_contents(invalid, null, false, Gio.FileCreateFlags.NONE, null);
+        S.saveTranscriptKeepingSummary(rec, makeTranscript(null, { text: 'Nova paga' }));
+        assert.equal(S.loadTranscript(rec).text, 'Nova paga');
+        const en = dir.enumerate_children('standard::name', Gio.FileQueryInfoFlags.NONE, null);
+        const backups = [];
+        for (let info = en.next_file(null); info; info = en.next_file(null)) {
+            const name = info.get_name();
+            if (name.startsWith('Daily.transcript.json.unreadable-'))
+                backups.push(name);
+        }
+        en.close(null);
+        assert.equal(backups.length, 1);
+        assert.equal(S.isTranscriptFileName(backups[0]), true);
+        assert.equal(imports.byteArray.toString(dir.get_child(backups[0]).load_contents(null)[1]), invalid);
+        assert.equal(S.listTranscripts(dir).length, 1);
+        S.moveTranscript(rec, dir.get_child('Renomeada'));
+        assert.equal(dir.get_child(backups[0]).query_exists(null), true);
+        assert.equal(S.loadTranscript(dir.get_child('Renomeada')).text, 'Nova paga');
+    }));
+}
+
 finish();

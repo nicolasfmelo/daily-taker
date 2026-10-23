@@ -1,6 +1,6 @@
 /* exported isTranscriptFileName, transcriptFileFor, saveTranscript, loadTranscript,
             moveTranscript, listTranscripts, saveSummary, restoreSummaryAt, saveSpeakers,
-            saveTranscriptKeepingSummary */
+            saveTranscriptKeepingSummary, TranscriptReadError */
 // Persistência das transcrições ao lado das gravações. Gio/GLib síncronos,
 // sem dependência de GTK ou do módulo application (carregável em gjs puro).
 const { Gio, GLib } = imports.gi;
@@ -9,7 +9,9 @@ const Transcript = imports.transcript;
 
 const SUFFIX = '.transcript.json';
 
-var isTranscriptFileName = name => name.endsWith(SUFFIX);
+var isTranscriptFileName = name => name.endsWith(SUFFIX) || name.includes(`${SUFFIX}.unreadable-`);
+
+var TranscriptReadError = class TranscriptReadError extends Error {};
 
 var transcriptFileFor = recordingFile =>
     recordingFile.get_parent().get_child(`${recordingFile.get_basename()}${SUFFIX}`);
@@ -23,13 +25,18 @@ var saveTranscript = (recordingFile, t) => {
 // Uma leitura parcial não pode tratar erro de disco/JSON como arquivo ausente:
 // isso permitiria sobrescrever dados que não conseguimos ler.
 const readForUpdate = recordingFile => {
+    let contents;
     try {
-        const [, contents] = transcriptFileFor(recordingFile).load_contents(null);
-        return Transcript.parseTranscript(ByteArray.toString(contents));
+        [, contents] = transcriptFileFor(recordingFile).load_contents(null);
     } catch (e) {
         if (e instanceof GLib.Error && e.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.NOT_FOUND))
             return null;
         throw e;
+    }
+    try {
+        return Transcript.parseTranscript(ByteArray.toString(contents));
+    } catch (e) {
+        throw new TranscriptReadError('Transcrição ilegível ou com versão inválida.');
     }
 };
 
@@ -53,7 +60,18 @@ var saveSpeakers = (file, speakers) =>
     updateTranscript(file, t => ({ ...t, speakers: { ...speakers } }));
 
 var saveTranscriptKeepingSummary = (file, t) => {
-    const current = readForUpdate(file);
+    let current;
+    try {
+        current = readForUpdate(file);
+    } catch (e) {
+        if (!(e instanceof TranscriptReadError))
+            throw e;
+        // Só JSON/versão inválidos: erros de I/O nunca autorizam substituir.
+        // Sem OVERWRITE: uma colisão do relógio preserva o backup anterior.
+        const sidecar = transcriptFileFor(file);
+        const backup = sidecar.get_parent().get_child(`${sidecar.get_basename()}.unreadable-${GLib.get_real_time()}`);
+        sidecar.move(backup, Gio.FileCopyFlags.NONE, null, null);
+    }
     const next = Transcript.clearSummary(t);
     delete next.summary_history;
     for (const field of ['summary', 'summary_history']) {
@@ -104,7 +122,7 @@ var listTranscripts = dir => {
     let info;
     while ((info = enumerator.next_file(null))) {
         const name = info.get_name();
-        if (!isTranscriptFileName(name))
+        if (!name.endsWith(SUFFIX))
             continue;
         const recordingFile = dir.get_child(name.slice(0, -SUFFIX.length));
         const transcript = loadTranscript(recordingFile);
