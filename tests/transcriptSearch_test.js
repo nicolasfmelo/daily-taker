@@ -124,4 +124,13 @@ test('excerpt usa words quando existem e colapsa espaços', () => {
     assert.equal(S.excerpt(makeTranscript({ text: 'a  b\n c' })), 'a b c');
 });
 
+test('busca encontra só o resumo atual, não versões anteriores', () => {
+    const t = makeTranscript({
+        summary: { text: 'Decisão exclusiva' },
+        summary_history: [{ text: 'Antiguidade exclusiva' }],
+    });
+    assert.equal(S.searchableText(t).includes('decisao'), true);
+    assert.equal(S.searchableText(t).includes('antiguidade'), false);
+});
+
 finish();

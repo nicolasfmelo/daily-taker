@@ -1,6 +1,6 @@
 /* exported normalize searchableText filterTranscripts excerpt */
 
-const { buildBlocks } = imports.transcript;
+const { buildBlocks, getSummary } = imports.transcript;
 
 var normalize = s => (s ?? '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 
@@ -16,7 +16,7 @@ var searchableText = t => {
         if (block.label)
             names.add(block.label);
     }
-    return normalize([t.title ?? '', ...names, transcriptText(t)].join('\n'));
+    return normalize([t.title ?? '', ...names, transcriptText(t), getSummary(t)?.text ?? ''].join('\n'));
 };
 
 // Dia local inteiro: [00:00:00.000 de from, 23:59:59.999 de to].

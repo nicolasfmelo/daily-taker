@@ -4,7 +4,7 @@ const { formatShortClock, shouldScroll } = imports.playerModel;
 const { speakerClass } = imports.speakerColors;
 const { buildBlocks, renameSpeaker } = imports.transcript;
 const { copyBlock, copyText } = imports.transcriptFormat;
-const { saveTranscript } = imports.transcriptStore;
+const { loadTranscript, saveSpeakers } = imports.transcriptStore;
 const { currentBlockIndex, findMatches, nextIndex, shouldSeekOnClick, speakerEntry } =
     imports.transcriptViewModel;
 
@@ -571,9 +571,14 @@ var TranscriptView = GObject.registerClass({
     }
 
     _applySpeakerName(recordingFile, speaker, name) {
-        const renamed = renameSpeaker(this._transcript, speaker, name);
+        let renamed;
         try {
-            saveTranscript(recordingFile, renamed);
+            const current = loadTranscript(recordingFile);
+            if (!current)
+                throw new Error('Transcrição ausente');
+            renamed = saveSpeakers(recordingFile, renameSpeaker(current, speaker, name).speakers);
+            if (!renamed)
+                throw new Error('Transcrição ausente');
         } catch (e) {
             this._toast('Não foi possível salvar o nome do locutor');
             return;

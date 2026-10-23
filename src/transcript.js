@@ -1,5 +1,6 @@
 /* exported createTranscript buildBlocks renameSpeaker blockIndexAt wordIndexAt
-   parseTranscript stringifyTranscript */
+   parseTranscript stringifyTranscript HISTORY_LIMIT withSummary clearSummary restoreSummary
+   getSummary getSummaryHistory */
 
 var MODEL = 'elevenlabs/scribe-v2';
 
@@ -97,3 +98,40 @@ var parseTranscript = jsonText => {
 };
 
 var stringifyTranscript = t => JSON.stringify(t, null, 2);
+
+var HISTORY_LIMIT = 20;
+const validSummary = s => s && typeof s.text === 'string' && s.text.trim().length > 0;
+
+var getSummary = t => validSummary(t?.summary) ? t.summary : null;
+
+var getSummaryHistory = t => Array.isArray(t?.summary_history)
+    ? t.summary_history.filter(validSummary).slice(0, HISTORY_LIMIT) : [];
+
+var withSummary = (t, summary) => {
+    const current = getSummary(t);
+    const history = getSummaryHistory(t);
+    return {
+        ...t,
+        summary,
+        summary_history: (current ? [current, ...history] : history).slice(0, HISTORY_LIMIT),
+    };
+};
+
+var clearSummary = t => {
+    const { summary, ...rest } = t;
+    return rest;
+};
+
+var restoreSummary = (t, index) => {
+    const history = getSummaryHistory(t);
+    if (!Number.isInteger(index) || index < 0 || index >= history.length)
+        return t;
+    const current = getSummary(t);
+    const restored = history[index];
+    const remaining = history.filter((_, i) => i !== index);
+    return {
+        ...t,
+        summary: restored,
+        summary_history: (current ? [current, ...remaining] : remaining).slice(0, HISTORY_LIMIT),
+    };
+};

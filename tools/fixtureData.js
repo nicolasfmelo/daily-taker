@@ -67,6 +67,27 @@ for (const [name, daysAgo, hour, minute, duration, transcribed] of RECORDINGS) {
             speakers: { '0': 'Nicolas' },
             words: buildWords(),
         };
+        if (name === RECORDINGS[0][0]) {
+            t.summary = {
+                text: '## Resumo\n\nA equipe revisou a captura de áudio e a visualização das transcrições.\n' +
+                    'O objetivo é ouvir e acompanhar o texto sem trocar de tela.\n' +
+                    'Uma versão será preparada para teste amanhã.\n\n' +
+                    '## Decisões\n\n- Manter áudio e texto na mesma tela.\n- Usar horários clicáveis.\n\n' +
+                    '## Próximos passos\n\n- **Locutor 2**: preparar uma versão para amanhã cedo.\n' +
+                    '- Exportar o áudio da reunião de ontem para a pasta do projeto.\n\n' +
+                    '## Pontos de atenção\n\n- Conferir a busca com acentos.',
+                model: 'anthropic/claude-sonnet-5.5',
+                generated_at: recordedAt.add_seconds(duration + 180).format_iso8601(),
+                cost_usd: 0.022,
+            };
+            t.summary_history = [
+                { ...t.summary, text: '## Resumo\n\nVersão anterior: áudio e transcrição integrados.',
+                    generated_at: recordedAt.add_seconds(duration + 150).format_iso8601() },
+                { ...t.summary, text: '## Resumo\n\nPrimeira versão: revisar a interface.',
+                    model: 'openai/gpt-5',
+                    generated_at: recordedAt.add_seconds(duration + 130).format_iso8601() },
+            ];
+        }
         const json = dir.get_child(`${name}.transcript.json`);
         json.replace_contents(stringifyTranscript(t), null, false,
             Gio.FileCreateFlags.REPLACE_DESTINATION, null);

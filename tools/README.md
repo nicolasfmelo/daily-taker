@@ -29,6 +29,8 @@ Cria `DIR/daily-taker/` (o `XDG_DATA_HOME` do app aponta para `DIR`):
   `0` renomeado "Nicolas" e `1` com o nome padrão "Locutor 2". Blocos da mockup
   em 00:00, 00:18, 00:34 e 00:47, seguidos de mais 7 blocos (até ~2:40) para a
   lista rolar. Gerados por `tools/fixtureData.js`.
+  A fixture Atlas também tem `summary` nas quatro seções e duas versões em
+  `summary_history`; as demais continuam sem resumo.
 - A duração exibida pelo app vem do arquivo (GstPbutils.Discoverer); o campo
   `duration` da transcrição tem o mesmo valor nominal. Com `FIXTURE_FAST=1` o
   áudio tem 30 s, então a lista mostra 00:30 — use o modo normal para capturas.

@@ -204,4 +204,44 @@ test('createTranscript preserva type audio_event e tolera resposta mínima', () 
     assert.equal(t.duration, 1);
 });
 
+const summary = text => ({ text, model: 'm', generated_at: '2026-10-22T12:00:00Z', cost_usd: 0.02 });
+
+test('substituir resumo arquiva sem mutar e limita às vinte versões recentes', () => {
+    const original = makeTranscript([]);
+    const a = T.withSummary(original, summary('0'));
+    const b = T.withSummary(a, summary('1'));
+    const c = T.withSummary(b, summary('2'));
+    assert.equal(original.summary, undefined);
+    assert.deepEqual(T.getSummaryHistory(a), []);
+    assert.deepEqual(T.getSummaryHistory(c).map(s => s.text), ['1', '0']);
+    let t = original;
+    for (let i = 0; i <= 25; i++)
+        t = T.withSummary(t, summary(String(i)));
+    assert.equal(T.getSummary(t).text, '25');
+    assert.deepEqual(T.getSummaryHistory(t).map(s => s.text),
+        Array.from({ length: 20 }, (_, i) => String(24 - i)));
+});
+
+test('restaurar troca versão sem perda; limpar mantém histórico; índices inválidos são inertes', () => {
+    const t = { ...makeTranscript([]), summary: summary('C'), summary_history: [summary('B'), summary('A')] };
+    const restored = T.restoreSummary(t, 1);
+    assert.equal(T.getSummary(restored).text, 'A');
+    assert.deepEqual(T.getSummaryHistory(restored).map(s => s.text), ['C', 'B']);
+    assert.equal(T.getSummary(t).text, 'C');
+    for (const index of [-1, 2, 0.5, NaN, '0'])
+        assert.equal(T.restoreSummary(t, index), t);
+    const cleared = T.clearSummary(t);
+    assert.equal(T.getSummary(cleared), null);
+    assert.deepEqual(T.getSummaryHistory(cleared), t.summary_history);
+    assert.equal(T.getSummary(T.restoreSummary(cleared, 0)).text, 'B');
+});
+
+test('leitores de resumo ignoram lixo e texto vazio', () => {
+    for (const value of [undefined, null, {}, { text: '' }, { text: '  ' }, { text: 5 }])
+        assert.equal(T.getSummary({ summary: value }), null);
+    assert.equal(T.getSummary(null), null);
+    assert.deepEqual(T.getSummaryHistory({ summary_history: {} }), []);
+    assert.deepEqual(T.getSummaryHistory({ summary_history: [null, {}, summary('válido')] }), [summary('válido')]);
+});
+
 finish();

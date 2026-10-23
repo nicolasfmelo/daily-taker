@@ -188,4 +188,15 @@ test('exportFileName com recorded_at inválido não imprime undefined', () => {
     assert.equal(name, 'sem-data_daily-22-10.md');
 });
 
+test('Markdown inclui resumo antes dos blocos; cópia da transcrição não muda', () => {
+    const t = makeTranscript();
+    const summary = { text: 'Decisão exclusiva.', model: 'modelo', generated_at: t.recorded_at, cost_usd: 0.02 };
+    const withSummary = { ...t, summary };
+    const md = F.toMarkdown(withSummary);
+    contains(md, '## Resumo\n\nDecisão exclusiva.');
+    contains(md, 'Gerado por modelo em 22/10/2026 · 14:30');
+    assert.equal(md.indexOf('## Resumo') < md.indexOf('### Ana'), true);
+    assert.equal(F.copyText(withSummary), F.copyText(t));
+});
+
 finish();

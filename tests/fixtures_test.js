@@ -118,5 +118,16 @@ test('recusa diretório dentro de ~/.local/share e ~/.config reais', () => {
     assert.equal(run(target, { HOME: '/nonexistent' }).status !== 0, true);
 });
 
+test('fixture Atlas tem resumo nas quatro seções e duas versões anteriores', () => {
+    const t = T.parseTranscript(loadJson(GLib.build_filenamev([data, `${NAMES[0]}.transcript.json`])));
+    const summary = T.getSummary(t);
+    for (const section of ['Resumo', 'Decisões', 'Próximos passos', 'Pontos de atenção'])
+        assert.equal(summary.text.includes(`## ${section}`), true);
+    const history = T.getSummaryHistory(t);
+    assert.equal(history.length, 2);
+    assert.equal(history[0].generated_at > history[1].generated_at, true);
+    assert.equal(history[0].model !== history[1].model, true);
+});
+
 rmTree(tmp);
 finish();

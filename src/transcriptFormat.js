@@ -2,7 +2,7 @@
    exportFileName */
 
 const { GLib } = imports.gi;
-const { buildBlocks } = imports.transcript;
+const { buildBlocks, getSummary } = imports.transcript;
 
 const DEFAULT_TITLE = 'Transcrição';
 const MAX_SLUG = 60;
@@ -68,6 +68,10 @@ var toMarkdown = t => {
     const blocks = buildBlocks(t);
     const [title, ...meta] = headerLines(t, blocks);
     const parts = [`# ${title}`, meta.map(l => `- ${l}`).join('\n')];
+    const summary = getSummary(t);
+    if (summary)
+        parts.push('## Resumo', summary.text,
+            `Gerado por ${summary.model} em ${formatDateTime(summary.generated_at)}`);
     for (const b of blocks)
         parts.push(`### ${blockTitle(b)}`, b.text);
     return `${parts.join('\n\n')}\n`;

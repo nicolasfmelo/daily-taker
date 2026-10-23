@@ -369,6 +369,32 @@ testAsync('arquivos diferentes são independentes', async () => {
     assert.equal(service.status(a), 'error');
 });
 
+testAsync('regeneração pelo serviço preserva resumo e histórico gravados durante a API', async () => {
+    const { Gio, GLib } = imports.gi;
+    const Store = imports.transcriptStore;
+    const dir = Gio.File.new_for_path(GLib.Dir.make_tmp('daily-taker-summary-test-XXXXXX'));
+    const file = dir.get_child('fixture');
+    const json = Store.transcriptFileFor(file);
+    const summary = { text: 'Atual', model: 'm', generated_at: NOW.toISOString(), cost_usd: 0.02 };
+    const history = [{ ...summary, text: 'Anterior' }];
+    try {
+        const d = deferred();
+        const { service } = setup({ transcribe: () => d.promise, save: Store.saveTranscriptKeepingSummary });
+        const pending = service.run(args(file));
+        Store.saveTranscript(file, { version: 1, words: [], summary, summary_history: history });
+        d.resolve(RESPONSE);
+        await pending;
+        const saved = Store.loadTranscript(file);
+        assert.equal(saved.text, 'oi');
+        assert.deepEqual(saved.summary, summary);
+        assert.deepEqual(saved.summary_history, history);
+    } finally {
+        if (json.query_exists(null))
+            json.delete(null);
+        dir.delete(null);
+    }
+});
+
 testAsync('connectChange: running e depois none no sucesso', async () => {
     const { service } = setup();
     const events = [];

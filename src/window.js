@@ -37,7 +37,7 @@ const { msUntilNextDay } = imports.recordingGroups;
 const { defaultKeyStore } = imports.secrets;
 const { transcribeFile } = imports.transcriber;
 const { exportFileName } = imports.transcriptFormat;
-const { loadTranscript, saveTranscript, transcriptFileFor } = imports.transcriptStore;
+const { loadTranscript, saveTranscriptKeepingSummary, transcriptFileFor } = imports.transcriptStore;
 const { exportContent, exportExtension } = imports.transcriptViewModel;
 const { TranscriptionService } = imports.transcriptionService;
 const { TranscriptionController } = imports.transcriptionController;
@@ -112,7 +112,7 @@ var Window = GObject.registerClass({
             getKey: () => defaultKeyStore().get(),
             transcribe: transcribeFile,
             // Uma gravação esperando o "Desfazer" já saiu da biblioteca: nada é salvo ao lado dela.
-            save: guardedSave(saveTranscript, {
+            save: guardedSave(saveTranscriptKeepingSummary, {
                 isRemoved: file => this._deleteQueue.pending().some(r => r.file.equal(file)),
             }),
             language: () => Settings.get_string('language'),

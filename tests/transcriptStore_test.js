@@ -175,4 +175,28 @@ test('listTranscripts ordena por recorded_at decrescente', () => withDir(dir => 
     assert.equal(S.listTranscripts(dir)[0].transcript.recorded_at, '2026-10-23T09:00:00-03:00');
 }));
 
+test('resumo, locutores, regeneração e mudança de nome preservam dados recentes do disco', () => withDir(dir => {
+    const rec = touch(dir, 'Daily');
+    const summary = text => ({ text, model: 'm', generated_at: '2026-10-22T12:00:00Z', cost_usd: 0.02 });
+    assert.equal(S.saveSummary(rec, summary('ausente')), null);
+    assert.equal(S.saveSpeakers(rec, { 0: 'Ana' }), null);
+    assert.equal(S.restoreSummaryAt(rec, 0), null);
+    S.saveTranscript(rec, makeTranscript());
+    S.saveSummary(rec, summary('A'));
+    S.saveSummary(rec, summary('B'));
+    const renamed = S.saveSpeakers(rec, { 0: 'Ana' });
+    assert.equal(renamed.summary.text, 'B');
+    assert.deepEqual(renamed.summary_history, [summary('A')]);
+    S.saveTranscriptKeepingSummary(rec, makeTranscript(null, { text: 'Nova transcrição' }));
+    const regenerated = S.loadTranscript(rec);
+    assert.equal(regenerated.text, 'Nova transcrição');
+    assert.deepEqual(regenerated.summary, summary('B'));
+    assert.deepEqual(regenerated.summary_history, [summary('A')]);
+    const dest = dir.get_child('Renomeada');
+    S.moveTranscript(rec, dest);
+    const restored = S.restoreSummaryAt(dest, 0);
+    assert.deepEqual(restored.summary, summary('A'));
+    assert.deepEqual(S.loadTranscript(dest).summary_history, [summary('B')]);
+}));
+
 finish();

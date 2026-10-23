@@ -1,5 +1,6 @@
 /* exported isTranscriptFileName, transcriptFileFor, saveTranscript, loadTranscript,
-            moveTranscript, listTranscripts */
+            moveTranscript, listTranscripts, saveSummary, restoreSummaryAt, saveSpeakers,
+            saveTranscriptKeepingSummary */
 // Persistência das transcrições ao lado das gravações. Gio/GLib síncronos,
 // sem dependência de GTK ou do módulo application (carregável em gjs puro).
 const { Gio, GLib } = imports.gi;
@@ -17,6 +18,49 @@ var saveTranscript = (recordingFile, t) => {
     transcriptFileFor(recordingFile).replace_contents(
         Transcript.stringifyTranscript(t), null, false,
         Gio.FileCreateFlags.REPLACE_DESTINATION, null);
+};
+
+// Uma leitura parcial não pode tratar erro de disco/JSON como arquivo ausente:
+// isso permitiria sobrescrever dados que não conseguimos ler.
+const readForUpdate = recordingFile => {
+    try {
+        const [, contents] = transcriptFileFor(recordingFile).load_contents(null);
+        return Transcript.parseTranscript(ByteArray.toString(contents));
+    } catch (e) {
+        if (e instanceof GLib.Error && e.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.NOT_FOUND))
+            return null;
+        throw e;
+    }
+};
+
+const updateTranscript = (recordingFile, update) => {
+    const current = readForUpdate(recordingFile);
+    if (!current)
+        return null;
+    const next = update(current);
+    if (next !== current)
+        saveTranscript(recordingFile, next);
+    return next;
+};
+
+var saveSummary = (file, summary) =>
+    updateTranscript(file, t => Transcript.withSummary(t, summary));
+
+var restoreSummaryAt = (file, index) =>
+    updateTranscript(file, t => Transcript.restoreSummary(t, index));
+
+var saveSpeakers = (file, speakers) =>
+    updateTranscript(file, t => ({ ...t, speakers: { ...speakers } }));
+
+var saveTranscriptKeepingSummary = (file, t) => {
+    const current = readForUpdate(file);
+    const next = Transcript.clearSummary(t);
+    delete next.summary_history;
+    for (const field of ['summary', 'summary_history']) {
+        if (current && Object.prototype.hasOwnProperty.call(current, field))
+            next[field] = current[field];
+    }
+    saveTranscript(file, next);
 };
 
 var loadTranscript = recordingFile => {
