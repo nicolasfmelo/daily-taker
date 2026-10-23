@@ -1408,9 +1408,16 @@ const windowCheckComponent = (params, { window }) => {
         check(idB !== idA && queue.has(sem) && list.getIndex(sem.file) < 0 && sidebar.selected === ideias &&
             playback.uri === ideias.uri, 'excluir B logo depois: id próprio, vizinha (nova última) selecionada');
         check(window._deleteToasts.get(idB)?.toast.title === '"Sem transcrição" excluída', 'toast de B com o nome de B');
-        check(window.handleShortcutKey(Gdk.KEY_Delete, 0) && lastId() === idB &&
-            sidebar.selected === ideias && !queue.has(ideias),
-        'Delete repetido em menos de 500 ms não exclui a vizinha');
+        await sleep(600); // Primeiro repeat do GNOME não pode reabrir a guarda.
+        for (let i = 0; i < 4; i++)
+            window.handleShortcutKey(Gdk.KEY_Delete, 0);
+        check(lastId() === idB && sidebar.selected === ideias && !queue.has(ideias),
+            'Delete mantido: repeats após 600 ms não excluem a vizinha');
+        window.handleShortcutKey(Gdk.KEY_Delete, 0, { released: true });
+        window.handleShortcutKey(Gdk.KEY_Delete, 0);
+        check(queue.has(ideias), 'Delete solto e pressionado novamente exclui imediatamente');
+        window._undoDelete(lastId());
+        window.handleShortcutKey(Gdk.KEY_Delete, 0, { released: true });
         winAction('win.undo-delete', new GLib.Variant('i', idA));
         check(list.getIndex(notas.file) === 2 && !queue.has(notas) && sidebar.selected === notas &&
             playback.uri === notas.uri && pane._titleLabel.label === notas.name,
@@ -1541,6 +1548,7 @@ const windowCheckComponent = (params, { window }) => {
         window.handleShortcutKey(Gdk.KEY_Delete, 0);
         check(list.getIndex(ideias.file) >= 0 && queue.pending().length === 0 && toasts[nt] === busy,
             'transcrevendo: Delete recusado (continua na lista, fila vazia, aviso)');
+        window.handleShortcutKey(Gdk.KEY_Delete, 0, { released: true });
         const ideiasTarget = new GLib.Variant('s', ideias.uri);
         nt = toasts.length;
         sidebar.activate_action('sidebar.delete', ideiasTarget);
@@ -1559,6 +1567,7 @@ const windowCheckComponent = (params, { window }) => {
         service._running.delete(ideias.uri);
         window._onTranscriptionChanged(ideias.uri, 'none');
         window.handleShortcutKey(Gdk.KEY_Delete, 0);
+        window.handleShortcutKey(Gdk.KEY_Delete, 0, { released: true });
         const idIdeias = lastId();
         check(queue.has(ideias) && list.getIndex(ideias.file) < 0, 'transcrição terminou: excluir funciona');
         winAction('win.undo-delete', new GLib.Variant('i', idIdeias));
@@ -1687,10 +1696,11 @@ const windowCheckComponent = (params, { window }) => {
                 'Toque em Tentar de novo antes de excluir.';
             const refused = () => list.getIndex(unsaved.file) >= 0 && queue.pending().length === 0 &&
                 service.hasUnsaved(unsaved.file);
-            await sleep(510); // Novo pressionamento, fora da janela de auto-repeat.
+            window.handleShortcutKey(Gdk.KEY_Delete, 0, { released: true });
             rowOf(unsaved).grab_focus();
             nt = toasts.length;
             window.handleShortcutKey(Gdk.KEY_Delete, 0);
+            window.handleShortcutKey(Gdk.KEY_Delete, 0, { released: true });
             check(refused() && toasts[nt] === unsavedMessage && toasts.length === nt + 1,
                 'transcrição não salva: Delete recusado (continua na lista, fila vazia, aviso)');
             nt = toasts.length;

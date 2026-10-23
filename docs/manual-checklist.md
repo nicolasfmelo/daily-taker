@@ -189,8 +189,8 @@ fone de ouvido.
 - [ ] **Resumo curto/cortado.** Transcrição com menos de 20 caracteres avisa
   antes de abrir confirmação. Resposta parcial por limite de tokens é salva e
   mostra “(resumo cortado)”; custo ausente não é inventado para outro modelo.
-- [ ] **Delete repetido.** Segurar Delete não exclui a vizinha em menos de 500 ms.
-  Um novo pressionamento após esse intervalo funciona normalmente.
+- [ ] **Delete repetido.** Segurar Delete exclui só a selecionada, mesmo após
+  vários repeats. Soltar e pressionar de novo permite outra exclusão imediatamente.
 
 ## Gravações com transcrição
 

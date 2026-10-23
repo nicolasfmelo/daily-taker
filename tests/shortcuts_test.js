@@ -86,4 +86,16 @@ test('deletedToastTitle: sem nome', () => {
     assert.equal(deletedToastTitle(null), '"" excluída');
 });
 
+test('Delete: auto-repeat sem release exclui uma vez; soltar rearma imediatamente', () => {
+    const { deleteKeyGuard } = imports.shortcuts;
+    let held = false;
+    const sequence = events => events.map(event => {
+        const next = deleteKeyGuard(held, event);
+        held = next.held;
+        return next.delete;
+    });
+    assert.deepEqual(sequence(['press', 'press', 'press', 'press']), [true, false, false, false]);
+    assert.deepEqual(sequence(['release', 'press', 'release', 'press']), [false, true, false, true]);
+});
+
 finish();

@@ -53,7 +53,7 @@ const { confirmMessage, guardedSave, hasNamedSpeakers, recordingNameProblem, row
 const { DeleteQueue } = imports.deleteQueue;
 const { stripIconFromLayout } = imports.headerLayout;
 const { cancelAllPeaks } = imports.peaksPipeline;
-const { deletedToastTitle, shortcutFor, shouldHandleShortcut } = imports.shortcuts;
+const { deletedToastTitle, shortcutFor, shouldHandleShortcut, deleteKeyGuard } = imports.shortcuts;
 
 var WindowState = {
     BROWSE: 0,
@@ -1039,6 +1039,8 @@ var Window = GObject.registerClass({
                 inPopover: surface !== null && surface !== this.get_surface(),
             });
         });
+        keys.connect('key-released', (_controller, keyval, _keycode, state) =>
+            this.handleShortcutKey(keyval, state, { released: true }));
         this.add_controller(keys);
         this._syncActions();
     }
@@ -1046,7 +1048,12 @@ var Window = GObject.registerClass({
     // Trata a tecla se for um atalho válido agora; true = consumida. `inPopover`: a tecla
     // veio de um popover (outra superfície). Público para a verificação do devSnapshot,
     // que não consegue criar um Gdk.KeyEvent.
-    handleShortcutKey(keyval, state, { inPopover = false } = {}) {
+    handleShortcutKey(keyval, state, { inPopover = false, released = false } = {}) {
+        if (released) {
+            if (keyval === Gdk.KEY_Delete)
+                this._deleteKeyHeld = deleteKeyGuard(this._deleteKeyHeld, 'release').held;
+            return false;
+        }
         const mods = state & Gtk.accelerator_get_default_mod_mask();
         const action = shortcutFor({
             key: Gdk.keyval_name(Gdk.keyval_to_lower(keyval)),
@@ -1068,13 +1075,10 @@ var Window = GObject.registerClass({
         if (!handle || !target.enabled)
             return false;
         if (action === 'delete') {
-            const now = GLib.get_monotonic_time();
-            if (this._lastDeleteKeyUs && now - this._lastDeleteKeyUs < 500000)
-                return true;
-            const recording = this._selected;
-            target.activate(null);
-            if (recording && this._deleteQueue.has(recording))
-                this._lastDeleteKeyUs = now;
+            const next = deleteKeyGuard(this._deleteKeyHeld, 'press');
+            this._deleteKeyHeld = next.held;
+            if (next.delete)
+                target.activate(null);
             return true;
         }
         target.activate(null);

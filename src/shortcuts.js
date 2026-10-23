@@ -1,4 +1,4 @@
-/* exported SHORTCUTS shortcutFor shouldHandleShortcut deletedToastTitle */
+/* exported SHORTCUTS shortcutFor shouldHandleShortcut deletedToastTitle deleteKeyGuard */
 // Atalhos de teclado da janela (modo lista), sem GTK: qual tecla chama qual ação win.* e
 // quando a tecla é do app ou de quem tem o foco.
 //
@@ -37,6 +37,12 @@ var shouldHandleShortcut = ({ action, focusIsEditable, focusIsButton, inDialog, 
         return false;
     return true;
 };
+
+// Auto-repeat envia presses sem releases: só soltar a tecla permite outro Delete.
+var deleteKeyGuard = (held, event) => ({
+    held: event === 'press',
+    delete: event === 'press' && !held,
+});
 
 const TITLE_NAME_MAX = 40;
 
