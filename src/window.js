@@ -318,6 +318,7 @@ var Window = GObject.registerClass({
             return;
         this._closed = true;
         this._teardown('exclusões pendentes', () => this._commitPendingDeletes());
+        this._teardown('preferências', () => this.application?.savePreferences());
         // Leituras de duração em andamento param antes de o app sair (senão o GStreamer
         // desmonta o Discoverer no meio, com avisos).
         this._teardown('leituras de duração', () => {

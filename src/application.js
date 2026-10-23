@@ -133,6 +133,13 @@ var Application = GObject.registerClass(class Application extends Adw.Applicatio
         this._preferences.present();
     }
 
+    savePreferences() {
+        for (const window of this.get_windows()) {
+            if (window instanceof PreferencesWindow)
+                window.savePending();
+        }
+    }
+
     _showAbout() {
         let aboutDialog = new Gtk.AboutDialog({
             artists: ['Reda Lazri <the.red.shortcut@gmail.com>',

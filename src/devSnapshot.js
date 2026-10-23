@@ -2132,7 +2132,7 @@ var COMPONENTS = {
         });
         return { widget: window, ready };
     },
-    preferences: (_params, { app }) => {
+    preferences: (_params, { app, window }) => {
         assertSandboxed();
         if (GLib.getenv('GSETTINGS_BACKEND') !== 'memory')
             throw new Error('preferences exige GSETTINGS_BACKEND=memory.');
@@ -2167,7 +2167,21 @@ var COMPONENTS = {
             prefs.present();
             print('devSnapshot: preferences: edição adiada, Enter, normalização, close-request e destroy OK');
         });
-        return { widget: prefs, ready };
+        return { widget: prefs, ready, cleanup: () => {
+            const pending = new PreferencesWindow({ application: app });
+            Settings.set_string('summary-model', 'openai/antes-de-sair');
+            pending._summaryModelRow.text = '  openai/pendente-quit  ';
+            const shutdown = window.shutdown;
+            window.shutdown = function () {
+                shutdown.call(this);
+                const saved = Settings.get_string('summary-model') === 'openai/pendente-quit';
+                print(`${saved ? 'PASS' : 'FAIL'} preferences: shutdown salva edição pendente normalizada antes de app.quit`);
+                Settings.set_string('summary-model', 'openai/mais-novo');
+                pending.destroy();
+                const fresh = Settings.get_string('summary-model') === 'openai/mais-novo';
+                print(`${fresh ? 'PASS' : 'FAIL'} preferences: destroy tardio não sobrescreve modelo mais novo`);
+            };
+        } };
     },
     window: windowComponent,
     windowcheck: windowCheckComponent,

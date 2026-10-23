@@ -23,6 +23,7 @@ var PreferencesWindow = GObject.registerClass({
         this._busy = false;
         this._destroyed = false;
         this.connect('destroy', () => {
+            this._saveModel?.(false);
             this._destroyed = true;
         });
 
@@ -33,11 +34,18 @@ var PreferencesWindow = GObject.registerClass({
 
         this._summaryModelRow.text = normalizeSummaryModel(Settings.get_string('summary-model'));
         let modelText = this._summaryModelRow.text;
-        this._summaryModelRow.connect('changed', () => { modelText = this._summaryModelRow.text; });
-        const saveModel = () => {
+        this._modelDirty = false;
+        this._summaryModelRow.connect('changed', () => {
+            modelText = this._summaryModelRow.text;
+            this._modelDirty = true;
+        });
+        const saveModel = (updateEntry = true) => {
+            if (this._destroyed || !this._modelDirty)
+                return;
             const model = normalizeSummaryModel(modelText);
-            if (!this._destroyed)
+            if (updateEntry)
                 this._summaryModelRow.text = model;
+            this._modelDirty = false;
             Settings.set_string('summary-model', model);
         };
         this.connect('close-request', () => {
@@ -58,6 +66,10 @@ var PreferencesWindow = GObject.registerClass({
         this._saveEnvButton.connect('clicked', () => this._onSaveEnv());
 
         this._refresh();
+    }
+
+    savePending() {
+        this._saveModel?.();
     }
 
     destroy() {

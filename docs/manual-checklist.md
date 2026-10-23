@@ -168,8 +168,9 @@ fone de ouvido.
   Cancelar não envia nada; confirmar gera uma vez, mesmo após clique duplo.
 - [ ] **Sem chave.** Gerar resumo abre Preferências sem chamada à API.
 - [ ] **Modelo configurável.** Alterar Modelo do resumo: só grava ao Enter,
-  sair do foco ou fechar (inclusive Esc com foco na entrada). Vazio, `abc def`
-  ou `x<y>` voltam ao padrão. Outro modelo informa custo desconhecido.
+  sair do foco ou fechar (inclusive Esc na entrada ou Ctrl+Q do app). Vazio,
+  `abc def` ou `x<y>` voltam ao padrão. Fechamento tardio de janela antiga não
+  sobrescreve um modelo mais novo. Outro modelo informa custo desconhecido.
 - [ ] **Rede indisponível.** Sem retentativa automática por rede/timeout.
   “Tentar de novo” reabre a confirmação; sem isso, nenhuma nova cobrança.
 - [ ] **Falha no disco.** Resumo pago retido e exclusão/renomeação bloqueadas;
