@@ -9,6 +9,7 @@
     <file>headerLayout.js</file>
     <file>main.js</file>
     <file>markdownRender.js</file>
+    <file>modelDefaults.js</file>
     <file>peaksPipeline.js</file>
     <file>playback.js</file>
     <file>playerBar.js</file>

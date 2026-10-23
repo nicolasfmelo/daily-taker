@@ -62,7 +62,10 @@ var Application = GObject.registerClass(class Application extends Adw.Applicatio
 
         let quitAction = new Gio.SimpleAction({ name: 'quit' });
         quitAction.connect('activate', () => {
-            this.get_active_window().close();
+            for (const window of this.get_windows()) {
+                if (window instanceof Window)
+                    window.close();
+            }
         });
         this.add_action(quitAction);
 

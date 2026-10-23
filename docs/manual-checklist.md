@@ -167,9 +167,9 @@ fone de ouvido.
   Conferir modelo, custo e “O texto da transcrição será enviado ao OpenRouter.”
   Cancelar não envia nada; confirmar gera uma vez, mesmo após clique duplo.
 - [ ] **Sem chave.** Gerar resumo abre Preferências sem chamada à API.
-- [ ] **Modelo configurável.** Alterar Modelo do resumo: só grava ao Enter ou
-  sair do foco. Vazio, `abc def` ou `x<y>` voltam ao padrão. Outro modelo válido
-  informa custo indisponível e continua exigindo confirmação.
+- [ ] **Modelo configurável.** Alterar Modelo do resumo: só grava ao Enter,
+  sair do foco ou fechar (inclusive Esc com foco na entrada). Vazio, `abc def`
+  ou `x<y>` voltam ao padrão. Outro modelo informa custo desconhecido.
 - [ ] **Rede indisponível.** Sem retentativa automática por rede/timeout.
   “Tentar de novo” reabre a confirmação; sem isso, nenhuma nova cobrança.
 - [ ] **Falha no disco.** Resumo pago retido e exclusão/renomeação bloqueadas;
@@ -186,6 +186,11 @@ fone de ouvido.
 - [ ] **Texto longo/hostil.** Resumo longo rola, títulos e listas são legíveis;
   `<b>&` não é interpretado como markup cru; não há conteúdo vazio por falha
   de Pango. Conferir também em janela estreita.
+- [ ] **Resumo curto/cortado.** Transcrição com menos de 20 caracteres avisa
+  antes de abrir confirmação. Resposta parcial por limite de tokens é salva e
+  mostra “(resumo cortado)”; custo ausente não é inventado para outro modelo.
+- [ ] **Delete repetido.** Segurar Delete não exclui a vizinha em menos de 500 ms.
+  Um novo pressionamento após esse intervalo funciona normalmente.
 
 ## Gravações com transcrição
 
@@ -232,8 +237,10 @@ fone de ouvido.
 - O envio do áudio que não recebe resposta (rede travada) é interrompido após
   10 minutos sem atividade e tentado de novo até 3 vezes; em reunião longa com
   conexão ruim isso pode levar muito tempo e gerar mais de uma cobrança.
-- A transcrição retida na memória depois de uma falha ao salvar só existe
-  enquanto o app está aberto.
+- Transcrições/resumos retidos por falha de salvamento só existem enquanto o
+  app está aberto. Fechar durante um resumo/transcrição em andamento perde o
+  resultado possivelmente já cobrado, agora **com confirmação explícita**;
+  Cancelar mantém a janela e não confirma exclusões pendentes.
 - As janelas *Preferências* e *Sobre* ainda mostram o ícone pequeno do app na
   barra de título quando o layout do sistema tem o token `icon` (uma vez só, não
   duplicado: só a janela principal tira o token).

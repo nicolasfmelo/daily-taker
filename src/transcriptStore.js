@@ -53,8 +53,8 @@ const updateTranscript = (recordingFile, update) => {
 var saveSummary = (file, summary) =>
     updateTranscript(file, t => Transcript.withSummary(t, summary));
 
-var restoreSummaryAt = (file, index) =>
-    updateTranscript(file, t => Transcript.restoreSummary(t, index));
+var restoreSummaryAt = (file, version) =>
+    updateTranscript(file, t => Transcript.restoreSummary(t, version));
 
 var saveSpeakers = (file, speakers) =>
     updateTranscript(file, t => ({ ...t, speakers: { ...speakers } }));
@@ -100,7 +100,7 @@ var moveTranscript = (oldRecordingFile, newRecordingFile) => {
     const dest = transcriptFileFor(newRecordingFile);
     if (src.equal(dest) || !src.query_exists(null))
         return;
-    src.move(dest, Gio.FileCopyFlags.OVERWRITE, null, null);
+    src.move(dest, Gio.FileCopyFlags.NONE, null, null);
 
     // O título nasce do nome da gravação: acompanha o novo nome, salvo se o usuário o
     // personalizou. Falhar aqui não desfaz a mudança de nome (só fica o título antigo).

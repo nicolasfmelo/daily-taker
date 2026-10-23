@@ -36,7 +36,8 @@ Cria `DIR/daily-taker/` (o `XDG_DATA_HOME` do app aponta para `DIR`):
   `summarizer.js` envia esses blocos por chat completions apenas sob demanda:
   retenta 429/502/503/504, mas não falhas de rede/timeout (evita cobrança dupla).
   O serviço retém o resumo pago se o disco falhar; “Tentar de novo” nesse estado
-  só salva, sem enviar outra requisição nem cobrar novamente.
+  só salva, sem nova cobrança. Se a transcrição está ausente/ilegível, oferece
+  descarte confirmado em vez de repetir salvamento impossível.
 - A duração exibida pelo app vem do arquivo (GstPbutils.Discoverer); o campo
   `duration` da transcrição tem o mesmo valor nominal. Com `FIXTURE_FAST=1` o
   áudio tem 30 s, então a lista mostra 00:30 — use o modo normal para capturas.
@@ -61,7 +62,7 @@ bash tools/snapshot.sh OUT.png [--component window|windowcheck|summarycheck|pref
   são registrados em `COMPONENTS` em `src/devSnapshot.js`. Um nome não
   registrado falha com mensagem clara e sem PNG.
   - `preferences`: Preferências reais, sem chave e com GSettings em memória;
-    confere edição adiada, Enter e modelo inválido antes da captura.
+    confere edição adiada, Enter, modelo inválido, close-request e destroy antes da captura.
     Ex.: `bash tools/snapshot.sh OUT.png --component preferences --size 680x800`.
   - `summarycheck`: **API real, cobrada**, somente com autorização explícita.
     Passa `DAILY_TAKER_OP_KEY` exclusivamente a esse componente e executa o
@@ -71,6 +72,9 @@ bash tools/snapshot.sh OUT.png [--component window|windowcheck|summarycheck|pref
     No fish, com a variável já configurada, executar uma vez:
     `SNAPSHOT_TIMEOUT=360 bash tools/snapshot.sh OUT.png --component summarycheck`.
     Os demais componentes nunca recebem a chave nem chamam a API.
+    O segredo passa por um arquivo 0600 no diretório privado da captura;
+    `snapshot-child.sh` lê e apaga antes do exec. Não entra em argv de `env`,
+    `bash`, `timeout` ou D-Bus. Os demais componentes não criam esse arquivo.
   - `window`: a janela mestre-detalhe real (`src/window.js`) com a biblioteca das
     fixtures. Espera a varredura da pasta (`RecordingList.loaded`) e as durações.
     `--select N` seleciona a gravação N da lista (1 = "Daily · Projeto Atlas"; 4 =
@@ -96,6 +100,13 @@ bash tools/snapshot.sh OUT.png [--component window|windowcheck|summarycheck|pref
     geração falsa sem rede, troca de seleção, retry de rede e de disco (sem nova
     cobrança), preservação ao editar/regenerar/mover, lista real de versões,
     clipboard, restauração, exportação do disco, busca e remoção externa.
+    A onda de correções acrescenta: ativação repetida com janela única;
+    renomear com resultado retido (incluindo diálogo/menu já abertos); retrySave
+    libera rename; Descartar… exige confirmação para ambos os serviços;
+    confirmação ao fechar preserva fila ao cancelar e mantém shutdown ordenado;
+    app.quit com Preferências ativa/null; backups ilegíveis fora da biblioteca;
+    Delete auto-repeat, título pós-rename, exportação sem disco, retry bloqueado,
+    opção regenerate e rodapé truncado/custo desconhecido.
     `DAILY_TAKER_SNAPSHOT_SABOTAGE=summary bash tools/snapshot.sh OUT.png --component windowcheck`
     remove o resumo só da visão no primeiro passo: deve imprimir uma `FAIL` e não gerar PNG.
     Imprime `PASS`/`FAIL` por verificação: depois do primeiro map a sidebar aquece o
@@ -229,9 +240,9 @@ bash tools/snapshot.sh OUT.png [--component window|windowcheck|summarycheck|pref
   `detailpanecheck`, `sidebarcheck`, `windowcheck`, `summarycheck`): o `snapshot.sh` exporta
   `DAILY_TAKER_SNAPSHOT_SANDBOX=1` e `DAILY_TAKER_SNAPSHOT_ROOT=<raiz temporária>`;
   antes de construir o componente (e de novo no início dele), `devSnapshot.js`
-  exige a marca e que `GLib.get_user_data_dir()` esteja dentro dessa raiz
-  (`isSandboxed`, testado em `tests/devSnapshot_test.js`). Fora disso recusa
-  com mensagem clara e saída ≠ 0, sem alterar nada — inclusive com
+  exige a marca, que `GLib.get_user_data_dir()` esteja dentro dessa raiz e o
+  arquivo `.daily-taker-fixtures` nessa pasta de dados (`isSandboxed`, testado).
+  Fora disso recusa com mensagem clara e saída ≠ 0, sem alterar nada — inclusive com
   `DAILY_TAKER_SNAPSHOT` definido à mão na sessão real.
 - Não rode duas capturas ao mesmo tempo: elas compilam a mesma pasta `build`
   (o ninja pode perder as dependências do gresource) e regravam as mesmas
@@ -249,11 +260,11 @@ bash tools/snapshot.sh OUT.png [--component window|windowcheck|summarycheck|pref
 ### Como funciona (receita do compositor headless)
 
 1. `meson install -C build --destdir $tmp/stage` compila a árvore atual e a
-   instala numa raiz temporária; o lançador é copiado com o prefixo trocado.
+   instala numa raiz temporária em `build/daily-taker-snapshot-*`; o lançador é copiado com o prefixo trocado.
    **A instalação em `~/.local` não é tocada** (não precisa reinstalar para
    capturar).
 2. Fixtures geradas (com cache) em `build/snapshot-fixtures/` e copiadas para
-   `$tmp/data/daily-taker/` a cada execução, pois o app pode alterá-las.
+   `$tmp/data/daily-taker/` a cada execução, junto do marcador em `$tmp/data/`.
 3. O app roda como filho de um mutter headless num barramento D-Bus próprio,
    com ambiente limpo (`env -i`):
 

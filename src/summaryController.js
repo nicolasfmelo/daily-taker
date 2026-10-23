@@ -2,12 +2,14 @@
 const { Adw } = imports.gi;
 const { defaultKeyStore } = imports.secrets;
 const { hasKey } = imports.transcriptionUi;
-const { summaryConfirmMessage, summaryFailureMessage, summaryRetryPlan } = imports.summaryUi;
+const { summaryConfirmMessage, summaryFailureMessage, summaryRetryPlan, summaryInputProblem } = imports.summaryUi;
 
 var SummaryController = class SummaryController {
     constructor({ parent, service, getModel, showToast, openPreferences, getTranscript, showDiscard,
-        onDone, onFailed, hasRecording = () => true, canRequest = () => true,
+        onDone, onFailed, hasRecording, canRequest = () => true,
         getKey = () => defaultKeyStore().get() }) {
+        if (typeof hasRecording !== 'function')
+            throw new TypeError('hasRecording é obrigatório.');
         Object.assign(this, { _parent: parent, _service: service, _getModel: getModel,
             _showToast: showToast, _openPreferences: openPreferences, _getTranscript: getTranscript,
             _onDone: onDone, _onFailed: onFailed, _hasRecording: hasRecording,
@@ -54,12 +56,13 @@ var SummaryController = class SummaryController {
         if (this._service.status(file) === 'running' || this._dialogs.has(uri) || !this._canRequest(recording))
             return;
         if (this._service.hasUnsaved(file)) {
-            this._retrySave(recording);
+            this.retry(recording);
             return;
         }
         const transcript = this._getTranscript(recording);
-        if (!transcript) {
-            this._toast('Gere a transcrição primeiro.');
+        const problem = summaryInputProblem(transcript);
+        if (problem) {
+            this._toast(problem);
             return;
         }
         const model = this._getModel();
@@ -100,8 +103,12 @@ var SummaryController = class SummaryController {
     }
 
     _run(recording, options = {}, transcript = null, model = null) {
-        if (this._closed || this._gone(recording) || !this._canRequest(recording))
+        if (this._closed || this._gone(recording))
             return;
+        if (!this._canRequest(recording)) {
+            this._toast('Aguarde a transcrição terminar para gerar o resumo.');
+            return;
+        }
         const file = recording.file;
         if (this._service.status(file) === 'running')
             return;
@@ -118,9 +125,10 @@ var SummaryController = class SummaryController {
     _retrySave(recording) {
         if (this._closed || this._gone(recording) || this._service.status(recording.file) === 'running')
             return;
+        const options = this._failures.get(recording.uri)?.options ?? {};
         this._failures.delete(recording.uri);
         this._service.retrySave(recording.file).then(
-            summary => this._done(recording.file, summary), error => this._failed(recording, error, {}));
+            summary => this._done(recording.file, summary), error => this._failed(recording, error, options));
     }
 
     _done(file, summary) {

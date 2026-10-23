@@ -50,7 +50,8 @@ Janela única, tema escuro com acento laranja:
   **lixeira do sistema** depois de 8 s, com **Desfazer** no aviso; várias
   exclusões seguidas têm cada uma o seu Desfazer. Fechar o app confirma as
   pendentes. Excluir e renomear ficam bloqueados durante a transcrição ou o
-  resumo; um resumo pago ainda não salvo também precisa ser salvo antes disso.
+  resumo; resultados pagos ainda não salvos precisam ser salvos ou descartados
+  explicitamente pelo botão **Descartar…**, com confirmação.
 - **Janela estreita**: abaixo de 1000 px a sidebar fica com 300 px (o selo
   mostra só o ponto) e o painel compacto; abaixo de 720 px a sidebar recolhe:
   escolher uma gravação abre o painel, com o botão Voltar para a lista.
@@ -77,7 +78,7 @@ diálogos).
 
 ## Requisitos
 
-- gjs, GTK 4, libadwaita
+- gjs, GTK 4 >= 4.10, libadwaita >= 1.7
 - GStreamer com `gst-plugins-base` e `gst-plugins-good` (typelibs `Gst`,
   `GstPlayer` e `GstPbutils`)
 - libsecret (guarda da chave da API) e libsoup3 (acesso à rede)
@@ -117,6 +118,10 @@ O **Modelo do resumo** é configurável em Preferências (padrão:
 de US$ 0,02–0,05, dependendo do tamanho do texto e da saída. A confirmação
 estima a entrada e até 2.000 tokens de saída; para outro modelo, mostra
 “Custo estimado indisponível” em vez de aplicar o preço do modelo padrão.
+O valor da confirmação é um teto estimado (“até US$ …”). Para modelos
+alternativos sem custo informado pelo provedor, o rodapé mostra “custo
+desconhecido”; uma saída parcial por limite de tokens indica “(resumo cortado)”.
+Transcrições com menos de 20 caracteres de conteúdo são recusadas antes do diálogo.
 
 ## Privacidade
 
@@ -127,9 +132,19 @@ O texto da transcrição só é enviado ao OpenRouter ao pedir **Gerar resumo**
 e confirmar o diálogo de custo/privacidade. Nada é enviado ao trocar de aba.
 Falhas de rede/timeout do resumo não têm retentativa automática; “Tentar de novo”
 exige nova confirmação. Há retry automático apenas em 429/502/503/504.
-Se o resumo já foi pago e só a gravação em disco falhou, o texto fica em memória
-e tentar de novo **só salva**, sem nova cobrança. Essa cópia não salva é perdida
-ao fechar o app.
+Se transcrição ou resumo já foi pago e só a gravação em disco falhou, o texto
+fica em memória e tentar de novo **só salva**, sem nova cobrança. Se a transcrição
+do resumo sumiu/está ilegível, a interface oferece descarte confirmado, não um
+loop de salvamento. Regenerar uma transcrição completa sobre JSON inválido
+preserva os bytes antigos em `.transcript.json.unreadable-<timestamp>`; esses
+backups ficam ocultos e preservados sob o nome original ao renomear/excluir o áudio.
+
+## Pendências conhecidas
+
+- Fechar durante uma transcrição ou resumo em andamento abandona o resultado
+  possivelmente já cobrado, **após confirmação explícita**. Cancelar mantém a
+  janela e as exclusões pendentes. A cópia paga retida por falha de disco também
+  só existe enquanto o app está aberto.
 
 ## Testes
 

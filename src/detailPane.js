@@ -19,7 +19,7 @@ const summaryMetadata = summary => ({
     model: typeof summary.model === 'string' && summary.model ? summary.model : 'modelo desconhecido',
     date: formatDateTime(summary.generated_at) || 'data desconhecida',
     cost: Number.isFinite(summary.cost_usd) && summary.cost_usd >= 0
-        ? formatUsd(summary.cost_usd) : 'custo indisponível',
+        ? formatUsd(summary.cost_usd) : 'custo desconhecido',
 });
 
 const TABS = ['transcricao', 'resumo'];
@@ -62,7 +62,7 @@ var DetailPane = GObject.registerClass({
         'summary-requested': { param_types: [GObject.TYPE_BOOLEAN] },
         'summary-retry-requested': {},
         'summary-copy-requested': {},
-        'summary-restore-requested': { param_types: [GObject.TYPE_INT] },
+        'summary-restore-requested': { param_types: [GObject.TYPE_STRING] },
     },
 }, class DetailPane extends Gtk.Box {
     _init(params) {
@@ -173,7 +173,10 @@ var DetailPane = GObject.registerClass({
             if (next) {
                 this._recordingIds = [
                     next.connect('notify::name', () => this._renamed()),
-                    next.connect('notify::duration', () => this._syncSubtitle()),
+                    next.connect('notify::duration', () => {
+                        this._syncSubtitle();
+                        this._syncGenerate();
+                    }),
                 ];
             }
             if (pending && next) {
@@ -286,6 +289,7 @@ var DetailPane = GObject.registerClass({
         };
         const empty = column();
         this._summaryCostLabel = label('');
+        this._summaryCostLabel.add_css_class('dim-label');
         empty.append(this._summaryCostLabel);
         this._summaryGenerateButton = button('Gerar resumo', () => this.emit('summary-requested', false));
         this._summaryGenerateButton.add_css_class('suggested-action');
@@ -308,14 +312,19 @@ var DetailPane = GObject.registerClass({
         this._summaryBanner.connect('button-clicked', () => this.emit('summary-retry-requested'));
         ready.append(this._summaryBanner);
         this._summaryHistoryBanner = new Adw.Banner({ use_markup: false, button_label: 'Restaurar esta versão' });
+        this._summaryHistoryBanner.margin_start = 28;
+        this._summaryHistoryBanner.margin_end = 28;
         this._summaryHistoryBanner.connect('button-clicked', () => {
-            if (this._summaryVersion !== null && this._summaryStatus !== 'running' && this._status !== 'running')
-                this.emit('summary-restore-requested', this._summaryVersion);
+            const generatedAt = this.displayedSummary?.generated_at;
+            if (this._summaryVersion !== null && typeof generatedAt === 'string' && generatedAt &&
+                this._summaryStatus !== 'running' && this._status !== 'running')
+                this.emit('summary-restore-requested', generatedAt);
         });
         ready.append(this._summaryHistoryBanner);
         this._summaryBackButton = button('Voltar à atual', () => {
             this._summaryVersion = null;
             this._syncSummary();
+            this._syncToolbar();
         });
         ready.append(this._summaryBackButton);
         this._summaryView = new SummaryView();
@@ -335,6 +344,7 @@ var DetailPane = GObject.registerClass({
             : shown ? 'ready' : this._summaryStatus;
         this._summaryStack.visible_child_name = state;
         const busy = this._summaryStatus === 'running' || this._status === 'running';
+        this._syncGenerate();
         this._summaryGenerateButton.sensitive = Boolean(this._transcript) && !busy;
         this._summaryRetryButton.sensitive = !busy;
         this._summarySpinner.spinning = state === 'running';
@@ -343,12 +353,13 @@ var DetailPane = GObject.registerClass({
         this._summaryBanner.button_label = this._summaryStatus === 'error' ? 'Tentar de novo' : null;
         this._summaryBanner.sensitive = !busy;
         this._summaryHistoryBanner.revealed = this._summaryVersion !== null;
-        this._summaryHistoryBanner.sensitive = !busy;
+        this._summaryHistoryBanner.sensitive = !busy && Boolean(shown?.generated_at);
         this._summaryBackButton.visible = this._summaryVersion !== null;
         if (shown) {
             const meta = summaryMetadata(shown);
             this._summaryHistoryBanner.title = `Versão de ${meta.date}`;
-            this._summaryFooter.label = `Gerado por ${meta.model} em ${meta.date} · ${meta.cost}`;
+            this._summaryFooter.label = `Gerado por ${meta.model} em ${meta.date} · ${meta.cost}` +
+                (shown.truncated ? ' (resumo cortado)' : '');
         }
         if (shown?.text !== this._summaryRendered) {
             this._summaryRendered = shown?.text ?? null;
@@ -537,6 +548,12 @@ var DetailPane = GObject.registerClass({
         this._syncToolbar();
     }
 
+    _syncGenerate() {
+        const duration = this._recording?.duration ?? 0;
+        this._generateButton.sensitive = Number.isFinite(duration) && duration > 0 &&
+            this._status !== 'running' && this._summaryStatus !== 'running';
+    }
+
     _sync() {
         const state = paneState(this._recording, this._hasRecordings, this._status,
             this._transcript !== null);
@@ -548,6 +565,7 @@ var DetailPane = GObject.registerClass({
         }
         this._spinner.spinning = state === 'running';
         this._generateTitleLabel.label = generateCard(this._status).title;
+        this._syncGenerate();
         this._syncSummary();
         this._state = state;
         this._syncBanner();

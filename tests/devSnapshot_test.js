@@ -135,7 +135,24 @@ test('isSandboxed: só com a marca do snapshot.sh e a pasta de dados dentro da r
         [null, '/tmp/daily-taker-snapshot-abc/data', false],
     ];
     for (const [e, dataDir, expected] of table)
-        assert.equal(isSandboxed(e, dataDir), expected);
+        assert.equal(isSandboxed(e, dataDir, () => true), expected);
+});
+
+test('isSandboxed exige marcador real das fixtures na pasta de dados', () => {
+    const dir = GLib.Dir.make_tmp('daily-taker-sandbox-test-XXXXXX');
+    const dataDir = `${dir}/data`;
+    GLib.mkdir_with_parents(dataDir, 0o700);
+    const marker = imports.gi.Gio.File.new_for_path(`${dataDir}/.daily-taker-fixtures`);
+    const env = { DAILY_TAKER_SNAPSHOT_SANDBOX: '1', DAILY_TAKER_SNAPSHOT_ROOT: dir };
+    try {
+        assert.equal(isSandboxed(env, dataDir), false);
+        marker.replace_contents('fixture', null, false, imports.gi.Gio.FileCreateFlags.NONE, null);
+        assert.equal(isSandboxed(env, dataDir), true);
+    } finally {
+        if (marker.query_exists(null)) marker.delete(null);
+        imports.gi.Gio.File.new_for_path(dataDir).delete(null);
+        imports.gi.Gio.File.new_for_path(dir).delete(null);
+    }
 });
 
 test('componentes que alteram dados são marcados e registrados', () => {

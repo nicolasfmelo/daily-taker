@@ -32,11 +32,19 @@ var PreferencesWindow = GObject.registerClass({
         });
 
         this._summaryModelRow.text = normalizeSummaryModel(Settings.get_string('summary-model'));
+        let modelText = this._summaryModelRow.text;
+        this._summaryModelRow.connect('changed', () => { modelText = this._summaryModelRow.text; });
         const saveModel = () => {
-            const model = normalizeSummaryModel(this._summaryModelRow.text);
-            this._summaryModelRow.text = model;
+            const model = normalizeSummaryModel(modelText);
+            if (!this._destroyed)
+                this._summaryModelRow.text = model;
             Settings.set_string('summary-model', model);
         };
+        this.connect('close-request', () => {
+            saveModel();
+            return false;
+        });
+        this._saveModel = saveModel;
         this._summaryModelRow.connect('entry-activated', saveModel);
         const focus = new Gtk.EventControllerFocus();
         focus.connect('leave', saveModel);
@@ -50,6 +58,15 @@ var PreferencesWindow = GObject.registerClass({
         this._saveEnvButton.connect('clicked', () => this._onSaveEnv());
 
         this._refresh();
+    }
+
+    destroy() {
+        // Gtk.Window.destroy() pode só emitir destroy quando as referências forem
+        // liberadas. Salvar agora evita perder a edição ou gravar um valor antigo tarde.
+        if (!this._destroyed)
+            this._saveModel?.();
+        this._destroyed = true;
+        super.destroy();
     }
 
     _typedKey() {

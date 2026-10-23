@@ -26,6 +26,8 @@ const inline = text => {
 };
 
 var parseMarkdown = text => {
+    if (typeof text === 'string')
+        text = text.replace(/[\x00-\x08\x0b-\x1f]/g, '');
     if (typeof text !== 'string' || !text.trim())
         return [];
     const blocks = [];

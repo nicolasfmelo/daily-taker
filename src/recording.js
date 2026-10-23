@@ -78,11 +78,13 @@ var Recording = new GObject.registerClass({
     set name(filename) {
         if (filename && filename !== this.name) {
             const oldFile = this._file;
+            this.transcriptMoveFailed = false;
             this._file = this._file.set_display_name(filename, null);
             try {
                 moveTranscript(oldFile, this._file);
             } catch (e) {
-                log(`Failed to move the transcript of ${oldFile.get_basename()}: ${e.message}`);
+                this.transcriptMoveFailed = true;
+                log('Não foi possível mover o sidecar da transcrição; arquivo original preservado.');
             }
             this.notify('name');
         }

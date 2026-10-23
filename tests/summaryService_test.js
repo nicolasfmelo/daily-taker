@@ -113,4 +113,27 @@ testAsync('transcrição ausente ou ilegível retém resumo mas bloqueia retry d
         assert.equal(service.status(file), 'none');
     }
 });
+testAsync('erro de rede seguido de sucesso limpa falha e honra modelo confirmado em vez do padrão alterado', async () => {
+    let fail = true;
+    const models = [];
+    const events = [];
+    const { service } = setup({
+        getModel: () => 'modelo/padrao-alterado',
+        summarize: async ({ model }) => {
+            models.push(model);
+            if (fail) throw new TranscribeError('network');
+            return { ...summary, model };
+        },
+    });
+    service.connectChange((_uri, state) => events.push(state));
+    await reject(service.run({ file, transcript: {}, model: 'modelo/confirmado' }));
+    assert.equal(service.status(file), 'error');
+    fail = false;
+    const result = await service.run({ file, transcript: {}, model: 'modelo/confirmado' });
+    assert.equal(result.model, 'modelo/confirmado');
+    assert.deepEqual(models, ['modelo/confirmado', 'modelo/confirmado']);
+    assert.equal(service.status(file), 'none');
+    assert.equal(service.hasRunning(), false);
+    assert.deepEqual(events, ['running', 'error', 'running', 'none']);
+});
 finish();

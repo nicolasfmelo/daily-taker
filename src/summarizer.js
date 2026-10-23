@@ -1,12 +1,12 @@
-/* exported DEFAULT_SUMMARY_MODEL PRICE_IN_PER_TOKEN PRICE_OUT_PER_TOKEN MAX_OUTPUT_TOKENS
+/* exported PRICE_IN_PER_TOKEN PRICE_OUT_PER_TOKEN MAX_OUTPUT_TOKENS
    SUMMARY_TIMEOUT_SEC SUMMARY_SYSTEM_PROMPT summaryInput buildSummaryMessages estimateSummaryCostUsd
    summarizeTranscript */
 const { API_BASE, requestJson, TranscribeError } = imports.transcriber;
 const { buildBlocks } = imports.transcript;
 const { formatDateTime } = imports.transcriptFormat;
 const { formatShortClock } = imports.playerModel;
+const { DEFAULT_SUMMARY_MODEL } = imports.modelDefaults;
 
-var DEFAULT_SUMMARY_MODEL = 'anthropic/claude-sonnet-5.5';
 var PRICE_IN_PER_TOKEN = 0.000002;
 var PRICE_OUT_PER_TOKEN = 0.00001;
 var MAX_OUTPUT_TOKENS = 2000;
@@ -31,7 +31,7 @@ var summaryInput = t => {
     header.push(Number.isFinite(t?.duration) && t.duration > 0
         ? `Duração: ${formatShortClock(t.duration)}` : 'Duração desconhecida');
     return [...header.filter(Boolean), '', ...blocks.map(b =>
-        `${b.label || 'Locutor 1'} · ${formatShortClock(b.start)}\n${b.text}`)].join('\n');
+        `${b.label || 'Trecho'} · ${formatShortClock(b.start)}\n${b.text}`)].join('\n');
 };
 
 var buildSummaryMessages = t => [
@@ -62,13 +62,16 @@ var summarizeTranscript = async ({
     if (typeof text !== 'string' || !text.trim())
         throw new TranscribeError('unknown', 0, MESSAGES.unknown);
     const usage = response.usage;
+    const responseModel = typeof response.model === 'string' && response.model ? response.model : model;
     const cost = validCost(usage?.cost) ? usage.cost
-        : validCost(usage?.prompt_tokens) && validCost(usage?.completion_tokens)
-            ? usage.prompt_tokens * PRICE_IN_PER_TOKEN + usage.completion_tokens * PRICE_OUT_PER_TOKEN : 0;
+        : model === DEFAULT_SUMMARY_MODEL && responseModel === DEFAULT_SUMMARY_MODEL &&
+            validCost(usage?.prompt_tokens) && validCost(usage?.completion_tokens)
+            ? usage.prompt_tokens * PRICE_IN_PER_TOKEN + usage.completion_tokens * PRICE_OUT_PER_TOKEN : null;
     return {
         text: text.trim(),
-        model: typeof response.model === 'string' && response.model ? response.model : model,
+        model: responseModel,
         generated_at: new Date().toISOString(),
         cost_usd: cost,
+        ...(response.choices[0].finish_reason === 'length' ? { truncated: true } : {}),
     };
 };

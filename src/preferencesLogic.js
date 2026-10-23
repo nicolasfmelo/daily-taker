@@ -2,7 +2,7 @@
 // Lógica pura (sem GTK) da tela de preferências, para ser testável em gjs puro.
 // Nada aqui devolve ou inclui a chave da API.
 
-const { DEFAULT_SUMMARY_MODEL } = imports.summarizer;
+const { DEFAULT_SUMMARY_MODEL } = imports.modelDefaults;
 var LANGUAGES = ['pt', 'auto'];
 
 // info: resultado de KeyStore.get() ({key, source}) ou null.

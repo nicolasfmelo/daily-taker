@@ -2,6 +2,7 @@ const { GLib, Soup } = imports.gi;
 const ByteArray = imports.byteArray;
 const { test, testAsync, assert, finish } = imports.harness;
 const S = imports.summarizer;
+const { DEFAULT_SUMMARY_MODEL } = imports.modelDefaults;
 const { TranscribeError } = imports.transcriber;
 const transcript = { title: 'Fixture', recorded_at: '2026-10-22T12:00:00Z', duration: 60,
     speakers: { 0: 'Nicolas' }, words: [{ word: 'Decidimos testar.', speaker: 0, start: 34, end: 35 }] };
@@ -52,7 +53,7 @@ testAsync('requisição JSON inclui locutores, prompt estável e limites; respos
         const req = requests[0];
         assert.equal(req.path, '/chat/completions');
         assert.equal(req.auth, 'Bearer k');
-        assert.equal(req.body.model, S.DEFAULT_SUMMARY_MODEL);
+        assert.equal(req.body.model, DEFAULT_SUMMARY_MODEL);
         assert.equal(req.body.max_tokens, 2000);
         assert.equal(req.body.temperature, 0.2);
         assert.equal(req.body.messages[0].role, 'system');
@@ -65,12 +66,12 @@ testAsync('requisição JSON inclui locutores, prompt estável e limites; respos
         assert.equal(Number.isFinite(Date.parse(summary.generated_at)), true);
     }));
 
-testAsync('custo sem usage.cost usa tokens; sem usage usa zero', async () => {
-    for (const [usage, expected] of [[{ prompt_tokens: 1000, completion_tokens: 200 }, 0.004], [undefined, 0]])
+testAsync('fallback por tokens só no modelo padrão; custo desconhecido é null', async () => {
+    for (const [usage, expected] of [[{ prompt_tokens: 1000, completion_tokens: 200 }, 0.004], [undefined, null]])
         await withServer(() => [200, body({ usage, model: undefined })], async url => {
             const s = await run(url);
             assert.equal(s.cost_usd, expected);
-            assert.equal(s.model, S.DEFAULT_SUMMARY_MODEL);
+            assert.equal(s.model, DEFAULT_SUMMARY_MODEL);
         });
 });
 
@@ -112,10 +113,57 @@ testAsync('transcrição vazia rejeita empty sem rede', () =>
 
 test('estimativa por caracteres e modelo; texto sem palavras é suportado', () => {
     const t = { words: [], text: 'a'.repeat(3000) };
-    const cost = S.estimateSummaryCostUsd(t, S.DEFAULT_SUMMARY_MODEL);
+    const cost = S.estimateSummaryCostUsd(t, DEFAULT_SUMMARY_MODEL);
     assert.equal(Math.abs(cost - 0.0215) < 0.001, true);
     assert.equal(S.estimateSummaryCostUsd(t, 'outro/modelo'), null);
     assert.equal(S.summaryInput(t).includes(t.text), true);
+});
+
+testAsync('modelos alternativos não herdam preço Sonnet e modelo solicitado chega à API', async () => {
+    for (const model of ['outro/modelo', DEFAULT_SUMMARY_MODEL])
+        await withServer(() => [200, body({ model: 'outro/modelo', usage: { prompt_tokens: 1000, completion_tokens: 200 } })],
+            async (url, requests) => {
+                const summary = await run(url, { model });
+                assert.equal(summary.cost_usd, null);
+                assert.equal(requests[0].body.model, model);
+            });
+});
+
+testAsync('length preserva texto parcial e sinaliza truncamento', () =>
+    withServer(() => [200, body({ choices: [{ finish_reason: 'length', message: { content: 'Texto parcial' } }] })],
+        async url => {
+            const summary = await run(url);
+            assert.equal(summary.text, 'Texto parcial');
+            assert.equal(summary.truncated, true);
+        }));
+
+test('sem locutor não atribui fala à pessoa 1', () => {
+    assert.equal(S.summaryInput({ words: [], text: 'Fala sem diarização' }).includes('Trecho · 00:00\nFala sem diarização'), true);
+    assert.equal(S.summaryInput({ words: [], text: 'Fala' }).includes('Locutor 1'), false);
+});
+
+testAsync('502/503/504 retentam até sucesso, sem extrapolar três chamadas', async () => {
+    for (const status of [502, 503, 504])
+        await withServer(n => n < 3 ? [status, '{}'] : [200, body()], async (url, requests) => {
+            const summary = await run(url);
+            assert.equal(summary.text, '## Resumo\n\nDecidimos testar.');
+            assert.equal(requests.length, 3);
+        });
+});
+
+testAsync('conexão recusada não agenda retentativa de requisição paga', async () => {
+    const server = new Soup.Server();
+    server.listen_local(0, Soup.ServerListenOptions.IPV4_ONLY);
+    const port = server.get_uris()[0].get_port();
+    server.disconnect();
+    let timers = 0;
+    const timeout = GLib.timeout_add;
+    GLib.timeout_add = (...args) => { timers++; return timeout(...args); };
+    try {
+        const error = await rejection(run(`http://127.0.0.1:${port}`));
+        assert.equal(error.kind, 'network');
+        assert.equal(timers, 0);
+    } finally { GLib.timeout_add = timeout; }
 });
 
 finish();

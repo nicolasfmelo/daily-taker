@@ -131,6 +131,7 @@ var Window = GObject.registerClass({
             showToast: toast => this._toastOverlay.add_toast(toast),
             openPreferences: () => this.application.activate_action('preferences', null),
             hasRecording: recording => this._indexOf(recording) >= 0,
+            canRequest: recording => this.summaryService.status(recording.file) !== 'running',
             onDone: file => this._onTranscriptionDone(file),
             onFailed: (recording, message) => this._onTranscriptionFailed(recording, message),
         });
@@ -439,7 +440,7 @@ var Window = GObject.registerClass({
             if (this._selected)
                 this._summary.retry(this._selected);
         });
-        pane.connect('summary-restore-requested', (_p, index) => this._restoreSummary(index));
+        pane.connect('summary-restore-requested', (_p, generatedAt) => this._restoreSummary(generatedAt));
         pane.connect('new-recording-requested', () => this.recorderWidget.actionsGroup.activate_action('start', null));
         pane.view.connect('seek-requested', (_v, seconds) => this._seekAndPlay(seconds));
     }
@@ -739,7 +740,7 @@ var Window = GObject.registerClass({
         this._syncCost();
     }
 
-    _restoreSummary(index) {
+    _restoreSummary(generatedAt) {
         const recording = this._selected;
         if (!recording || this._isTranscribing(recording) ||
             this.summaryService.status(recording.file) === 'running')
@@ -747,7 +748,7 @@ var Window = GObject.registerClass({
         try {
             guardedSave((file, i) => restoreSummaryAt(file, i), {
                 isRemoved: file => this._deleteQueue.pending().some(r => r.file.equal(file)),
-            })(recording.file, index);
+            })(recording.file, generatedAt);
             this._onSummaryDone(recording.file);
         } catch (e) {
             this.addToast('Não foi possível restaurar a versão do resumo.');
@@ -759,8 +760,10 @@ var Window = GObject.registerClass({
     _exportTranscript(ext) {
         const recording = this._selected;
         const transcript = recording ? loadTranscript(recording.file) : null;
-        if (!transcript)
+        if (!transcript) {
+            this.addToast('Não foi possível exportar a transcrição.');
             return;
+        }
         const dialog = new Gtk.FileDialog({
             title: 'Exportar transcrição',
             initial_name: exportFileName(transcript, ext),
@@ -772,7 +775,7 @@ var Window = GObject.registerClass({
                 file = dialog.save_finish(result);
             } catch (e) {
                 if (!dismissed(e))
-                    this.addToast('Não foi possível exportar a transcrição');
+                    this.addToast('Não foi possível exportar a transcrição.');
                 return;
             }
             try {
@@ -781,7 +784,7 @@ var Window = GObject.registerClass({
                     Gio.FileCreateFlags.REPLACE_DESTINATION, null);
                 this.addToast('Transcrição exportada');
             } catch (e) {
-                this.addToast('Não foi possível exportar a transcrição');
+                this.addToast('Não foi possível exportar a transcrição.');
             }
         });
     }
@@ -892,6 +895,8 @@ var Window = GObject.registerClass({
         }
         try {
             recording.name = name;
+            if (recording.transcriptMoveFailed)
+                this.addToast('A transcrição não acompanhou o novo nome.');
         } catch (e) {
             this.addToast(e.matches?.(Gio.IOErrorEnum, Gio.IOErrorEnum.EXISTS)
                 ? 'Já existe uma gravação com esse nome.'
@@ -1062,6 +1067,16 @@ var Window = GObject.registerClass({
         const target = this._actions[action];
         if (!handle || !target.enabled)
             return false;
+        if (action === 'delete') {
+            const now = GLib.get_monotonic_time();
+            if (this._lastDeleteKeyUs && now - this._lastDeleteKeyUs < 500000)
+                return true;
+            const recording = this._selected;
+            target.activate(null);
+            if (recording && this._deleteQueue.has(recording))
+                this._lastDeleteKeyUs = now;
+            return true;
+        }
         target.activate(null);
         return true;
     }

@@ -28,14 +28,15 @@ const trimSlashes = path => path.replace(/\/+$/, '');
 
 // O snapshot.sh exporta DAILY_TAKER_SNAPSHOT_SANDBOX=1 e a raiz temporária em
 // DAILY_TAKER_SNAPSHOT_ROOT; a pasta de dados em uso tem de estar dentro dessa raiz.
-var isSandboxed = (env, dataDir) => {
+var isSandboxed = (env, dataDir, hasMarker = dir =>
+    Gio.File.new_for_path(GLib.build_filenamev([dir, '.daily-taker-fixtures'])).query_exists(null)) => {
     if (env?.DAILY_TAKER_SNAPSHOT_SANDBOX !== '1')
         return false;
     const root = trimSlashes(env.DAILY_TAKER_SNAPSHOT_ROOT ?? '');
     const dir = trimSlashes(dataDir ?? '');
     if (!root.startsWith('/') || !dir.startsWith('/') || hasDotSegment(root) || hasDotSegment(dir))
         return false;
-    return dir.startsWith(`${root}/`);
+    return dir.startsWith(`${root}/`) && hasMarker(dir);
 };
 
 const sandboxEnv = () => ({
@@ -60,7 +61,7 @@ const recordingFiles = () => {
     const found = [];
     for (let info = children.next_file(null); info; info = children.next_file(null)) {
         const name = info.get_name();
-        if (name.endsWith('.json') || name.startsWith('.'))
+        if (imports.transcriptStore.isTranscriptFileName(name) || name.startsWith('.'))
             continue;
         found.push({ file: RecordingsDir.get_child(name), time: info.get_attribute_uint64('time::modified') });
     }
@@ -162,7 +163,7 @@ const SAMPLE_ERROR = 'Sem conexão com o serviço de transcrição. Verifique a 
 
 const applySummaryParams = (pane, transcript, params) => {
     const { getSummary, getSummaryHistory } = imports.transcript;
-    const { DEFAULT_SUMMARY_MODEL } = imports.summarizer;
+    const { DEFAULT_SUMMARY_MODEL } = imports.modelDefaults;
     const { summaryConfirmMessage } = imports.summaryUi;
     const state = params.summaryState;
     pane.setSummary(state && state !== 'ready' ? null : getSummary(transcript));
@@ -277,6 +278,15 @@ const detailPaneCheckComponent = () => {
     check(view.transcript === null && view.recordingFile === null, 'trocar para B limpa a visão');
     check(pane._stateStack.visible_child_name === 'not-transcribed', 'B mostra o cartão de gerar');
     check(!pane._copyButton.sensitive && !pane._exportButton.sensitive, 'Copiar/Exportar desligados em B');
+    const savedDuration = recNone._duration;
+    recNone._duration = 0;
+    recNone.notify('duration');
+    check(!pane._generateButton.sensitive, 'duração zero desabilita Gerar transcrição');
+    recNone._duration = 1e9;
+    recNone.notify('duration');
+    check(pane._generateButton.sensitive, 'duração conhecida habilita Gerar transcrição');
+    recNone._duration = savedDuration;
+    recNone.notify('duration');
 
     // 2. Nenhuma seleção também limpa.
     pane.setRecording(recA);
@@ -314,6 +324,15 @@ const detailPaneCheckComponent = () => {
     view._applySpeakerName(view.recordingFile, 0, 'Ana Teste');
     check(loadTranscript(renamed)?.speakers?.['0'] === 'Ana Teste', 'nome do locutor salvo na transcrição movida');
     check(!oldSidecar.query_exists(null), 'nenhuma transcrição órfã no caminho antigo');
+    check(view.transcript.title === 'Ideias renomeadas', 'título da transcrição acompanha rename sem reseleção');
+    const latest = loadTranscript(renamed);
+    imports.transcriptStore.saveTranscript(renamed, { ...latest, words: latest.words.slice(0, 1) });
+    view._applySpeakerName(renamed, 0, 'Ana Teste');
+    check(view._blocks.length === 1 && view._blockRows.length === 1 &&
+        view._blockRows[0].speakerButton.child.label === 'Ana Teste',
+    'editar locutor após mudança externa de blocos reconstrói a visão sem atualizar índices antigos');
+    imports.transcriptStore.saveTranscript(renamed, latest);
+    pane.setTranscript(latest);
 
     // 6. Banner sobre a transcrição (erro / gerando) sem escondê-la.
     pane.setErrorMessage('Sem conexão com o serviço de transcrição.');
@@ -353,8 +372,20 @@ const detailPaneCheckComponent = () => {
     const built = nextSignal(view, 'blocks-built');
     pane.setTranscript(loadTranscript(renamed));
     pane.setState('error');
-    print(`devSnapshot: detailpanecheck: ${checks} verificações OK`);
-    return { widget: pane, ready: built };
+    const ready = Promise.all([built, whenMapped(pane)]).then(async () => {
+        view._renameSpeakerDialog(0);
+        const dialog = Gtk.Window.list_toplevels().find(w => w instanceof Adw.MessageDialog);
+        await whenMapped(dialog);
+        await sleep(100);
+        check(dialog?.get_extra_child() instanceof Gtk.Entry &&
+            !dialog.heading_use_markup && !dialog.body_use_markup,
+        'diálogo de locutor usa extra child e texto puro sem propriedade obsoleta');
+        dialog.response('cancel');
+        dialog.close();
+        await sleep(250);
+        print(`devSnapshot: detailpanecheck: ${checks} verificações OK`);
+    });
+    return { widget: pane, ready };
 };
 
 // Serviço de transcrição falso: nunca chama a API. `statuses` = uri → status.
@@ -826,7 +857,7 @@ const windowComponent = (params, { window }) => {
     return { widget: window, ready };
 };
 
-const checkWindowSummary = async (window, { check, select, daily, sem, copyFixture }) => {
+const checkWindowSummary = async (window, { check, select, daily, sem, copyFixture, lastToast }) => {
     assertSandboxed();
     const Store = imports.transcriptStore;
     const { getSummary, getSummaryHistory } = imports.transcript;
@@ -895,6 +926,23 @@ const checkWindowSummary = async (window, { check, select, daily, sem, copyFixtu
             pane._summaryStack.visible_child_name === 'ready' && pane._summaryBanner.revealed &&
             !pane._summaryRegenerateAction.enabled && !pane._historyAction.enabled,
         'resumo: running mantém anterior e bloqueia ações pagas/histórico');
+        const transcription = window._transcription;
+        const oldShow = transcription._showToast;
+        const oldKey = transcription._getKey;
+        let retryToast;
+        let keyReads = 0;
+        transcription._showToast = toast => { retryToast = toast; };
+        transcription._getKey = () => { keyReads++; return { key: 'fixture' }; };
+        try {
+            transcription._failed(daily, new TranscribeError('network'), { regenerate: true });
+            retryToast.emit('button-clicked');
+            pane.emit('retry-requested');
+            check(keyReads === 0 && !transcriber.hasRunning(),
+                'resumo running bloqueia retry de transcrição pelo toast e painel antes de ler chave ou enviar');
+        } finally {
+            transcription._showToast = oldShow;
+            transcription._getKey = oldKey;
+        }
         window._deleteRecording(daily);
         check(window._indexOf(daily) >= 0 && !window._deleteQueue.has(daily) &&
             window._deleteRefusal(daily)?.includes('resumo'),
@@ -920,7 +968,11 @@ const checkWindowSummary = async (window, { check, select, daily, sem, copyFixtu
             pane._summaryBanner.button_label === 'Tentar de novo',
         'resumo: erro preserva anterior e oferece retry');
         const beforeRetry = calls;
-        pane._summaryBanner.emit('button-clicked');
+        pane.setSummary(null);
+        pane._summaryRetryButton.emit('clicked');
+        check(controller._dialogs.get(daily.uri)?.get_response_label('summarize') === 'Gerar novamente' &&
+            controller._dialogs.get(daily.uri)?.body.includes('O resumo atual irá para o histórico.'),
+        'retry pelo cartão de erro preserva regenerate e aviso de histórico');
         service._summarize = async () => { calls++; return output('## Resumo\n\nApós retry'); };
         confirm();
         await done();
@@ -941,6 +993,10 @@ const checkWindowSummary = async (window, { check, select, daily, sem, copyFixtu
         await done();
         check(calls === paidCalls && !service.hasUnsaved(daily.file) && controller._dialogs.size === 0,
             'resumo: retry de disco só salva, sem diálogo nem nova cobrança');
+        const savedName = daily.name;
+        check(window._renameRecording(daily, 'Resumo salvo renomeado') && !service.hasUnsaved(daily.file),
+            'resumo: após retrySave renomear volta a funcionar');
+        window._renameRecording(daily, savedName);
         service._save = () => null;
         controller._run(daily, { regenerate: true });
         await done();
@@ -952,7 +1008,7 @@ const checkWindowSummary = async (window, { check, select, daily, sem, copyFixtu
         check(service.hasUnsaved(daily.file) && calls === unavailableCalls,
             'resumo: cancelar descarte mantém resultado pago sem nova cobrança');
         check(!window._renameRecording(daily, 'Resumo retido'), 'resumo retido: renomear recusado');
-        const refusalToast = window._showRefusal(daily, window._renameRefusal(daily));
+        const refusalToast = lastToast();
         check(refusalToast.button_label === 'Descartar…' && !refusalToast.use_markup,
             'recusa do resumo oferece Descartar… sem markup');
         refusalToast.emit('button-clicked');
@@ -1046,9 +1102,19 @@ const checkWindowSummary = async (window, { check, select, daily, sem, copyFixtu
             labels.get_first_child().get_next_sibling().label === '&lt;script&gt;&amp;&quot;x&quot;',
         'resumo: superfície real escapa saída hostil e limita títulos enormes');
         pane.setSummary({ text: 'Resumo antigo sem metadados' });
-        check(pane._summaryFooter.label.includes('custo indisponível') &&
+        check(pane._summaryFooter.label.includes('custo desconhecido') &&
             !pane._summaryFooter.label.includes('undefined'),
         'resumo: metadados incompletos não quebram a aba nem prometem custo zero');
+        pane.setSummary({ text: 'Parcial', cost_usd: null, truncated: true });
+        check(pane._summaryFooter.label.endsWith('custo desconhecido (resumo cortado)'),
+            'resumo: rodapé distingue custo desconhecido e resposta cortada');
+        pane.setSummary(null);
+        pane.setSummaryHistory([output('Versão anterior')]);
+        pane.showSummaryVersion(0);
+        check(pane._copyButton.sensitive, 'versão anterior pode ser copiada');
+        pane._summaryBackButton.emit('clicked');
+        check(!pane._copyButton.sensitive && !pane._summaryRegenerateAction.enabled,
+            'Voltar à atual sincroniza toolbar quando atual não existe');
     } finally {
         for (const dialog of controller._dialogs.values()) { dialog.response('cancel'); dialog.close(); }
         controller._dialogs.clear();
@@ -1095,10 +1161,13 @@ const windowCheckComponent = (params, { window }) => {
             failures++;
     };
     const toasts = [];
+    let toastWidget = null;
+    const lastToast = () => toastWidget;
     const addToast = window.addToast;
     window.addToast = (title, options) => {
         toasts.push(title);
-        return addToast.call(window, title, options);
+        toastWidget = addToast.call(window, title, options);
+        return toastWidget;
     };
     const sameFile = (a, b) => Boolean(a && b && a.equal(b));
     // Cópia de uma fixture (com a transcrição dela, se `withTranscript`) já na lista.
@@ -1174,7 +1243,72 @@ const windowCheckComponent = (params, { window }) => {
         }
         check(pane._costLabel.visible && pane._costLabel.label.startsWith('Custo estimado'),
             `sem transcrição: custo estimado no cartão ("${pane._costLabel.label}")`);
-        await checkWindowSummary(window, { check, select, daily, sem, copyFixture });
+        await checkWindowSummary(window, { check, select, daily, sem, copyFixture, lastToast });
+        // Rechecagens de estado com o diálogo aberto, inclusive resultado pago retido.
+        await select(daily);
+        for (const busy of [window.transcriptionService, window.summaryService]) {
+            window._showRenameDialog(daily);
+            const dialog = window._renameDialog.dialog;
+            dialog.get_extra_child().text = 'Não perder dados';
+            busy._unsaved.set(daily.uri, {});
+            busy._emit(daily.uri, 'error');
+            check(!dialog.get_response_enabled('rename') && !window.lookup_action('rename').enabled &&
+                !sidebar._allowed(daily).rename,
+            'resultado retido com diálogo aberto bloqueia validação, F2 e menu');
+            const refusedBefore = toasts.length;
+            sidebar.activate_action('sidebar.rename', new GLib.Variant('s', daily.uri));
+            check(toasts.length === refusedBefore + 1 && busy.hasUnsaved(daily.file),
+                'menu aberto antes da falha recheca rename no clique e avisa sem perder resultado');
+            dialog.response('rename');
+            dialog.close();
+            check(daily.name === 'Daily · Projeto Atlas' && busy.hasUnsaved(daily.file),
+                'confirmar diálogo antigo não renomeia nem perde resultado retido');
+            busy._unsaved.delete(daily.uri);
+            busy._emit(daily.uri, 'none');
+        }
+        const disk = loadTranscript(daily.file);
+        const summaryCtl = window._summary;
+        const originalTranscript = summaryCtl._getTranscript;
+        const originalKey = summaryCtl._getKey;
+        const originalToast = summaryCtl._showToast;
+        const notices = [];
+        summaryCtl._showToast = toast => notices.push(toast);
+        summaryCtl._getKey = () => ({ key: 'fixture' });
+        try {
+            summaryCtl._getTranscript = () => ({ words: [], text: 'curta' });
+            summaryCtl.request(daily);
+            check(summaryCtl._dialogs.size === 0 &&
+                notices.pop()?.title === 'A transcrição está vazia ou é curta demais para gerar um resumo.',
+            'transcrição curta avisa antes de abrir confirmação paga');
+            window.transcriptionService._running.set(daily.uri, Promise.resolve());
+            summaryCtl._run(daily, {}, disk);
+            check(notices.pop()?.title === 'Aguarde a transcrição terminar para gerar o resumo.',
+                'resumo confirmado descartado por transcrição iniciada avisa o motivo');
+            window.transcriptionService._running.delete(daily.uri);
+            summaryCtl._failed(daily, new TranscribeError('recordingGone'), {});
+            check(!summaryCtl._failures.has(daily.uri), 'controlador não guarda plano de retry nulo');
+        } finally {
+            window.transcriptionService._running.delete(daily.uri);
+            summaryCtl._getTranscript = originalTranscript;
+            summaryCtl._getKey = originalKey;
+            summaryCtl._showToast = originalToast;
+        }
+        await select(sem);
+        window._exportTranscript('md');
+        check(toasts[toasts.length - 1] === 'Não foi possível exportar a transcrição.',
+            'exportação avisa quando releitura não encontra transcrição');
+        const moveFailure = copyFixture(daily, 'Sidecar origem preservada', true);
+        moveFailure.cancelDiscovery();
+        const oldSidecar = transcriptFileFor(moveFailure.file);
+        const orphan = RecordingsDir.get_child('Destino com sidecar órfão');
+        saveTranscript(orphan, { ...disk, text: 'Destino preservado' });
+        window._renameRecording(moveFailure, orphan.get_basename());
+        check(toasts[toasts.length - 1] === 'A transcrição não acompanhou o novo nome.' &&
+            oldSidecar.query_exists(null) && loadTranscript(orphan).text === 'Destino preservado',
+        'rename com colisão de sidecar avisa e preserva ambos os resultados em disco');
+        list.remove(list.getIndex(moveFailure.file));
+        moveFailure.delete({ sync: true });
+        oldSidecar.delete(null);
 
         // 2. Trocar de gravação com outra tocando: o áudio anterior para.
         await select(daily);
@@ -1212,6 +1346,8 @@ const windowCheckComponent = (params, { window }) => {
             sameFile(pane.view.recordingFile, ideias.file) && pane._titleLabel.label === 'Ideias renomeadas' &&
             bar._recording === ideias && !playback.playing,
         'renomear: player na URI nova, visão no arquivo novo, seleção e título mantidos, parado');
+        check(pane.view.transcript.title === 'Ideias renomeadas',
+            'rename atualiza título da transcrição exibida sem reselecionar');
         await durationKnown(playback);
         await sleep(300);
         check(Math.abs(playback.position - 3) < 0.6 && !playback.playing,
@@ -1272,6 +1408,9 @@ const windowCheckComponent = (params, { window }) => {
         check(idB !== idA && queue.has(sem) && list.getIndex(sem.file) < 0 && sidebar.selected === ideias &&
             playback.uri === ideias.uri, 'excluir B logo depois: id próprio, vizinha (nova última) selecionada');
         check(window._deleteToasts.get(idB)?.toast.title === '"Sem transcrição" excluída', 'toast de B com o nome de B');
+        check(window.handleShortcutKey(Gdk.KEY_Delete, 0) && lastId() === idB &&
+            sidebar.selected === ideias && !queue.has(ideias),
+        'Delete repetido em menos de 500 ms não exclui a vizinha');
         winAction('win.undo-delete', new GLib.Variant('i', idA));
         check(list.getIndex(notas.file) === 2 && !queue.has(notas) && sidebar.selected === notas &&
             playback.uri === notas.uri && pane._titleLabel.label === notas.name,
@@ -1488,6 +1627,7 @@ const windowCheckComponent = (params, { window }) => {
         const original = {
             transcribe: service._transcribe, save: service._save, getKey: service._getKey,
             showToast: ctl._showToast, openPreferences: ctl._openPreferences,
+            controllerKey: ctl._getKey,
         };
         let transcribeCalls = 0;
         let saveCalls = 0;
@@ -1510,7 +1650,7 @@ const windowCheckComponent = (params, { window }) => {
             original.showToast(toast);
         };
         ctl._openPreferences = () => prefsOpened++;
-        GLib.setenv('DAILY_TAKER_OP_KEY', 'sk-windowcheck-fake', true);
+        ctl._getKey = () => ({ key: 'fixture', source: 'env' });
         const costDialogs = () => Gtk.Window.list_toplevels().filter(w => w instanceof Adw.MessageDialog);
         const trashAll = async recordings => {
             for (const r of recordings) {
@@ -1547,6 +1687,7 @@ const windowCheckComponent = (params, { window }) => {
                 'Toque em Tentar de novo antes de excluir.';
             const refused = () => list.getIndex(unsaved.file) >= 0 && queue.pending().length === 0 &&
                 service.hasUnsaved(unsaved.file);
+            await sleep(510); // Novo pressionamento, fora da janela de auto-repeat.
             rowOf(unsaved).grab_focus();
             nt = toasts.length;
             window.handleShortcutKey(Gdk.KEY_Delete, 0);
@@ -1617,7 +1758,7 @@ const windowCheckComponent = (params, { window }) => {
             sidebar.emit('delete-requested', discarded);
             check(list.getIndex(discarded.file) >= 0 && !queue.has(discarded), 'outra gravação com transcrição retida: excluir recusado');
             saveFails = false;
-            const discardToast = window._showRefusal(discarded, window._deleteRefusal(discarded));
+            const discardToast = lastToast();
             check(discardToast.button_label === 'Descartar…' && !discardToast.use_markup,
                 'recusa da transcrição oferece Descartar… sem markup');
             discardToast.emit('button-clicked');
@@ -1683,7 +1824,7 @@ const windowCheckComponent = (params, { window }) => {
             service._getKey = original.getKey;
             ctl._showToast = original.showToast;
             ctl._openPreferences = original.openPreferences;
-            GLib.unsetenv('DAILY_TAKER_OP_KEY');
+            ctl._getKey = original.controllerKey;
         }
         await trashAll(created);
 
@@ -1830,7 +1971,16 @@ const windowCheckComponent = (params, { window }) => {
             'duas exclusões pendentes antes de fechar');
         for (const busy of [window.transcriptionService, window.summaryService]) {
             busy._running.set(daily.uri, Promise.resolve());
-            window.vfunc_close_request();
+            const active = app.get_active_window;
+            let prefs = null;
+            if (busy === window.transcriptionService) {
+                app._showPreferences();
+                prefs = app._preferences;
+                await whenMapped(prefs);
+            }
+            app.get_active_window = () => prefs;
+            app.activate_action('quit', null);
+            app.get_active_window = active;
             const dialog = window._closeDialog;
             check(Boolean(dialog) && dialog.default_response === 'cancel' &&
                 dialog.close_response === 'cancel' && !dialog.body_use_markup,
@@ -1839,6 +1989,8 @@ const windowCheckComponent = (params, { window }) => {
             check(!window._closed && window._closeDialog === null && queue.has(fresh) &&
                 queue.has(second) && closeLog.length === 0,
             'Cancelar mantém janela e exclusões pendentes intactas');
+            dialog.close();
+            prefs?.close();
             busy._running.delete(daily.uri);
         }
         const shutdown = window.shutdown;
@@ -1948,23 +2100,40 @@ var COMPONENTS = {
     },
     preferences: (_params, { app }) => {
         assertSandboxed();
+        if (GLib.getenv('GSETTINGS_BACKEND') !== 'memory')
+            throw new Error('preferences exige GSETTINGS_BACKEND=memory.');
         const { PreferencesWindow } = imports.preferences;
         const { Settings } = imports.application;
-        const prefs = new PreferencesWindow({ application: app });
-        const row = prefs._summaryModelRow;
-        const model = Settings.get_string('summary-model');
-        row.text = 'openai/gpt-5';
-        if (Settings.get_string('summary-model') !== model)
-            throw new Error('modelo foi salvo a cada tecla');
-        row.emit('entry-activated');
-        if (Settings.get_string('summary-model') !== 'openai/gpt-5')
-            throw new Error('Enter não salvou o modelo');
-        row.text = 'x<y>';
-        row.emit('entry-activated');
-        if (Settings.get_string('summary-model') !== 'anthropic/claude-sonnet-5.5')
-            throw new Error('modelo inválido não voltou ao padrão');
-        print('devSnapshot: preferences: edição adiada, Enter e normalização OK');
-        return prefs;
+        const prefs = new PreferencesWindow({ application: app, hide_on_close: true });
+        const ready = whenMapped(prefs).then(() => {
+            const row = prefs._summaryModelRow;
+            const model = Settings.get_string('summary-model');
+            row.text = 'openai/gpt-5';
+            if (Settings.get_string('summary-model') !== model)
+                throw new Error('modelo foi salvo a cada tecla');
+            row.emit('entry-activated');
+            if (Settings.get_string('summary-model') !== 'openai/gpt-5')
+                throw new Error('Enter não salvou o modelo');
+            row.text = 'x<y>';
+            row.emit('entry-activated');
+            if (Settings.get_string('summary-model') !== 'anthropic/claude-sonnet-5.5')
+                throw new Error('modelo inválido não voltou ao padrão');
+            row.grab_focus();
+            row.text = 'openai/fechado';
+            prefs.close();
+            if (Settings.get_string('summary-model') !== 'openai/fechado')
+                throw new Error('fechar com edição pendente não salvou o modelo');
+            const doomed = new PreferencesWindow({ application: app });
+            doomed._summaryModelRow.text = 'openai/destruido';
+            doomed.destroy();
+            if (Settings.get_string('summary-model') !== 'openai/destruido')
+                throw new Error('destroy não salvou o modelo');
+            row.text = 'anthropic/claude-sonnet-5.5';
+            row.emit('entry-activated');
+            prefs.present();
+            print('devSnapshot: preferences: edição adiada, Enter, normalização, close-request e destroy OK');
+        });
+        return { widget: prefs, ready };
     },
     window: windowComponent,
     windowcheck: windowCheckComponent,

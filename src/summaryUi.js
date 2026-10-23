@@ -1,15 +1,23 @@
-/* exported summaryConfirmMessage summaryFailureMessage summaryRetryPlan */
+/* exported summaryConfirmMessage summaryFailureMessage summaryRetryPlan summaryInputProblem */
 const { estimateSummaryCostUsd } = imports.summarizer;
 const { formatUsd, retryPlan } = imports.transcriptionUi;
 const { TranscribeError } = imports.transcriber;
+const { buildBlocks } = imports.transcript;
+
+var summaryInputProblem = t => {
+    if (!t)
+        return 'Gere a transcrição primeiro.';
+    const text = buildBlocks({ ...t, words: t.words ?? [] }).map(b => b.text).join(' ').trim();
+    return text.length < 20 ? 'A transcrição está vazia ou é curta demais para gerar um resumo.' : null;
+};
 
 var summaryConfirmMessage = (t, model, { regenerate = false } = {}) => {
     const cost = estimateSummaryCostUsd(t, model);
     const parts = [cost === null ? `Custo estimado indisponível para o modelo ${model}.`
-        : `Custo estimado: ${formatUsd(cost)}.`];
+        : `Custo estimado: até ${formatUsd(cost)}.`];
     parts.push('O texto da transcrição será enviado ao OpenRouter.');
     if (regenerate)
-        parts.push('O resumo atual será substituído.');
+        parts.push('O resumo atual irá para o histórico.');
     return { heading: `Gerar resumo com ${model}?`, body: parts.join(' ') };
 };
 
@@ -21,6 +29,7 @@ var summaryRetryPlan = (error, { hasUnsaved, recordingExists = true }) => {
 };
 
 var summaryFailureMessage = (error, plan) => {
-    const message = error instanceof TranscribeError ? error.message : 'Erro inesperado ao gerar o resumo.';
+    const message = error?.kind === 'recordingGone' ? 'A gravação foi excluída antes de o resumo terminar.'
+        : error instanceof TranscribeError ? error.message : 'Erro inesperado ao gerar o resumo.';
     return plan === 'save' ? `${message} Tentar de novo só salva, sem nova cobrança.` : message;
 };

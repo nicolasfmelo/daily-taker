@@ -76,7 +76,7 @@ fi
 [ -d "$(dirname -- "$out")" ] || die "diretório de saída não existe: $(dirname -- "$out")"
 [ -f "$build/build.ninja" ] || die "configure antes: meson setup build --prefix \$HOME/.local"
 
-work="$(realpath -- "$(mktemp -d "${TMPDIR:-/tmp}/daily-taker-snapshot-XXXXXX")")"
+work="$(realpath -- "$(mktemp -d "$build/daily-taker-snapshot-XXXXXX")")"
 pgid=''
 cleanup() {
     # Só o grupo de processos iniciado aqui (dbus-run-session, mutter, app).
@@ -110,6 +110,7 @@ for d in data config cache home runtime; do
 done
 chmod 700 "$work/runtime"
 cp -a "$build/snapshot-fixtures/daily-taker" "$work/data/"
+cp -- "$build/snapshot-fixtures/.daily-taker-fixtures" "$work/data/"
 # Layout dos botões das barras de título: o do usuário (com o token `icon`, que faz o GTK
 # desenhar um ícone pequeno do app no início de cada barra), para as capturas reproduzirem
 # a instalação real. DAILY_TAKER_SNAPSHOT_DECORATION_LAYOUT troca o valor (vazio = não grava).
@@ -150,10 +151,11 @@ optional=()
 for v in TZ GSK_RENDERER DAILY_TAKER_SNAPSHOT_SABOTAGE; do
     [ -z "${!v:-}" ] || optional+=("$v=${!v}")
 done
-# Só este componente explicitamente autorizado recebe a chave; nunca nos logs ou em disco.
+# Só este componente autorizado recebe a chave, por arquivo privado lido e apagado
+# pelo filho antes do exec. Nunca argumento de env, timeout, bash ou dbus.
 if [ "$component" = 'summarycheck' ]; then
     [ -n "${DAILY_TAKER_OP_KEY:-}" ] || die "summarycheck exige DAILY_TAKER_OP_KEY"
-    optional+=("DAILY_TAKER_OP_KEY=$DAILY_TAKER_OP_KEY")
+    (umask 077; printf '%s' "$DAILY_TAKER_OP_KEY" > "$work/api-key")
 fi
 set +e
 env -i \
@@ -193,7 +195,7 @@ env -i \
     DAILY_TAKER_SNAPSHOT_SUMMARY="$summary" \
     DAILY_TAKER_SNAPSHOT_SUMMARY_VERSION="$summary_version" \
     setsid --wait timeout --kill-after=5 "$timeout_s" \
-        dbus-run-session -- "${command[@]}" \
+        bash "$repo/tools/snapshot-child.sh" "$work" dbus-run-session -- "${command[@]}" \
         >"$work/run.log" 2>&1 &
 pgid=$!
 wait "$pgid"

@@ -1,5 +1,6 @@
 const { test, assert, finish } = imports.harness;
 const M = imports.markdownRender;
+const { Pango } = imports.gi;
 
 test('títulos, parágrafos e pares de negrito/código', () => {
     assert.deepEqual(M.parseMarkdown('## Resumo\n\nTexto **forte**.'), [
@@ -17,8 +18,15 @@ test('conteúdo hostil é texto e delimitadores sem par não abrem tags', () => 
         ['<b>cru</b>', '&lt;b&gt;cru&lt;/b&gt;'],
         ['**<b>&**', '<b>&lt;b&gt;&amp;</b>'],
         ['`**texto**`', '<tt>**texto**</tt>'],
-    ])
-        assert.deepEqual(M.parseMarkdown(text), [{ kind: 'p', markup }]);
+        ['**a\0b**', '<b>ab</b>'],
+        ['`a\0b`', '<tt>ab</tt>'],
+        ['**a\x01\x08\x0bb\x1f**', '<b>ab</b>'],
+    ]) {
+        const blocks = M.parseMarkdown(text);
+        assert.deepEqual(blocks, [{ kind: 'p', markup }]);
+        for (const block of blocks)
+            assert.equal(Pango.parse_markup(block.markup, -1, '\0')[0], true);
+    }
 });
 
 test('listas simples, recuadas e numeradas; títulos vazios ignorados', () => {

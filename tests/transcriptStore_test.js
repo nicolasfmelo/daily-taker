@@ -239,4 +239,48 @@ for (const invalid of ['{"privado":', JSON.stringify({ ...makeTranscript(), vers
     }));
 }
 
+test('restaurar por data seleciona a mesma versão mesmo após novo resumo e persiste truncated', () => withDir(dir => {
+    const rec = touch(dir, 'Daily');
+    S.saveTranscript(rec, makeTranscript());
+    const summary = (text, generated_at) => ({ text, generated_at, truncated: true, cost_usd: null });
+    S.saveSummary(rec, summary('A', '2026-10-22T10:00:00Z'));
+    S.saveSummary(rec, summary('B', '2026-10-22T11:00:00Z'));
+    const shown = S.loadTranscript(rec).summary_history[0];
+    S.saveSummary(rec, summary('C', '2026-10-22T12:00:00Z'));
+    const restored = S.restoreSummaryAt(rec, shown.generated_at);
+    assert.equal(restored.summary.text, 'A');
+    assert.equal(restored.summary.truncated, true);
+    assert.equal(restored.summary.cost_usd, null);
+    assert.deepEqual(restored.summary_history.map(s => s.text), ['C', 'B']);
+    assert.deepEqual(S.restoreSummaryAt(rec, 'não existe'), restored);
+}));
+
+test('moveTranscript não sobrescreve sidecar órfão do destino', () => withDir(dir => {
+    const src = touch(dir, 'Origem');
+    const dest = dir.get_child('Destino');
+    S.saveTranscript(src, makeTranscript(null, { text: 'Paga origem' }));
+    S.saveTranscript(dest, makeTranscript(null, { text: 'Paga destino' }));
+    let failed = false;
+    try { S.moveTranscript(src, dest); } catch (e) { failed = true; }
+    assert.equal(failed, true);
+    assert.equal(S.loadTranscript(src).text, 'Paga origem');
+    assert.equal(S.loadTranscript(dest).text, 'Paga destino');
+}));
+
+test('falha de I/O na leitura não autoriza backup nem sobrescrita', () => withDir(dir => {
+    const rec = touch(dir, 'Daily');
+    const sidecar = S.transcriptFileFor(rec);
+    sidecar.make_directory(null);
+    let failed = false;
+    try { S.saveTranscriptKeepingSummary(rec, makeTranscript()); } catch (e) { failed = true; }
+    assert.equal(failed, true);
+    assert.equal(sidecar.query_file_type(Gio.FileQueryInfoFlags.NONE, null), Gio.FileType.DIRECTORY);
+    const en = dir.enumerate_children('standard::name', Gio.FileQueryInfoFlags.NONE, null);
+    const names = [];
+    for (let info = en.next_file(null); info; info = en.next_file(null))
+        names.push(info.get_name());
+    en.close(null);
+    assert.deepEqual(names.sort(), ['Daily', 'Daily.transcript.json']);
+}));
+
 finish();

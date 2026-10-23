@@ -219,6 +219,11 @@ var TranscriptView = GObject.registerClass({
     // URI passam a usar o arquivo novo. Não refaz os blocos.
     setRecordingFile(file) {
         this._recordingFile = file ?? null;
+        const current = file ? loadTranscript(file) : null;
+        if (this._transcript && current && this._transcript.title !== current.title) {
+            this._transcript = { ...this._transcript, title: current.title };
+            this.emit('transcript-changed', this._transcript);
+        }
         this._syncHighlight();
     }
 
@@ -552,8 +557,10 @@ var TranscriptView = GObject.registerClass({
             modal: true,
             heading: 'Renomear locutor',
             body: 'Deixe em branco para voltar ao nome padrão.',
-            extra_child: entry,
+            heading_use_markup: false,
+            body_use_markup: false,
         });
+        dialog.set_extra_child(entry);
         dialog.add_response('cancel', 'Cancelar');
         dialog.add_response('rename', 'Renomear');
         dialog.set_response_appearance('rename', Adw.ResponseAppearance.SUGGESTED);
@@ -583,14 +590,23 @@ var TranscriptView = GObject.registerClass({
             this._toast('Não foi possível salvar o nome do locutor');
             return;
         }
+        const blocks = buildBlocks(renamed);
+        const structureChanged = blocks.length !== this._blocks.length ||
+            blocks.some((block, i) => block.speaker !== this._blocks[i].speaker ||
+                block.text !== this._blocks[i].text || block.start !== this._blocks[i].start ||
+                block.end !== this._blocks[i].end);
         this._transcript = renamed;
-        this._blocks = buildBlocks(renamed);
-        // Renomear não muda a divisão em blocos: atualiza os já criados no lugar,
-        // sem perder a rolagem; os que faltam já nascem com o nome novo.
-        this._blockRows.forEach((row, i) => {
-            if (row.speakerButton)
-                row.speakerButton.child.label = this._blocks[i].label;
-        });
+        this._blocks = blocks;
+        if (structureChanged) {
+            this._currentIndex = -1;
+            this._fillBlocks();
+            this._syncHighlight();
+        } else {
+            this._blockRows.forEach((row, i) => {
+                if (row.speakerButton)
+                    row.speakerButton.child.label = this._blocks[i].label;
+            });
+        }
         // O nome entra na busca: recalcula sem pular para outro resultado.
         if (this._findQuery)
             this._applyFind(findMatches(this._blocks, this._findQuery), this._findActive, false);

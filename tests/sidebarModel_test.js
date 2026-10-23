@@ -130,28 +130,27 @@ test('paneBanner: só com transcrição e status running/error', () => {
     assert.equal(M.paneBanner('error'), 'none');
 });
 
-test('paneActions: todas as combinações respeitam transcrição, aba e estado do resumo', () => {
-    for (const state of ['empty-library', 'no-selection', 'not-transcribed', 'running', 'error', 'ready']) {
-        for (const status of STATUSES) {
-            for (const tab of ['transcricao', 'resumo']) {
-                for (const summary of ['none', 'running', 'error', 'ready']) {
-                    for (const hasHistory of [false, true]) {
-                        const actions = M.paneActions({ state, status, tab, summary, hasHistory });
-                        const ready = state === 'ready';
-                        const idle = status !== 'running' && summary !== 'running';
-                        assert.deepEqual(actions, {
-                            search: ready && tab === 'transcricao',
-                            copy: ready && (tab === 'transcricao' || summary === 'ready'),
-                            export: ready,
-                            regenerate: ready && idle,
-                            summaryRegenerate: ready && idle && summary === 'ready',
-                            history: ready && idle && hasHistory,
-                        });
-                    }
-                }
-            }
-        }
-    }
+test('paneActions: permissões literais por transição e argumentos ausentes', () => {
+    const none = { search: false, copy: false, export: false, regenerate: false, summaryRegenerate: false, history: false };
+    assert.deepEqual(M.paneActions(), none);
+    assert.deepEqual(M.paneActions({}), none);
+    for (const state of ['empty-library', 'no-selection', 'not-transcribed', 'running', 'error'])
+        assert.deepEqual(M.paneActions({ state, status: 'none', tab: 'transcricao' }), none);
+    for (const [input, expected] of [
+        [{ state: 'ready', status: 'none', tab: 'transcricao' },
+            { search: true, copy: true, export: true, regenerate: true, summaryRegenerate: false, history: false }],
+        [{ state: 'ready', status: 'running', tab: 'transcricao', summary: 'ready', hasHistory: true },
+            { search: true, copy: true, export: true, regenerate: false, summaryRegenerate: false, history: false }],
+        [{ state: 'ready', status: 'error', tab: 'resumo', summary: 'ready', hasHistory: true },
+            { search: false, copy: true, export: true, regenerate: true, summaryRegenerate: true, history: true }],
+        [{ state: 'ready', status: 'none', tab: 'resumo', summary: 'running', hasHistory: true },
+            { search: false, copy: false, export: true, regenerate: false, summaryRegenerate: false, history: false }],
+        [{ state: 'ready', status: 'none', tab: 'resumo', summary: 'error', hasHistory: true },
+            { search: false, copy: false, export: true, regenerate: true, summaryRegenerate: false, history: true }],
+        [{ state: 'ready', status: 'none', tab: 'resumo', summary: 'none' },
+            { search: false, copy: false, export: true, regenerate: true, summaryRegenerate: false, history: false }],
+    ])
+        assert.deepEqual(M.paneActions(input), expected);
 });
 
 test('generateCard: "pronta" sem transcrição pede para gerar de novo (com confirmação)', () => {
