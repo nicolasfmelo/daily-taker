@@ -31,6 +31,8 @@ Cria `DIR/daily-taker/` (o `XDG_DATA_HOME` do app aponta para `DIR`):
   lista rolar. Gerados por `tools/fixtureData.js`.
   A fixture Atlas também tem `summary` nas quatro seções e duas versões em
   `summary_history`; as demais continuam sem resumo.
+  O renderizador `markdownRender` aceita títulos, listas, negrito e código;
+  escapa texto para Pango e limita a 400 blocos de 2.000 caracteres.
 - A duração exibida pelo app vem do arquivo (GstPbutils.Discoverer); o campo
   `duration` da transcrição tem o mesmo valor nominal. Com `FIXTURE_FAST=1` o
   áudio tem 30 s, então a lista mostra 00:30 — use o modo normal para capturas.
