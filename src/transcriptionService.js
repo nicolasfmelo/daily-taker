@@ -23,6 +23,10 @@ var TranscriptionService = class TranscriptionService {
         return this._running.size > 0;
     }
 
+    hasAnyUnsaved() {
+        return this._unsaved.size > 0;
+    }
+
     status(recordingFile) {
         const uri = recordingFile.get_uri();
         if (this._running.has(uri))

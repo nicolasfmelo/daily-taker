@@ -2003,6 +2003,26 @@ const windowCheckComponent = (params, { window }) => {
             prefs?.close();
             busy._running.delete(daily.uri);
         }
+        for (const retained of [window.transcriptionService, window.summaryService]) {
+            for (const alsoRunning of [false, true]) {
+                retained._unsaved.set(daily.uri, { text: 'resultado pago retido' });
+                if (alsoRunning)
+                    retained._running.set(daily.uri, Promise.resolve());
+                window.close();
+                const dialog = window._closeDialog;
+                check(Boolean(dialog) && dialog.body.includes('ainda não foi salvo') &&
+                    (!alsoRunning || dialog.body.includes('em andamento')) &&
+                    dialog.default_response === 'cancel' && dialog.close_response === 'cancel' &&
+                    !dialog.body_use_markup && !dialog.heading_use_markup,
+                'fechamento com resultado retido, com/sem geração, pede confirmação em texto puro');
+                dialog.response('cancel');
+                check(!window._closed && retained.hasUnsaved(daily.file) &&
+                    queue.has(fresh) && queue.has(second) && closeLog.length === 0,
+                'cancelar preserva resultado pago retido e não confirma exclusões');
+                retained._unsaved.delete(daily.uri);
+                retained._running.delete(daily.uri);
+            }
+        }
         const shutdown = window.shutdown;
         window.shutdown = function () {
             const pending = queue.has(fresh) && queue.has(second);

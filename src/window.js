@@ -274,11 +274,18 @@ var Window = GObject.registerClass({
             this._closeDialog.present();
             return true;
         }
-        if (this.transcriptionService.hasRunning() || this.summaryService.hasRunning()) {
+        const running = this.transcriptionService.hasRunning() || this.summaryService.hasRunning();
+        const unsaved = this.transcriptionService.hasAnyUnsaved() || this.summaryService.hasAnyUnsaved();
+        if (running || unsaved) {
+            const body = running && unsaved
+                ? 'Há uma operação paga em andamento e um resultado pago que ainda não foi salvo. Se fechar agora, eles serão perdidos. Fechar mesmo assim?'
+                : unsaved
+                    ? 'Há um resultado pago que ainda não foi salvo. Se fechar agora, ele será perdido. Fechar mesmo assim?'
+                    : 'Há uma transcrição (ou resumo) em andamento. Se fechar agora, o resultado já cobrado será perdido. Fechar mesmo assim?';
             const dialog = new Adw.MessageDialog({
                 transient_for: this, modal: true,
-                heading: 'Fechar durante uma operação paga?',
-                body: 'Há uma transcrição (ou resumo) em andamento. Se fechar agora, o resultado já cobrado será perdido. Fechar mesmo assim?',
+                heading: 'Fechar e perder resultado pago?',
+                body,
                 heading_use_markup: false, body_use_markup: false,
             });
             dialog.add_response('cancel', 'Cancelar');

@@ -141,10 +141,10 @@ backups ficam ocultos e preservados sob o nome original ao renomear/excluir o á
 
 ## Pendências conhecidas
 
-- Fechar durante uma transcrição ou resumo em andamento abandona o resultado
-  possivelmente já cobrado, **após confirmação explícita**. Cancelar mantém a
-  janela e as exclusões pendentes. A cópia paga retida por falha de disco também
-  só existe enquanto o app está aberto.
+- Fechar durante uma transcrição/resumo em andamento ou com resultado pago não
+  salvo abandona o resultado **somente após confirmação explícita**. Cancelar
+  mantém a janela, o resultado em memória e as exclusões pendentes. A cópia paga
+  retida por falha de disco não persiste após você confirmar o fechamento.
 
 ## Testes
 

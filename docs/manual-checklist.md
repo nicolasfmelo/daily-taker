@@ -209,9 +209,10 @@ fone de ouvido.
 - [ ] **Nome com caracteres especiais.** Renomear uma gravação para
   `Reunião P&D <revisão>` e excluí-la. Esperado: o aviso de exclusão mostra o
   nome inteiro e legível (sem ficar vazio).
-- [ ] **Fechar durante transcrição/resumo.** X e Ctrl+Q pedem confirmação, com
-  Cancelar padrão. Cancelar mantém janela e exclusões pendentes; Fechar mesmo assim
-  confirma exclusões antes de parar os serviços e abandonar o resultado em andamento.
+- [ ] **Fechar durante transcrição/resumo ou com resultado não salvo.** X e
+  Ctrl+Q pedem confirmação, com Cancelar padrão, também sem operação em andamento.
+  Cancelar mantém janela, resultado e exclusões pendentes; Fechar mesmo assim
+  confirma exclusões antes de parar os serviços e abandonar os resultados.
 - [ ] **Launcher repetido.** Ativar o launcher duas vezes durante uma operação:
   a mesma janela é apresentada, sem criar outra ou interromper o trabalho.
 - [ ] **Renomear após falha ao salvar.** Com transcrição ou resumo pago retido,
@@ -238,9 +239,9 @@ fone de ouvido.
   10 minutos sem atividade e tentado de novo até 3 vezes; em reunião longa com
   conexão ruim isso pode levar muito tempo e gerar mais de uma cobrança.
 - Transcrições/resumos retidos por falha de salvamento só existem enquanto o
-  app está aberto. Fechar durante um resumo/transcrição em andamento perde o
-  resultado possivelmente já cobrado, agora **com confirmação explícita**;
-  Cancelar mantém a janela e não confirma exclusões pendentes.
+  app está aberto. Fechar perde os resultados em andamento ou não salvos
+  **após você confirmar**; Cancelar mantém a janela, os resultados e não confirma
+  exclusões pendentes.
 - As janelas *Preferências* e *Sobre* ainda mostram o ícone pequeno do app na
   barra de título quando o layout do sistema tem o token `icon` (uma vez só, não
   duplicado: só a janela principal tira o token).
