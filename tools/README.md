@@ -35,6 +35,8 @@ Cria `DIR/daily-taker/` (o `XDG_DATA_HOME` do app aponta para `DIR`):
   escapa texto para Pango e limita a 400 blocos de 2.000 caracteres.
   `summarizer.js` envia esses blocos por chat completions apenas sob demanda:
   retenta 429/502/503/504, mas não falhas de rede/timeout (evita cobrança dupla).
+  O serviço retém o resumo pago se o disco falhar; “Tentar de novo” nesse estado
+  só salva, sem enviar outra requisição nem cobrar novamente.
 - A duração exibida pelo app vem do arquivo (GstPbutils.Discoverer); o campo
   `duration` da transcrição tem o mesmo valor nominal. Com `FIXTURE_FAST=1` o
   áudio tem 30 s, então a lista mostra 00:30 — use o modo normal para capturas.
