@@ -941,6 +941,26 @@ const checkWindowSummary = async (window, { check, select, daily, sem, copyFixtu
         await done();
         check(calls === paidCalls && !service.hasUnsaved(daily.file) && controller._dialogs.size === 0,
             'resumo: retry de disco só salva, sem diálogo nem nova cobrança');
+        service._save = () => null;
+        controller._run(daily, { regenerate: true });
+        await done();
+        const unavailableCalls = calls;
+        controller.retry(daily);
+        check(service.hasUnsaved(daily.file) && window._discardDialog?.default_response === 'cancel',
+            'resumo sem transcrição salvável: retry leva a descarte confirmado, não a loop de disco');
+        window._discardDialog.response('cancel');
+        check(service.hasUnsaved(daily.file) && calls === unavailableCalls,
+            'resumo: cancelar descarte mantém resultado pago sem nova cobrança');
+        check(!window._renameRecording(daily, 'Resumo retido'), 'resumo retido: renomear recusado');
+        const refusalToast = window._showRefusal(daily, window._renameRefusal(daily));
+        check(refusalToast.button_label === 'Descartar…' && !refusalToast.use_markup,
+            'recusa do resumo oferece Descartar… sem markup');
+        refusalToast.emit('button-clicked');
+        window._discardDialog.response('discard');
+        check(!service.hasUnsaved(daily.file) && window._renameRecording(daily, 'Resumo descartado'),
+            'resumo: só confirmar descarte libera renomear');
+        window._renameRecording(daily, original.title);
+        service._save = saved.save;
 
         disk = Store.loadTranscript(daily.file);
         const summary = disk.summary;
@@ -1076,9 +1096,9 @@ const windowCheckComponent = (params, { window }) => {
     };
     const toasts = [];
     const addToast = window.addToast;
-    window.addToast = title => {
+    window.addToast = (title, options) => {
         toasts.push(title);
-        addToast.call(window, title);
+        return addToast.call(window, title, options);
     };
     const sameFile = (a, b) => Boolean(a && b && a.equal(b));
     // Cópia de uma fixture (com a transcrição dela, se `withTranscript`) já na lista.
@@ -1597,7 +1617,20 @@ const windowCheckComponent = (params, { window }) => {
             sidebar.emit('delete-requested', discarded);
             check(list.getIndex(discarded.file) >= 0 && !queue.has(discarded), 'outra gravação com transcrição retida: excluir recusado');
             saveFails = false;
-            service.discardUnsaved(discarded.file);
+            const discardToast = window._showRefusal(discarded, window._deleteRefusal(discarded));
+            check(discardToast.button_label === 'Descartar…' && !discardToast.use_markup,
+                'recusa da transcrição oferece Descartar… sem markup');
+            discardToast.emit('button-clicked');
+            const discardDialog = window._discardDialog;
+            check(discardDialog.default_response === 'cancel' && discardDialog.close_response === 'cancel' &&
+                !discardDialog.body_use_markup, 'descarte exige confirmação com Cancelar padrão');
+            discardDialog.response('cancel');
+            check(service.hasUnsaved(discarded.file), 'cancelar descarte mantém transcrição paga');
+            discardToast.emit('button-clicked');
+            window._discardDialog.response('discard');
+            check(!service.hasUnsaved(discarded.file) &&
+                window._renameRecording(discarded, 'Resultado descartado'),
+            'confirmar descarte da transcrição libera renomear');
             sidebar.emit('delete-requested', discarded);
             check(queue.has(discarded) && list.getIndex(discarded.file) < 0, 'transcrição descartada: excluir funciona');
             window._undoDelete(lastId());

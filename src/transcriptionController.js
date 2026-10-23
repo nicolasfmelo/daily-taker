@@ -91,6 +91,12 @@ var TranscriptionController = class TranscriptionController {
         dialog.present();
     }
 
+    discardUnsaved(recording) {
+        this._failures.delete(recording.uri);
+        this._service.discardUnsaved(recording.file);
+        this._onDone(recording.file);
+    }
+
     // "Tentar de novo" do painel: o plano da última falha desta gravação ('save' sem custo);
     // sem falha registrada, o fluxo normal com `options`.
     retry(recording, options = {}) {

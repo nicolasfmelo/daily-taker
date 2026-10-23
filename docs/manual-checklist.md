@@ -213,6 +213,9 @@ fone de ouvido.
   renomear pela janela, F2 e menu é recusado; um diálogo já aberto se bloqueia.
   Após Tentar de novo salvar, renomear leva o resultado ao nome novo sem cobrar.
 
+- [ ] **Descartar resultado pago retido.** Recusar excluir/renomear oferece
+  Descartar…; Cancelar mantém resultado, confirmar descarta só a memória e libera
+  as operações. Resumo sem transcrição salvável oferece descarte, não retry infinito.
 - [ ] **JSON corrompido.** Regenerar sobre JSON corrompido ou versão inválida.
   Esperado: transcrição completa salva; bytes antigos preservados em
   `.transcript.json.unreadable-<timestamp>`, invisível na biblioteca. Alterações
@@ -234,9 +237,6 @@ fone de ouvido.
 - As janelas *Preferências* e *Sobre* ainda mostram o ícone pequeno do app na
   barra de título quando o layout do sistema tem o token `icon` (uma vez só, não
   duplicado: só a janela principal tira o token).
-- Se o disco continuar falhando ao salvar uma transcrição paga, não há uma ação
-  "Descartar transcrição": excluir a gravação fica recusado até salvar (Tentar de
-  novo) ou fechar o app.
 - A onda do player não tem busca pelo teclado (setas); use B/N.
 - Na janela estreita, mudar a seleção pelas setas não abre o painel (Enter abre).
 - A janela tem largura mínima de 520 px; entre 720 e 1000 px a sidebar fica em

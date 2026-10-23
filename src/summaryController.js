@@ -5,13 +5,13 @@ const { hasKey } = imports.transcriptionUi;
 const { summaryConfirmMessage, summaryFailureMessage, summaryRetryPlan } = imports.summaryUi;
 
 var SummaryController = class SummaryController {
-    constructor({ parent, service, getModel, showToast, openPreferences, getTranscript,
+    constructor({ parent, service, getModel, showToast, openPreferences, getTranscript, showDiscard,
         onDone, onFailed, hasRecording = () => true, canRequest = () => true,
         getKey = () => defaultKeyStore().get() }) {
         Object.assign(this, { _parent: parent, _service: service, _getModel: getModel,
             _showToast: showToast, _openPreferences: openPreferences, _getTranscript: getTranscript,
             _onDone: onDone, _onFailed: onFailed, _hasRecording: hasRecording,
-            _canRequest: canRequest, _getKey: getKey });
+            _canRequest: canRequest, _getKey: getKey, _showDiscard: showDiscard });
         this._closed = false;
         this._failures = new Map();
         this._dialogs = new Map();
@@ -80,9 +80,19 @@ var SummaryController = class SummaryController {
         dialog.present();
     }
 
+    discardUnsaved(recording) {
+        this._failures.delete(recording.uri);
+        this._service.discardUnsaved(recording.file);
+        this._onDone(recording.file);
+    }
+
     retry(recording) {
         if (this._closed || this._gone(recording))
             return;
+        if (this._failures.get(recording.uri)?.plan === 'discard') {
+            this._showDiscard(recording);
+            return;
+        }
         if (this._service.hasUnsaved(recording.file))
             this._retrySave(recording);
         else
@@ -126,13 +136,16 @@ var SummaryController = class SummaryController {
         const file = recording.file;
         const plan = summaryRetryPlan(error, { hasUnsaved: this._service.hasUnsaved(file),
             recordingExists: this._hasRecording(recording) && file.query_exists(null) });
-        if (!plan)
+        if (!plan && !this._service.hasUnsaved(file))
             this._service.discardUnsaved(file);
         const message = summaryFailureMessage(error, plan);
-        this._failures.set(recording.uri, { plan, message, options });
+        if (plan)
+            this._failures.set(recording.uri, { plan, message, options });
+        else
+            this._failures.delete(recording.uri);
         const toast = new Adw.Toast({ title: message, use_markup: false, timeout: 10 });
         if (plan) {
-            toast.button_label = 'Tentar de novo';
+            toast.button_label = plan === 'discard' ? 'Descartar…' : 'Tentar de novo';
             toast.connect('button-clicked', () => this.retry(recording));
         }
         this._showToast(toast);

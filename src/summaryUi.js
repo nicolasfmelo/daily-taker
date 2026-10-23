@@ -14,6 +14,8 @@ var summaryConfirmMessage = (t, model, { regenerate = false } = {}) => {
 };
 
 var summaryRetryPlan = (error, { hasUnsaved, recordingExists = true }) => {
+    if (error?.kind === 'transcriptUnavailable' && hasUnsaved && recordingExists)
+        return 'discard';
     const plan = retryPlan(error, { hasUnsaved, recordingExists });
     return plan === 'transcribe' ? 'summarize' : plan;
 };

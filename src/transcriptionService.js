@@ -49,7 +49,10 @@ var TranscriptionService = class TranscriptionService {
     }
 
     discardUnsaved(recordingFile) {
-        this._unsaved.delete(recordingFile.get_uri());
+        const uri = recordingFile.get_uri();
+        this._unsaved.delete(uri);
+        this._failed.delete(uri);
+        this._emit(uri, 'none');
     }
 
     // Tenta de novo só a gravação em disco da última transcrição que falhou ao salvar:

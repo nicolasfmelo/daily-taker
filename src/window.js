@@ -138,16 +138,19 @@ var Window = GObject.registerClass({
             getKey: () => defaultKeyStore().get(),
             getModel: () => this._summaryModel(),
             summarize: summarizeTranscript,
-            save: guardedSave((file, summary) => {
-                if (!saveSummary(file, summary))
-                    throw new Error('Transcrição ausente');
-            }, { isRemoved: file => this._deleteQueue.pending().some(r => r.file.equal(file)) }),
+            save: (file, summary) => {
+                if (!file.query_exists(null) || this._deleteQueue.pending().some(r => r.file.equal(file)))
+                    throw new imports.transcriber.TranscribeError('recordingGone', 0,
+                        'A gravação foi excluída antes de o resumo terminar.');
+                return saveSummary(file, summary);
+            },
             now: () => new Date(),
         });
         this._summary = new SummaryController({
             parent: this, service: this.summaryService, getModel: () => this._summaryModel(),
             showToast: toast => this._toastOverlay.add_toast(toast),
             openPreferences: () => this.application.activate_action('preferences', null),
+            showDiscard: recording => this._confirmDiscard(recording, this._summary),
             hasRecording: recording => this._indexOf(recording) >= 0,
             canRequest: recording => !this._isTranscribing(recording),
             getTranscript: recording => loadTranscript(recording.file),
@@ -208,9 +211,48 @@ var Window = GObject.registerClass({
         return this._sidebar.select(recording ?? null);
     }
 
-    addToast(title) {
-        // Sem markup: nomes de gravação podem ter & ou < (ex.: "Reunião P&D").
-        this._toastOverlay.add_toast(new Adw.Toast({ title, use_markup: false }));
+    addToast(title, { buttonLabel = null, onClick = null } = {}) {
+        const toast = new Adw.Toast({ title, use_markup: false });
+        if (buttonLabel) {
+            toast.button_label = buttonLabel;
+            toast.connect('button-clicked', onClick);
+        }
+        this._toastOverlay.add_toast(toast);
+        return toast;
+    }
+
+    _showRefusal(recording, title) {
+        const controller = this.transcriptionService.hasUnsaved(recording.file) ? this._transcription
+            : this.summaryService.hasUnsaved(recording.file) ? this._summary : null;
+        return this.addToast(title, controller ? {
+            buttonLabel: 'Descartar…',
+            onClick: () => this._confirmDiscard(recording, controller),
+        } : {});
+    }
+
+    _confirmDiscard(recording, controller) {
+        if (this._closed || this._discardDialog)
+            return;
+        const file = recording.file;
+        const dialog = new Adw.MessageDialog({
+            transient_for: this, modal: true, heading: 'Descartar resultado pago?',
+            body: 'Descartar o resultado pago que não foi salvo? Isso não pode ser desfeito.',
+            heading_use_markup: false, body_use_markup: false,
+        });
+        dialog.add_response('cancel', 'Cancelar');
+        dialog.add_response('discard', 'Descartar');
+        dialog.default_response = 'cancel';
+        dialog.close_response = 'cancel';
+        dialog.set_response_appearance('discard', Adw.ResponseAppearance.DESTRUCTIVE);
+        this._discardDialog = dialog;
+        dialog.connect('response', (_dialog, response) => {
+            this._discardDialog = null;
+            dialog.destroy();
+            if (response === 'discard' && !this._closed && recording.file.equal(file) &&
+                controller._service.status(file) !== 'running')
+                controller.discardUnsaved(recording);
+        });
+        dialog.present();
     }
 
     get state() {
@@ -369,10 +411,10 @@ var Window = GObject.registerClass({
         });
         sidebar.connect('rename-requested', (_s, recording) => this._showRenameDialog(recording));
         sidebar.connect('rename-refused', (_s, recording) =>
-            this.addToast(this._renameRefusal(recording) ?? RENAME_BUSY_MESSAGE));
+            this._showRefusal(recording, this._renameRefusal(recording) ?? RENAME_BUSY_MESSAGE));
         sidebar.connect('delete-requested', (_s, recording) => this._deleteRecording(recording));
         sidebar.connect('delete-refused', (_s, recording) =>
-            this.addToast(this._deleteRefusal(recording) ?? DELETE_BUSY_MESSAGE));
+            this._showRefusal(recording, this._deleteRefusal(recording) ?? DELETE_BUSY_MESSAGE));
         sidebar.connect('export-audio-requested', (_s, recording) => this._exportAudio(recording));
     }
 
@@ -774,7 +816,7 @@ var Window = GObject.registerClass({
             return;
         const refusal = this._renameRefusal(recording);
         if (refusal) {
-            this.addToast(refusal);
+            this._showRefusal(recording, refusal);
             return;
         }
         const entry = new Gtk.Entry({ text: recording.name, activates_default: true, hexpand: true });
@@ -845,7 +887,7 @@ var Window = GObject.registerClass({
         // O serviço grava ao lado do arquivo antigo: renomear durante a transcrição a perderia.
         const refusal = this._renameRefusal(recording);
         if (refusal) {
-            this.addToast(refusal);
+            this._showRefusal(recording, refusal);
             return false;
         }
         try {
@@ -886,7 +928,7 @@ var Window = GObject.registerClass({
             return;
         const refusal = this._deleteRefusal(recording);
         if (refusal) {
-            this.addToast(refusal);
+            this._showRefusal(recording, refusal);
             return;
         }
         if (this.playback.uri === recording.uri) {

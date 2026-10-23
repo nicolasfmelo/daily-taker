@@ -1,5 +1,8 @@
 /* exported SummaryService */
 const { TranscribeError } = imports.transcriber;
+const { TranscriptReadError } = imports.transcriptStore;
+const unavailableError = () => new TranscribeError('transcriptUnavailable', 0,
+    'O resumo pago não pode ser salvo: a transcrição sumiu ou está ilegível. Descarte o resultado para continuar.');
 
 const unknownError = () => new TranscribeError('unknown', 0, 'Erro inesperado ao gerar o resumo.');
 
@@ -14,6 +17,7 @@ var SummaryService = class SummaryService {
         this._failed = new Set();
         this._unsaved = new Map();
         this._listeners = [];
+        this._blockedSaves = new Set();
     }
 
     hasRunning() {
@@ -34,7 +38,11 @@ var SummaryService = class SummaryService {
     }
 
     discardUnsaved(file) {
-        this._unsaved.delete(file.get_uri());
+        const uri = file.get_uri();
+        this._unsaved.delete(uri);
+        this._blockedSaves.delete(uri);
+        this._failed.delete(uri);
+        this._emit(uri, 'none');
     }
 
     run({ file, transcript, model }) {
@@ -52,6 +60,8 @@ var SummaryService = class SummaryService {
             return this._running.get(uri);
         if (!this.hasUnsaved(file))
             return Promise.reject(unknownError());
+        if (this._blockedSaves.has(uri))
+            return Promise.reject(unavailableError());
         return this._track(uri, () => this._saveOrKeep(file, this._unsaved.get(uri)));
     }
 
@@ -93,13 +103,18 @@ var SummaryService = class SummaryService {
     _saveOrKeep(file, summary) {
         const uri = file.get_uri();
         try {
-            this._save(file, summary);
+            if (this._save(file, summary) === null)
+                throw unavailableError();
         } catch (e) {
             if (e instanceof TranscribeError && e.kind === 'recordingGone') {
                 this._unsaved.delete(uri);
                 throw e;
             }
             this._unsaved.set(uri, summary);
+            if (e instanceof TranscriptReadError || e?.kind === 'transcriptUnavailable') {
+                this._blockedSaves.add(uri);
+                throw unavailableError();
+            }
             throw new TranscribeError('saveFailed', 0,
                 'O resumo foi gerado, mas não foi possível salvá-lo no disco.');
         }

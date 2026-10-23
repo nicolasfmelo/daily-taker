@@ -99,4 +99,18 @@ testAsync('hasRunning acompanha geração até salvar ou falhar', async () => {
     await pending;
     assert.equal(service.hasRunning(), false);
 });
+testAsync('transcrição ausente ou ilegível retém resumo mas bloqueia retry de salvamento em loop', async () => {
+    for (const save of [() => null, () => { throw new imports.transcriptStore.TranscriptReadError('inválida'); }]) {
+        let saves = 0;
+        const { service, calls } = setup({ save: () => { saves++; return save(); } });
+        assert.equal((await reject(service.run({ file, transcript: {} }))).kind, 'transcriptUnavailable');
+        assert.equal(service.hasUnsaved(file), true);
+        assert.equal((await reject(service.retrySave(file))).kind, 'transcriptUnavailable');
+        assert.equal(saves, 1);
+        assert.equal(calls.api, 1);
+        service.discardUnsaved(file);
+        assert.equal(service.hasUnsaved(file), false);
+        assert.equal(service.status(file), 'none');
+    }
+});
 finish();
