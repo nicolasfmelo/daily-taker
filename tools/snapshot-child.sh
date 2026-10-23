@@ -1,11 +1,18 @@
 #!/usr/bin/env bash
-# Recebe apenas a raiz isolada e o comando; o segredo nunca passa por argv.
+# Executado dentro do compositor: recebe só o caminho tmpfs, nunca o segredo no argv.
 set -euo pipefail
-work="$1"
+key_file="$1"
 shift
-if [ -f "$work/api-key" ]; then
-    IFS= read -r -d '' DAILY_TAKER_OP_KEY < "$work/api-key" || true
+cleanup() {
+    [ -z "$key_file" ] || rm -f -- "$key_file"
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+if [ -n "$key_file" ]; then
+    IFS= read -r -d '' DAILY_TAKER_OP_KEY < "$key_file" || true
+    cleanup
+    key_file=''
     export DAILY_TAKER_OP_KEY
-    rm -f -- "$work/api-key"
 fi
 exec "$@"

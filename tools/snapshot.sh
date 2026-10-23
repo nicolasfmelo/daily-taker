@@ -7,6 +7,8 @@
 #                          [--state recorder|none|running|error|ready] [--find TEXTO] [--empty 0|1]
 #   bash tools/snapshot.sh --probe-audio   # prova, no mesmo ambiente, que o áudio vai para o nada
 set -euo pipefail
+# O shell lê a variável só no componente autorizado; subprocessos não a herdam.
+export -n DAILY_TAKER_OP_KEY 2>/dev/null || true
 
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 build="$repo/build"
@@ -78,6 +80,7 @@ fi
 
 work="$(realpath -- "$(mktemp -d "$build/daily-taker-snapshot-XXXXXX")")"
 pgid=''
+key_file=''
 cleanup() {
     # Só o grupo de processos iniciado aqui (dbus-run-session, mutter, app).
     if [ -n "$pgid" ] && kill -0 -- "-$pgid" 2>/dev/null; then
@@ -88,6 +91,7 @@ cleanup() {
         done
         kill -KILL -- "-$pgid" 2>/dev/null || true
     fi
+    [ -z "$key_file" ] || rm -f -- "$key_file"
     rm -rf -- "$work"
 }
 trap cleanup EXIT
@@ -141,22 +145,28 @@ done
 # sem chave da API, GSettings em memória e sem servidor de áudio alcançável.
 rm -f -- "$out"
 gjs_bin="$(sed -n '1s/^#!//p' "$work/launcher")"
+# Só tmpfs: SIGKILL pode impedir traps, mas nunca deixa a chave no repositório/disco.
+if [ "$component" = 'summarycheck' ]; then
+    [ -n "${DAILY_TAKER_OP_KEY:-}" ] || die "summarycheck exige DAILY_TAKER_OP_KEY"
+    secret_dir="${XDG_RUNTIME_DIR:-/dev/shm}"
+    if [ ! -d "$secret_dir" ] || [ "$(stat -f -c %T "$secret_dir")" != tmpfs ]; then
+        secret_dir='/dev/shm'
+    fi
+    [ "$(stat -f -c %T "$secret_dir")" = tmpfs ] || die "tmpfs indisponível para a chave"
+    key_file="$(umask 077; mktemp "$secret_dir/daily-taker-snapshot-key-XXXXXX")"
+    (umask 077; printf '%s' "$DAILY_TAKER_OP_KEY" > "$key_file")
+fi
+unset DAILY_TAKER_OP_KEY
 if [ -n "$probe_audio" ]; then
     command=(bash "$repo/tools/probe-audio.sh" "$work/data/daily-taker/Ideias para o app")
 else
     command=(mutter --headless --wayland --no-x11 --wayland-display snapshot-wayland
-        --virtual-monitor "$size" -- "$gjs_bin" "$work/launcher")
+        --virtual-monitor "$size" -- bash "$repo/tools/snapshot-child.sh" "$key_file" "$gjs_bin" "$work/launcher")
 fi
 optional=()
 for v in TZ GSK_RENDERER DAILY_TAKER_SNAPSHOT_SABOTAGE; do
     [ -z "${!v:-}" ] || optional+=("$v=${!v}")
 done
-# Só este componente autorizado recebe a chave, por arquivo privado lido e apagado
-# pelo filho antes do exec. Nunca argumento de env, timeout, bash ou dbus.
-if [ "$component" = 'summarycheck' ]; then
-    [ -n "${DAILY_TAKER_OP_KEY:-}" ] || die "summarycheck exige DAILY_TAKER_OP_KEY"
-    (umask 077; printf '%s' "$DAILY_TAKER_OP_KEY" > "$work/api-key")
-fi
 set +e
 env -i \
     PATH="$PATH" \
@@ -195,7 +205,7 @@ env -i \
     DAILY_TAKER_SNAPSHOT_SUMMARY="$summary" \
     DAILY_TAKER_SNAPSHOT_SUMMARY_VERSION="$summary_version" \
     setsid --wait timeout --kill-after=5 "$timeout_s" \
-        bash "$repo/tools/snapshot-child.sh" "$work" dbus-run-session -- "${command[@]}" \
+        dbus-run-session -- "${command[@]}" \
         >"$work/run.log" 2>&1 &
 pgid=$!
 wait "$pgid"

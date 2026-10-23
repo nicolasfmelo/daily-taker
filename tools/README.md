@@ -72,9 +72,13 @@ bash tools/snapshot.sh OUT.png [--component window|windowcheck|summarycheck|pref
     No fish, com a variável já configurada, executar uma vez:
     `SNAPSHOT_TIMEOUT=360 bash tools/snapshot.sh OUT.png --component summarycheck`.
     Os demais componentes nunca recebem a chave nem chamam a API.
-    O segredo passa por um arquivo 0600 no diretório privado da captura;
-    `snapshot-child.sh` lê e apaga antes do exec. Não entra em argv de `env`,
-    `bash`, `timeout` ou D-Bus. Os demais componentes não criam esse arquivo.
+    O segredo passa por arquivo **0600 em tmpfs** (`$XDG_RUNTIME_DIR` se tmpfs,
+    senão `/dev/shm`), nunca por disco persistente/argv. Só `snapshot-child.sh`,
+    já dentro do compositor, lê, apaga e exporta para o exec do app; D-Bus e mutter
+    não recebem a variável. Traps EXIT/INT/TERM removem o arquivo, também no pai.
+    SIGKILL pode deixar um arquivo privado apenas em RAM até reiniciar/remover.
+    `bash tests/snapshotSecret_test.sh` prova esse caminho com compositor falso,
+    segredo falso e nenhuma GUI/API (0600, tmpfs, argv, remoção e sinais).
   - `window`: a janela mestre-detalhe real (`src/window.js`) com a biblioteca das
     fixtures. Espera a varredura da pasta (`RecordingList.loaded`) e as durações.
     `--select N` seleciona a gravação N da lista (1 = "Daily · Projeto Atlas"; 4 =
