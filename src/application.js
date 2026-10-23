@@ -100,6 +100,10 @@ var Application = GObject.registerClass(class Application extends Adw.Applicatio
     }
 
     vfunc_activate() {
+        if (this.window && !this.window._closed) {
+            this.window.present();
+            return;
+        }
         // Fora de uma captura (DAILY_TAKER_SNAPSHOT), {}: a saída de áudio padrão.
         this.window = new Window({ application: this, playbackOptions: playbackOptions() });
         if (pkg.name.endsWith('Devel'))

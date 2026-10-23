@@ -1105,6 +1105,12 @@ const windowCheckComponent = (params, { window }) => {
     const ready = withTimeout(libraryReady(list), 20000, 'a biblioteca (varredura e durações)').then(async items => {
         await whenMapped(window);
         check(items.length === 4, `biblioteca com as 4 fixtures (${items.length})`);
+        const app = window.application;
+        app.activate();
+        app.activate();
+        check(app.window === window && app.get_windows().filter(w => w === window).length === 1 &&
+            app.get_windows().length === 1,
+        'reativar launcher duas vezes apresenta a mesma janela principal, sem criar outra');
         const [daily, ideias, notas, sem] = items;
 
         // 0a. Depois do primeiro map a sidebar aquece o cache da busca em segundo plano: a

@@ -204,6 +204,8 @@ fone de ouvido.
 - [ ] **Nome com caracteres especiais.** Renomear uma gravação para
   `Reunião P&D <revisão>` e excluí-la. Esperado: o aviso de exclusão mostra o
   nome inteiro e legível (sem ficar vazio).
+- [ ] **Launcher repetido.** Ativar o launcher duas vezes durante uma operação:
+  a mesma janela é apresentada, sem criar outra ou interromper o trabalho.
 - [ ] **Renomear após falha ao salvar.** Com transcrição ou resumo pago retido,
   renomear pela janela, F2 e menu é recusado; um diálogo já aberto se bloqueia.
   Após Tentar de novo salvar, renomear leva o resultado ao nome novo sem cobrar.
