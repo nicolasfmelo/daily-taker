@@ -1302,13 +1302,17 @@ const windowCheckComponent = (params, { window }) => {
         const oldSidecar = transcriptFileFor(moveFailure.file);
         const orphan = RecordingsDir.get_child('Destino com sidecar órfão');
         saveTranscript(orphan, { ...disk, text: 'Destino preservado' });
-        window._renameRecording(moveFailure, orphan.get_basename());
-        check(toasts[toasts.length - 1] === 'A transcrição não acompanhou o novo nome.' &&
-            oldSidecar.query_exists(null) && loadTranscript(orphan).text === 'Destino preservado',
-        'rename com colisão de sidecar avisa e preserva ambos os resultados em disco');
+        await select(moveFailure);
+        const origin = moveFailure.file;
+        check(!window._renameRecording(moveFailure, orphan.get_basename()) &&
+            toasts[toasts.length - 1] === 'Já existe um arquivo de transcrição com esse nome. Escolha outro nome.' &&
+            moveFailure.file.equal(origin) && origin.query_exists(null) && !orphan.query_exists(null) &&
+            oldSidecar.query_exists(null) && loadTranscript(orphan).text === 'Destino preservado' &&
+            pane.view.recordingFile.equal(origin) && pane.view.transcript.text === disk.text,
+        'rename com sidecar órfão aborta inteiro: áudio, transcrições e painel originais intactos');
         list.remove(list.getIndex(moveFailure.file));
         moveFailure.delete({ sync: true });
-        oldSidecar.delete(null);
+        transcriptFileFor(orphan).delete(null);
 
         // 2. Trocar de gravação com outra tocando: o áudio anterior para.
         await select(daily);

@@ -206,6 +206,9 @@ fone de ouvido.
 - [ ] **Nome inválido.** Tentar renomear uma gravação para um nome que termine em
   `.transcript.json`. Esperado: o nome é recusado com um aviso curto e a
   gravação não é renomeada.
+- [ ] **Colisão de transcrição.** Se o destino já tem sidecar ou backup ilegível,
+  renomear é recusado com aviso; áudio, transcrição original e órfão ficam intactos.
+  Uma falha ao mover o áudio reverte o sidecar ao caminho original.
 - [ ] **Nome com caracteres especiais.** Renomear uma gravação para
   `Reunião P&D <revisão>` e excluí-la. Esperado: o aviso de exclusão mostra o
   nome inteiro e legível (sem ficar vazio).

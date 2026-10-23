@@ -1,6 +1,6 @@
 /* exported isTranscriptFileName, transcriptFileFor, saveTranscript, loadTranscript,
-            moveTranscript, listTranscripts, saveSummary, restoreSummaryAt, saveSpeakers,
-            saveTranscriptKeepingSummary, TranscriptReadError */
+            listTranscripts, saveSummary, restoreSummaryAt, saveSpeakers,
+            saveTranscriptKeepingSummary, TranscriptReadError, renameRecordingFiles, TranscriptNameConflict */
 // Persistência das transcrições ao lado das gravações. Gio/GLib síncronos,
 // sem dependência de GTK ou do módulo application (carregável em gjs puro).
 const { Gio, GLib } = imports.gi;
@@ -12,6 +12,7 @@ const SUFFIX = '.transcript.json';
 var isTranscriptFileName = name => name.endsWith(SUFFIX) || name.includes(`${SUFFIX}.unreadable-`);
 
 var TranscriptReadError = class TranscriptReadError extends Error {};
+var TranscriptNameConflict = class TranscriptNameConflict extends Error {};
 
 var transcriptFileFor = recordingFile =>
     recordingFile.get_parent().get_child(`${recordingFile.get_basename()}${SUFFIX}`);
@@ -95,15 +96,8 @@ var loadTranscript = recordingFile => {
     }
 };
 
-var moveTranscript = (oldRecordingFile, newRecordingFile) => {
-    const src = transcriptFileFor(oldRecordingFile);
-    const dest = transcriptFileFor(newRecordingFile);
-    if (src.equal(dest) || !src.query_exists(null))
-        return;
-    src.move(dest, Gio.FileCopyFlags.NONE, null, null);
-
-    // O título nasce do nome da gravação: acompanha o novo nome, salvo se o usuário o
-    // personalizou. Falhar aqui não desfaz a mudança de nome (só fica o título antigo).
+// Só depois de ambos os movimentos: rollback preserva os bytes/título originais.
+const updateMovedTitle = (oldRecordingFile, newRecordingFile) => {
     const oldName = oldRecordingFile.get_basename();
     const newName = newRecordingFile.get_basename();
     try {
@@ -111,8 +105,50 @@ var moveTranscript = (oldRecordingFile, newRecordingFile) => {
         if (t && t.title === oldName)
             saveTranscript(newRecordingFile, Object.assign({}, t, { title: newName }));
     } catch (e) {
-        log(`Não foi possível atualizar o título da transcrição: ${dest.get_basename()}`);
+        log(`Não foi possível atualizar o título da transcrição: ${newRecordingFile.get_basename()}`);
     }
+};
+
+// Os backups ilegíveis permanecem sob o nome original (nunca sobrescritos).
+// Um destino com sidecar OU backup órfão não pode ser associado a outro áudio.
+var renameRecordingFiles = (src, dest, {
+    move = (from, to) => from.move(to, Gio.FileCopyFlags.NONE, null, null),
+} = {}) => {
+    if (src.equal(dest))
+        return;
+    const exists = file => file.query_file_type(Gio.FileQueryInfoFlags.NOFOLLOW_SYMLINKS, null) !== Gio.FileType.UNKNOWN;
+    if (exists(dest))
+        throw new GLib.Error(Gio.io_error_quark(), Gio.IOErrorEnum.EXISTS, 'Nome de gravação ocupado.');
+    const sidecar = transcriptFileFor(src);
+    const target = transcriptFileFor(dest);
+    const prefix = `${target.get_basename()}.unreadable-`;
+    const entries = dest.get_parent().enumerate_children('standard::name',
+        Gio.FileQueryInfoFlags.NOFOLLOW_SYMLINKS, null);
+    let backupConflict = false;
+    try {
+        for (let info; (info = entries.next_file(null));) {
+            if (info.get_name().startsWith(prefix)) {
+                backupConflict = true;
+                break;
+            }
+        }
+    } finally {
+        entries.close(null);
+    }
+    if (exists(target) || backupConflict)
+        throw new TranscriptNameConflict('Destino de transcrição ocupado.');
+    const hasSidecar = exists(sidecar);
+    if (hasSidecar)
+        move(sidecar, target);
+    try {
+        move(src, dest);
+    } catch (e) {
+        if (hasSidecar)
+            move(target, sidecar);
+        throw e;
+    }
+    if (hasSidecar)
+        updateMovedTitle(src, dest);
 };
 
 var listTranscripts = dir => {

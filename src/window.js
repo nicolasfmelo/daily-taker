@@ -902,12 +902,12 @@ var Window = GObject.registerClass({
         }
         try {
             recording.name = name;
-            if (recording.transcriptMoveFailed)
-                this.addToast('A transcrição não acompanhou o novo nome.');
         } catch (e) {
-            this.addToast(e.matches?.(Gio.IOErrorEnum, Gio.IOErrorEnum.EXISTS)
-                ? 'Já existe uma gravação com esse nome.'
-                : 'Não foi possível renomear a gravação.');
+            this.addToast(e instanceof imports.transcriptStore.TranscriptNameConflict
+                ? 'Já existe um arquivo de transcrição com esse nome. Escolha outro nome.'
+                : e.matches?.(Gio.IOErrorEnum, Gio.IOErrorEnum.EXISTS)
+                    ? 'Já existe uma gravação com esse nome.'
+                    : 'Não foi possível renomear a gravação.');
             return false;
         }
         return true;

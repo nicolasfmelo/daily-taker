@@ -118,50 +118,54 @@ test('JSON válido mas inválido como transcrição é ignorado', () => withDir(
     });
 }));
 
-test('moveTranscript leva o arquivo para o novo nome', () => withDir(dir => {
+test('rename leva áudio e transcrição para o novo nome', () => withDir(dir => {
     const oldRec = touch(dir, 'Recording 1');
     const t = makeTranscript();
     S.saveTranscript(oldRec, t);
     const newRec = dir.get_child('Reunião');
-    S.moveTranscript(oldRec, newRec);
+    S.renameRecordingFiles(oldRec, newRec);
+    assert.equal(oldRec.query_exists(null), false);
+    assert.equal(newRec.query_exists(null), true);
     assert.equal(dir.get_child('Recording 1.transcript.json').query_exists(null), false);
     assert.deepEqual(S.loadTranscript(newRec), t);
 }));
 
-test('moveTranscript atualiza o título que era o nome antigo da gravação', () => withDir(dir => {
+test('rename atualiza o título que era o nome antigo da gravação', () => withDir(dir => {
     const oldRec = touch(dir, 'Gravação 3');
     const t = makeTranscript(null, { title: 'Gravação 3' });
     S.saveTranscript(oldRec, t);
     const newRec = dir.get_child('Daily 22/10'.replace('/', '-'));
-    S.moveTranscript(oldRec, newRec);
+    S.renameRecordingFiles(oldRec, newRec);
     assert.equal(dir.get_child('Gravação 3.transcript.json').query_exists(null), false);
     const moved = S.loadTranscript(newRec);
     assert.equal(moved.title, 'Daily 22-10');
     assert.deepEqual(moved, Object.assign({}, t, { title: 'Daily 22-10' }));
 }));
 
-test('moveTranscript preserva um título personalizado', () => withDir(dir => {
+test('rename preserva um título personalizado', () => withDir(dir => {
     const oldRec = touch(dir, 'Gravação 3');
     const t = makeTranscript(null, { title: 'Planejamento do trimestre' });
     S.saveTranscript(oldRec, t);
     const newRec = dir.get_child('Daily');
-    S.moveTranscript(oldRec, newRec);
+    S.renameRecordingFiles(oldRec, newRec);
     assert.deepEqual(S.loadTranscript(newRec), t);
 }));
 
-test('moveTranscript com transcrição ilegível só move, sem lançar', () => withDir(dir => {
+test('rename com transcrição ilegível só move, sem lançar', () => withDir(dir => {
     const oldRec = touch(dir, 'Gravação 3');
     dir.get_child('Gravação 3.transcript.json').replace_contents('{ quebrado', null, false,
         Gio.FileCreateFlags.NONE, null);
     const newRec = dir.get_child('Daily');
-    captureLog(() => S.moveTranscript(oldRec, newRec));
+    captureLog(() => S.renameRecordingFiles(oldRec, newRec));
     assert.equal(dir.get_child('Gravação 3.transcript.json').query_exists(null), false);
     assert.equal(dir.get_child('Daily.transcript.json').query_exists(null), true);
 }));
 
-test('moveTranscript sem transcrição não faz nada', () => withDir(dir => {
+test('rename sem transcrição move só o áudio', () => withDir(dir => {
     const oldRec = touch(dir, 'Recording 1');
-    S.moveTranscript(oldRec, dir.get_child('Outro'));
+    S.renameRecordingFiles(oldRec, dir.get_child('Outro'));
+    assert.equal(oldRec.query_exists(null), false);
+    assert.equal(dir.get_child('Outro').query_exists(null), true);
     assert.equal(dir.get_child('Outro.transcript.json').query_exists(null), false);
 }));
 
@@ -193,7 +197,7 @@ test('resumo, locutores, regeneração e mudança de nome preservam dados recent
     assert.deepEqual(regenerated.summary, summary('B'));
     assert.deepEqual(regenerated.summary_history, [summary('A')]);
     const dest = dir.get_child('Renomeada');
-    S.moveTranscript(rec, dest);
+    S.renameRecordingFiles(rec, dest);
     const restored = S.restoreSummaryAt(dest, 0);
     assert.deepEqual(restored.summary, summary('A'));
     assert.deepEqual(S.loadTranscript(dest).summary_history, [summary('B')]);
@@ -233,7 +237,7 @@ for (const invalid of ['{"privado":', JSON.stringify({ ...makeTranscript(), vers
         assert.equal(S.isTranscriptFileName(backups[0]), true);
         assert.equal(imports.byteArray.toString(dir.get_child(backups[0]).load_contents(null)[1]), invalid);
         assert.equal(S.listTranscripts(dir).length, 1);
-        S.moveTranscript(rec, dir.get_child('Renomeada'));
+        S.renameRecordingFiles(rec, dir.get_child('Renomeada'));
         assert.equal(dir.get_child(backups[0]).query_exists(null), true);
         assert.equal(S.loadTranscript(dir.get_child('Renomeada')).text, 'Nova paga');
     }));
@@ -255,13 +259,13 @@ test('restaurar por data seleciona a mesma versão mesmo após novo resumo e per
     assert.deepEqual(S.restoreSummaryAt(rec, 'não existe'), restored);
 }));
 
-test('moveTranscript não sobrescreve sidecar órfão do destino', () => withDir(dir => {
+test('rename não sobrescreve sidecar órfão do destino', () => withDir(dir => {
     const src = touch(dir, 'Origem');
     const dest = dir.get_child('Destino');
     S.saveTranscript(src, makeTranscript(null, { text: 'Paga origem' }));
     S.saveTranscript(dest, makeTranscript(null, { text: 'Paga destino' }));
     let failed = false;
-    try { S.moveTranscript(src, dest); } catch (e) { failed = true; }
+    try { S.renameRecordingFiles(src, dest); } catch (e) { failed = true; }
     assert.equal(failed, true);
     assert.equal(S.loadTranscript(src).text, 'Paga origem');
     assert.equal(S.loadTranscript(dest).text, 'Paga destino');
@@ -281,6 +285,64 @@ test('falha de I/O na leitura não autoriza backup nem sobrescrita', () => withD
         names.push(info.get_name());
     en.close(null);
     assert.deepEqual(names.sort(), ['Daily', 'Daily.transcript.json']);
+}));
+
+test('rename transacional: sidecar órfão e backup do destino impedem qualquer mudança', () => withDir(dir => {
+    const src = touch(dir, 'Origem');
+    const dest = dir.get_child('Destino');
+    const original = makeTranscript(null, { title: 'Origem', text: 'Paga origem' });
+    const orphan = makeTranscript(null, { text: 'Órfã intocável' });
+    S.saveTranscript(src, original);
+    S.saveTranscript(dest, orphan);
+    let error;
+    try { S.renameRecordingFiles(src, dest); } catch (e) { error = e; }
+    assert.equal(error instanceof S.TranscriptNameConflict, true);
+    assert.equal(src.query_exists(null), true);
+    assert.equal(dest.query_exists(null), false);
+    assert.deepEqual(S.loadTranscript(src), original);
+    assert.deepEqual(S.loadTranscript(dest), orphan);
+    S.transcriptFileFor(dest).delete(null);
+    const backup = touch(dir, 'Destino.transcript.json.unreadable-123');
+    try { S.renameRecordingFiles(src, dest); } catch (e) { error = e; }
+    assert.equal(error instanceof S.TranscriptNameConflict, true);
+    assert.equal(src.query_exists(null), true);
+    assert.equal(dest.query_exists(null), false);
+    assert.equal(backup.query_exists(null), true);
+    assert.deepEqual(S.loadTranscript(src), original);
+}));
+
+test('rename transacional: falha no áudio desfaz o sidecar sem mudar bytes ou título', () => withDir(dir => {
+    const src = touch(dir, 'Origem');
+    const dest = dir.get_child('Destino');
+    const original = makeTranscript(null, { title: 'Origem' });
+    S.saveTranscript(src, original);
+    let error;
+    try {
+        S.renameRecordingFiles(src, dest, { move: (from, to) => {
+            if (from.equal(src))
+                throw new Error('segundo passo falhou');
+            from.move(to, Gio.FileCopyFlags.NONE, null, null);
+        } });
+    } catch (e) { error = e; }
+    assert.equal(error.message, 'segundo passo falhou');
+    assert.equal(src.query_exists(null), true);
+    assert.equal(dest.query_exists(null), false);
+    assert.deepEqual(S.loadTranscript(src), original);
+    assert.equal(S.transcriptFileFor(dest).query_exists(null), false);
+}));
+
+test('rename transacional: sucesso move áudio e sidecar e preserva backup original', () => withDir(dir => {
+    const src = touch(dir, 'Origem');
+    const dest = dir.get_child('Destino');
+    const original = makeTranscript(null, { title: 'Origem' });
+    const backup = touch(dir, 'Origem.transcript.json.unreadable-123');
+    S.saveTranscript(src, original);
+    S.renameRecordingFiles(src, dest);
+    assert.equal(src.query_exists(null), false);
+    assert.equal(dest.query_exists(null), true);
+    assert.equal(S.transcriptFileFor(src).query_exists(null), false);
+    assert.deepEqual(S.loadTranscript(dest), { ...original, title: 'Destino' });
+    assert.equal(backup.query_exists(null), true);
 }));
 
 finish();

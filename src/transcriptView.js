@@ -215,16 +215,15 @@ var TranscriptView = GObject.registerClass({
         this._scroller.vadjustment.value = 0;
     }
 
-    // A gravação foi renomeada (o arquivo mudou): salvar nomes de locutor e o realce pelo
-    // URI passam a usar o arquivo novo. Não refaz os blocos.
+    // Recarrega a transcrição inteira: nunca combina título novo com blocos antigos.
     setRecordingFile(file) {
-        this._recordingFile = file ?? null;
         const current = file ? loadTranscript(file) : null;
-        if (this._transcript && current && this._transcript.title !== current.title) {
-            this._transcript = { ...this._transcript, title: current.title };
-            this.emit('transcript-changed', this._transcript);
+        if (current) {
+            this.setTranscript(current, file);
+            this.emit('transcript-changed', current);
+        } else {
+            this.clear();
         }
-        this._syncHighlight();
     }
 
     // Copiar tudo (o botão fica no cabeçalho do DetailPane).

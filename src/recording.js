@@ -3,7 +3,7 @@ const { Gio, GLib, GObject, GstPbutils } = imports.gi;
 const { CacheDir } = imports.application;
 const ByteArray = imports.byteArray;
 const Recorder = imports.recorder;
-const { moveTranscript, transcriptFileFor } = imports.transcriptStore;
+const { renameRecordingFiles, transcriptFileFor } = imports.transcriptStore;
 const { trashRecordingFiles, trashRecordingFilesSync } = imports.recordingTrash;
 const { generatePeaks } = imports.peaksPipeline;
 
@@ -77,15 +77,9 @@ var Recording = new GObject.registerClass({
 
     set name(filename) {
         if (filename && filename !== this.name) {
-            const oldFile = this._file;
-            this.transcriptMoveFailed = false;
-            this._file = this._file.set_display_name(filename, null);
-            try {
-                moveTranscript(oldFile, this._file);
-            } catch (e) {
-                this.transcriptMoveFailed = true;
-                log('Não foi possível mover o sidecar da transcrição; arquivo original preservado.');
-            }
+            const next = this._file.get_parent().get_child_for_display_name(filename);
+            renameRecordingFiles(this._file, next);
+            this._file = next;
             this.notify('name');
         }
     }
