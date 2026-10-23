@@ -1,6 +1,6 @@
 /* exported API_BASE, MODEL, MAX_UPLOAD_BYTES, PRICE_PER_SECOND_USD, UPLOAD_TIMEOUT_SEC,
             CHECK_TIMEOUT_SEC, estimateCostUsd,
-            formFields, TranscribeError, classifyError, transcribeFile, checkApiKey */
+            formFields, TranscribeError, classifyError, transcribeFile, checkApiKey, requestJson */
 // Cliente do endpoint de transcrição do OpenRouter (elevenlabs/scribe-v2).
 // A chave da API só aparece no header Authorization: nunca em mensagens de erro nem em logs.
 const { Gio, GLib, Soup } = imports.gi;
@@ -103,13 +103,66 @@ const newSession = timeoutSec => {
     return session;
 };
 
-const newMessage = (method, url, apiKey) => {
-    const msg = Soup.Message.new(method, url);
+const authorize = (msg, apiKey) => {
     if (!msg)
         throw new TranscribeError('unknown');
     msg.get_request_headers().append('Authorization', `Bearer ${apiKey}`);
     return msg;
 };
+
+const newMessage = (method, url, apiKey) => authorize(Soup.Message.new(method, url), apiKey);
+
+const requestWithRetry = async ({
+    apiKey, makeMessage, retries = 2, backoffMs = 2000, timeoutSec,
+    retryOnNetwork = true, messages = {},
+}) => {
+    if (!apiKey)
+        throw new TranscribeError('noKey', 0, messages.noKey);
+    const session = newSession(timeoutSec);
+    try {
+        for (let attempt = 0; ; attempt++) {
+            let error;
+            try {
+                const msg = authorize(makeMessage(), apiKey);
+                const { status, text } = await send(session, msg);
+                if (status >= 200 && status < 300) {
+                    try {
+                        return JSON.parse(text);
+                    } catch (e) {
+                        throw new TranscribeError('unknown', status,
+                            messages.unknown ?? 'Resposta inválida do OpenRouter.');
+                    }
+                }
+                error = classifyError(status, text);
+            } catch (e) {
+                // O erro de transporte/programação pode conter detalhes da requisição.
+                error = e instanceof TranscribeError ? e : new TranscribeError('unknown');
+            }
+            if (messages[error.kind])
+                error = new TranscribeError(error.kind, error.status, messages[error.kind]);
+            if (!error.retryable || attempt >= retries || (error.kind === 'network' && !retryOnNetwork))
+                throw error;
+            await sleep(backoffMs * 2 ** attempt);
+        }
+    } finally {
+        session.abort();
+    }
+};
+
+var requestJson = ({
+    url, apiKey, body, baseUrl = API_BASE, retries = 2, backoffMs = 2000,
+    timeoutSec = CHECK_TIMEOUT_SEC, retryOnNetwork = true, messages = {},
+}) => requestWithRetry({
+    apiKey, retries, backoffMs, timeoutSec, retryOnNetwork, messages,
+    makeMessage: () => {
+        const target = /^https?:\/\//.test(url) ? url : `${baseUrl}/${url.replace(/^\//, '')}`;
+        const msg = Soup.Message.new('POST', target);
+        if (!msg)
+            throw new TranscribeError('unknown');
+        msg.set_request_body_from_bytes('application/json', new GLib.Bytes(new TextEncoder().encode(JSON.stringify(body))));
+        return msg;
+    },
+});
 
 const readAudio = file => {
     let size;
@@ -137,39 +190,16 @@ var transcribeFile = async ({
     if (!apiKey)
         throw new TranscribeError('noKey');
     const audio = readAudio(file);
-    const session = newSession(timeoutSec);
-
-    for (let attempt = 0; ; attempt++) {
-        const form = Soup.Multipart.new('multipart/form-data');
-        for (const [name, value] of formFields({ language }))
-            form.append_form_string(name, value);
-        form.append_form_file('file', 'recording.ogg', 'audio/ogg', audio);
-        const msg = Soup.Message.new_from_multipart(`${baseUrl}/audio/transcriptions`, form);
-        if (!msg)
-            throw new TranscribeError('unknown');
-        msg.get_request_headers().append('Authorization', `Bearer ${apiKey}`);
-
-        let error;
-        try {
-            const { status, text } = await send(session, msg);
-            if (status >= 200 && status < 300) {
-                try {
-                    return JSON.parse(text);
-                } catch (e) {
-                    throw new TranscribeError('unknown', status, 'Resposta inválida do OpenRouter.');
-                }
-            }
-            error = classifyError(status, text);
-        } catch (e) {
-            if (!(e instanceof TranscribeError))
-                throw e;
-            error = e;
-        }
-
-        if (!error.retryable || attempt >= retries)
-            throw error;
-        await sleep(backoffMs * 2 ** attempt);
-    }
+    return requestWithRetry({
+        apiKey, retries, backoffMs, timeoutSec,
+        makeMessage: () => {
+            const form = Soup.Multipart.new('multipart/form-data');
+            for (const [name, value] of formFields({ language }))
+                form.append_form_string(name, value);
+            form.append_form_file('file', 'recording.ogg', 'audio/ogg', audio);
+            return Soup.Message.new_from_multipart(`${baseUrl}/audio/transcriptions`, form);
+        },
+    });
 };
 
 var checkApiKey = async ({ apiKey, baseUrl = API_BASE, timeoutSec = CHECK_TIMEOUT_SEC }) => {

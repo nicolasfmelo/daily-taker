@@ -29,6 +29,7 @@
     <file>sidebar.js</file>
     <file>sidebarModel.js</file>
     <file>speakerColors.js</file>
+    <file>summarizer.js</file>
     <file>transcriber.js</file>
     <file>transcript.js</file>
     <file>transcriptFormat.js</file>
