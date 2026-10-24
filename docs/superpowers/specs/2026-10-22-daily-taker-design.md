@@ -32,7 +32,7 @@ Flatpak.
 | API | `POST https://openrouter.ai/api/v1/audio/transcriptions`, modelo `elevenlabs/scribe-v2` |
 | Chave | Campo nas Preferências (libsecret; fallback arquivo `0600`), com fallback para a env `DAILY_TAKER_OP_KEY` |
 | Empacotamento | `meson install --prefix ~/.local`, `.desktop` e ícone |
-| Licença | GPL-3 (herdada do Vocalis); uso pessoal |
+| Licença | GPL-2.0+ (herdada do Vocalis); uso pessoal |
 
 ## 3. Arquitetura
 

@@ -1,91 +1,104 @@
 # Daily Taker
 
-Gravador de voz pessoal para GNOME (GJS + GTK4 + libadwaita + GStreamer) para
-registrar reuniões e conversas. Ele grava o microfone junto com o som do
-computador (por exemplo, a outra ponta de uma chamada) em um único arquivo e,
-quando você pede, gera a transcrição com separação de locutores.
+A personal voice recorder for GNOME (GJS + GTK4 + libadwaita + GStreamer) for
+capturing meetings and conversations. It records your microphone **and** your
+computer's audio output (e.g. the other side of a call) into a single file and,
+on demand, generates a speaker-labelled transcript and an AI summary.
 
-## O que ele faz
+> **Derived work.** Daily Taker is a fork of
+> [Vocalis](https://gitlab.gnome.org/World/vocalis) (tag `42.0`), which is the
+> continuation of [GNOME Sound Recorder](https://gitlab.gnome.org/GNOME/gnome-sound-recorder).
+> It is distributed under the same license as the original,
+> **GPL-2.0-or-later**. See [Credits and license](#credits-and-license).
 
-- Grava microfone e som do sistema misturados, com indicadores de nível
-  separados para cada um e aviso quando o som do sistema não chega. A gravação
-  nova recebe um nome com data e hora (ex.: `Gravação 22 out 09:30`) e aparece
-  selecionada na lista ao parar.
-- **Gerar transcrição** (sob demanda): envia o áudio ao OpenRouter e salva o
-  resultado ao lado do áudio, em `<gravação>.transcript.json`.
-- **Gerar resumo** (sob demanda): resume o texto da transcrição com
-  `anthropic/claude-sonnet-5.5`, após confirmar custo e envio ao OpenRouter.
-- Ouve a gravação com a transcrição sincronizada, renomeia, exporta e exclui
-  (com desfazer).
+> **Language note.** The application UI, the design documents under `docs/` and
+> `tools/README.md` are written in Brazilian Portuguese. This README is in
+> English.
+
+## What it does
+
+- Records microphone and system audio mixed together, with separate level
+  meters for each and a warning when no system audio is arriving. New
+  recordings get a timestamped name (e.g. `Gravação 22 out 09:30`) and are
+  selected in the list when you stop.
+- **Generate transcript** (on demand): sends the audio to OpenRouter and stores
+  the result next to the audio file as `<recording>.transcript.json`.
+- **Generate summary** (on demand): summarizes the transcript text with
+  `anthropic/claude-sonnet-5.5` after you confirm the cost and the upload to
+  OpenRouter.
+- Plays back the recording with a synchronized transcript, and supports
+  renaming, exporting and deleting (with undo).
 
 ## Interface
 
-Janela única, tema escuro com acento laranja:
+Single window, dark theme with an orange accent:
 
-- **Cabeçalho**: ícone e "Daily Taker", **Nova gravação** (Ctrl+R),
-  **Preferências** (Ctrl+,) e o menu (atalhos de teclado, Sobre).
-- **Sidebar "Gravações"** (à esquerda): busca **por nome, transcrição e resumo
-  atual** (sem diferenciar acentos nem maiúsculas), lista agrupada por data
-  (HOJE, ONTEM, ESTA SEMANA, …) com o selo da transcrição (● Transcrita,
-  Transcrevendo…, ● Erro), menu ⋮ por item (Renomear, Gerar/Gerar novamente,
-  Exportar áudio, Excluir) e o botão de exportar o áudio da selecionada.
-- **Painel de detalhe** (à direita): título, data, duração e locutores; abas
-  **Transcrição** e **Resumo**; Buscar na transcrição (realça os blocos e pula
-  entre os resultados com Enter/Shift+Enter), Copiar (com locutores e tempos ou
-  só o texto) e Exportar (`.md`/`.txt`). Clicar num bloco pula o áudio para ele
-  e toca; o nome do locutor é clicável para renomear. Sem transcrição, um cartão
-  mostra o custo estimado e o botão **Gerar transcrição**.
-- **Aba Resumo**: títulos, listas e negrito com renderização segura; texto
-  selecionável, modelo/data/custo no rodapé e **Copiar resumo** (Markdown).
-  O menu ⋮ permite gerar novamente e abrir **Versões anteriores…**, consultar,
-  copiar e restaurar uma versão. A atual vai para o histórico (até 20 anteriores).
-  Exportar `.md` inclui o resumo atual; `.txt` continua sendo a transcrição.
-  Renomear locutor/gravação e regenerar transcrição preservam resumo e histórico,
-  mas não atualizam automaticamente seu conteúdo.
-- **Player único** (embaixo do painel): play/pausa, onda clicável e arrastável,
-  posição/duração, velocidade (0,75x a 2x), volume (clique no ícone = mudo) e
-  **Acompanhar áudio** (rola a transcrição junto). Velocidade, volume e o toggle
-  ficam salvos.
-- **Excluir** manda a gravação (áudio, transcrição e forma de onda) para a
-  **lixeira do sistema** depois de 8 s, com **Desfazer** no aviso; várias
-  exclusões seguidas têm cada uma o seu Desfazer. Fechar o app confirma as
-  pendentes. Excluir e renomear ficam bloqueados durante a transcrição ou o
-  resumo; resultados pagos ainda não salvos precisam ser salvos ou descartados
-  explicitamente pelo botão **Descartar…**, com confirmação.
-- **Janela estreita**: abaixo de 1000 px a sidebar fica com 300 px (o selo
-  mostra só o ponto) e o painel compacto; abaixo de 720 px a sidebar recolhe:
-  escolher uma gravação abre o painel, com o botão Voltar para a lista.
+- **Header bar**: app icon and name, **New recording** (Ctrl+R),
+  **Preferences** (Ctrl+,) and the menu (keyboard shortcuts, About).
+- **"Recordings" sidebar** (left): search by **name, transcript and current
+  summary** (accent- and case-insensitive), a list grouped by date (TODAY,
+  YESTERDAY, THIS WEEK, …) with a transcript status badge (● Transcribed,
+  Transcribing…, ● Error), a ⋮ menu per item (Rename, Generate/Regenerate,
+  Export audio, Delete) and an export button for the selected recording.
+- **Detail pane** (right): title, date, duration and speakers; **Transcript**
+  and **Summary** tabs; transcript search (highlights matching blocks and jumps
+  between hits with Enter/Shift+Enter), Copy (with speakers and timestamps, or
+  text only) and Export (`.md`/`.txt`). Clicking a block seeks the audio to it
+  and plays; clicking a speaker name renames it. Without a transcript, a card
+  shows the estimated cost and the **Generate transcript** button.
+- **Summary tab**: headings, lists and bold text rendered safely; selectable
+  text, model/date/cost in the footer and **Copy summary** (Markdown). The ⋮
+  menu lets you regenerate and open **Previous versions…** to view, copy and
+  restore a version. The current summary moves to history (up to 20 previous
+  versions). Exporting `.md` includes the current summary; `.txt` remains the
+  transcript only. Renaming a speaker or recording, and regenerating the
+  transcript, keep the summary and its history but do not update their content
+  automatically.
+- **Single player** (bottom of the pane): play/pause, clickable and draggable
+  waveform, position/duration, speed (0.75x to 2x), volume (click the icon to
+  mute) and **Follow audio** (scrolls the transcript along). Speed, volume and
+  the toggle are persisted.
+- **Delete** moves the recording (audio, transcript and waveform) to the
+  **system trash** after 8 s, with an **Undo** toast; consecutive deletions
+  each get their own Undo. Closing the app confirms pending deletions. Delete
+  and rename are blocked while a transcription or summary is running; paid
+  results that have not been saved yet must be saved or explicitly discarded
+  through the **Discard…** button, with confirmation.
+- **Narrow windows**: below 1000 px the sidebar shrinks to 300 px (the badge
+  shows only a dot) and the pane goes compact; below 720 px the sidebar
+  collapses: selecting a recording opens the pane, with a Back button to return
+  to the list.
 
-### Atalhos
+### Keyboard shortcuts
 
-| Tecla | Ação |
+| Key | Action |
 |---|---|
-| Espaço | Reproduzir / pausar a gravação selecionada |
-| B / N | Voltar / avançar 10 s |
-| F2 | Renomear a selecionada |
-| Delete | Excluir a selecionada (com Desfazer) |
-| Ctrl+S | Exportar o áudio da selecionada |
-| Ctrl+R | Nova gravação |
-| Ctrl+, | Preferências |
-| Ctrl+? | Atalhos de teclado |
-| Ctrl+Q | Sair |
-| Espaço (gravando) | Pausar / retomar a gravação |
-| S (gravando) | Parar a gravação |
-| Delete (gravando) | Cancelar (excluir) a gravação em andamento, com confirmação |
+| Space | Play / pause the selected recording |
+| B / N | Back / forward 10 s |
+| F2 | Rename the selected recording |
+| Delete | Delete the selected recording (with Undo) |
+| Ctrl+S | Export the selected recording's audio |
+| Ctrl+R | New recording |
+| Ctrl+, | Preferences |
+| Ctrl+? | Keyboard shortcuts |
+| Ctrl+Q | Quit |
+| Space (recording) | Pause / resume the recording |
+| S (recording) | Stop the recording |
+| Delete (recording) | Cancel (discard) the recording in progress, with confirmation |
 
-As teclas de letra e o espaço não disparam enquanto se digita num campo (busca,
-diálogos).
+Letter keys and Space are ignored while typing in a text field (search,
+dialogs).
 
-## Requisitos
+## Requirements
 
 - gjs, GTK 4 >= 4.10, libadwaita >= 1.7
-- GStreamer com `gst-plugins-base` e `gst-plugins-good` (typelibs `Gst`,
-  `GstPlayer` e `GstPbutils`)
-- libsecret (guarda da chave da API) e libsoup3 (acesso à rede)
-- meson e ninja, para instalar
-- ffmpeg não é necessário
+- GStreamer with `gst-plugins-base` and `gst-plugins-good` (typelibs `Gst`,
+  `GstPlayer` and `GstPbutils`)
+- libsecret (API key storage) and libsoup3 (networking)
+- meson and ninja, to install
+- ffmpeg is **not** required
 
-## Instalação (local, sem root)
+## Installation (local, no root)
 
 ```sh
 meson setup build --prefix $HOME/.local
@@ -93,83 +106,103 @@ ninja -C build install
 dev.nicolas.DailyTaker
 ```
 
-Certifique-se de que `~/.local/bin` está no `PATH`. O id do aplicativo é
-`dev.nicolas.DailyTaker`.
+Make sure `~/.local/bin` is in your `PATH`. The application id is
+`dev.nicolas.DailyTaker`, so it does not clash with an installed GNOME Sound
+Recorder / Vocalis.
 
-## Onde ficam os dados
+## Where data is stored
 
-- Gravações e transcrições: `~/.local/share/daily-taker/`
+- Recordings and transcripts: `~/.local/share/daily-taker/`
 - Cache: `~/.cache/daily-taker/`
-- Chave da API (somente se o chaveiro do sistema não estiver disponível):
+- API key (only if the system keyring is unavailable):
   `~/.config/daily-taker/api-key`
 
-Para apagar uma transcrição basta apagar o arquivo `.transcript.json`
-correspondente; o áudio não é afetado.
+To delete a transcript, just delete the matching `.transcript.json` file; the
+audio is not affected.
 
-## Chave da API
+## API key
 
-A transcrição e o resumo usam o [OpenRouter](https://openrouter.ai/). Informe sua chave em
-**Menu > Preferências** (ela fica no chaveiro do sistema e nunca é exibida de
-volta), ou defina a variável de ambiente `DAILY_TAKER_OP_KEY` antes de abrir o
-aplicativo. Em Preferências também é possível testar e remover a chave.
+Transcription and summaries use [OpenRouter](https://openrouter.ai/). Enter
+your key in **Menu > Preferences** (it is stored in the system keyring and never
+shown back), or set the `DAILY_TAKER_OP_KEY` environment variable before
+launching the app. Preferences also lets you test and remove the key.
 
-O **Modelo do resumo** é configurável em Preferências (padrão:
-`anthropic/claude-sonnet-5.5`). O custo típico de uma reunião de 1 h fica em torno
-de US$ 0,02–0,05, dependendo do tamanho do texto e da saída. A confirmação
-estima a entrada e até 2.000 tokens de saída; para outro modelo, mostra
-“Custo estimado indisponível” em vez de aplicar o preço do modelo padrão.
-O valor da confirmação é um teto estimado (“até US$ …”). Para modelos
-alternativos sem custo informado pelo provedor, o rodapé mostra “custo
-desconhecido”; uma saída parcial por limite de tokens indica “(resumo cortado)”.
-Transcrições com menos de 20 caracteres de conteúdo são recusadas antes do diálogo.
+The **Summary model** is configurable in Preferences (default:
+`anthropic/claude-sonnet-5.5`). A typical 1-hour meeting costs roughly
+US$ 0.02–0.05, depending on text size and output length. The confirmation
+dialog estimates the input plus up to 2,000 output tokens; for a different
+model it shows "Estimated cost unavailable" instead of applying the default
+model's price. The amount shown is an estimated ceiling ("up to US$ …"). For
+alternative models without provider-reported cost, the footer shows "unknown
+cost"; a partial output cut by the token limit is flagged "(summary truncated)".
+Transcripts with fewer than 20 characters of content are rejected before the
+dialog.
 
-## Privacidade
+## Privacy
 
-Nada sai do seu computador por conta própria. O áudio de uma gravação só é
-enviado ao OpenRouter quando você clica em **Gerar transcrição** (ou
-**Gerar novamente**), e cada geração é cobrada pelo OpenRouter na sua conta.
-O texto da transcrição só é enviado ao OpenRouter ao pedir **Gerar resumo**
-e confirmar o diálogo de custo/privacidade. Nada é enviado ao trocar de aba.
-Falhas de rede/timeout do resumo não têm retentativa automática; “Tentar de novo”
-exige nova confirmação. Há retry automático apenas em 429/502/503/504.
-Se transcrição ou resumo já foi pago e só a gravação em disco falhou, o texto
-fica em memória e tentar de novo **só salva**, sem nova cobrança. Se a transcrição
-do resumo sumiu/está ilegível, a interface oferece descarte confirmado, não um
-loop de salvamento. Regenerar uma transcrição completa sobre JSON inválido
-preserva os bytes antigos em `.transcript.json.unreadable-<timestamp>`; esses
-backups ficam ocultos e preservados sob o nome original ao renomear/excluir o áudio.
+Nothing leaves your computer on its own. A recording's audio is only uploaded
+to OpenRouter when you click **Generate transcript** (or **Regenerate**), and
+each generation is billed to your OpenRouter account. The transcript text is
+only sent to OpenRouter when you ask for **Generate summary** and confirm the
+cost/privacy dialog. Nothing is sent when switching tabs.
 
-## Pendências conhecidas
+Summary network failures/timeouts are not retried automatically; "Try again"
+requires a new confirmation. Automatic retries happen only on 429/502/503/504.
+If a transcript or summary was already paid for and only the write to disk
+failed, the text is kept in memory and retrying **only saves**, with no new
+charge. If the transcript backing a summary has disappeared or is unreadable,
+the UI offers a confirmed discard rather than a save loop. Regenerating a full
+transcript over invalid JSON preserves the old bytes in
+`.transcript.json.unreadable-<timestamp>`; those backups are hidden and are
+kept under the original name when the audio is renamed or deleted.
 
-- Fechar durante uma transcrição/resumo em andamento ou com resultado pago não
-  salvo abandona o resultado **somente após confirmação explícita**. Cancelar
-  mantém a janela, o resultado em memória e as exclusões pendentes. A cópia paga
-  retida por falha de disco não persiste após você confirmar o fechamento.
+## Known limitations
 
-## Testes
+- Closing during a transcription/summary in progress, or with an unsaved paid
+  result, abandons that result **only after explicit confirmation**. Cancelling
+  keeps the window, the in-memory result and the pending deletions. The paid
+  copy retained after a disk failure does not persist once you confirm closing.
+
+## Tests
 
 ```sh
 bash tests/run.sh
 ```
 
-Roda todos os `tests/*_test.js` com o gjs. Os testes que dependem de áudio,
-chaveiro, rede e interface gráfica estão em `docs/manual-checklist.md`.
+Runs every `tests/*_test.js` with gjs. Tests that depend on audio, the keyring,
+the network and the graphical interface are covered by
+`docs/manual-checklist.md`.
 
-## Desenvolvimento
+## Development
 
-- `bash tests/run.sh`: testes automáticos (gjs puro).
-- `bash tools/snapshot.sh OUT.png [--component …] [--select N] [--at SEG] [--size LxA]`:
-  renderiza a janela real (ou um componente) num PNG, com gravações de exemplo,
-  num compositor headless isolado — nada aparece na tela, nenhum som sai e os
-  dados, a configuração e o chaveiro do usuário não são tocados. Os componentes
-  `windowcheck`, `sidebarcheck` e `detailpanecheck` são verificações da interface
-  (PASS/FAIL). Detalhes em `tools/README.md`.
-- Comparação com a mockup: `docs/superpowers/design/comparacao-2026-10-22.png` e
+- `bash tests/run.sh`: automated tests (plain gjs).
+- `bash tools/snapshot.sh OUT.png [--component …] [--select N] [--at SEC] [--size WxH]`:
+  renders the real window (or a single component) to a PNG with sample
+  recordings, inside an isolated headless compositor — nothing shows on screen,
+  no sound is played, and the user's data, settings and keyring are untouched.
+  The `windowcheck`, `sidebarcheck` and `detailpanecheck` components are UI
+  checks (PASS/FAIL). Details in `tools/README.md`.
+- Comparison against the target mockup:
+  `docs/superpowers/design/comparacao-2026-10-22.png` and
   `docs/superpowers/design/comparacao-notas.md`.
 
-## Créditos e licença
+## Credits and license
 
-Daily Taker é um fork do Vocalis (tag 42.0), que por sua vez é um fork do
-GNOME Sound Recorder. O código é licenciado sob GPL-2.0+; veja `COPYING` e
-`AUTHORS` para os créditos originais (Meg Ford, Bilal Elmoussaoui, Felipe
-Borges e outros).
+Daily Taker is a fork of **[Vocalis](https://gitlab.gnome.org/World/vocalis)**
+(tag `42.0`), the continuation of
+**[GNOME Sound Recorder](https://gitlab.gnome.org/GNOME/gnome-sound-recorder)**.
+The recorder, window, waveform and utility modules still derive from that code;
+the transcription, summary, secrets, transcript store/view and the redesigned
+interface are new work.
+
+- Original code: Copyright 2013–2019 Meg Ford; Copyright 2019–2020 Bilal
+  Elmoussaoui and Felipe Borges; and other GNOME Sound Recorder / Vocalis
+  contributors. Original design by Reda Lazri, Garrett LaSage and Hylke Bons.
+  See [`AUTHORS`](AUTHORS) and the per-file copyright headers in `src/`.
+- Modifications: Copyright 2026 Nicolas Melo.
+- License: **GNU General Public License, version 2 or (at your option) any
+  later version** (GPL-2.0-or-later), the same as the original. See
+  [`COPYING`](COPYING). Original per-file license notices are kept intact.
+
+This project is not affiliated with or endorsed by the GNOME Project or the
+Vocalis maintainers.
