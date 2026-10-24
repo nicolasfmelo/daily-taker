@@ -114,9 +114,9 @@ test('isSandboxed: só com a marca do snapshot.sh e a pasta de dados dentro da r
         [env, '/tmp/daily-taker-snapshot-abc/data/', true],
         [{ ...env, DAILY_TAKER_SNAPSHOT_ROOT: '/tmp/daily-taker-snapshot-abc/' }, '/tmp/daily-taker-snapshot-abc/data', true],
         // Fora da raiz, prefixo enganoso, subida com "..", caminhos relativos.
-        [env, '/home/nicolas/.local/share', false],
+        [env, '/home/someone/.local/share', false],
         [env, '/tmp/daily-taker-snapshot-abcdef/data', false],
-        [env, '/tmp/daily-taker-snapshot-abc/../../home/nicolas/.local/share', false],
+        [env, '/tmp/daily-taker-snapshot-abc/../../home/someone/.local/share', false],
         [env, '/tmp/daily-taker-snapshot-abc/./data', false],
         [env, 'data', false],
         [env, '', false],
